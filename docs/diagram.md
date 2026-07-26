@@ -26,7 +26,9 @@ erDiagram
     PROPERTIES ||--o{ MERCHANT_CREDENTIALS : configures
     FOLIOS ||--o{ PAYMENTS : "settled by"
     USERS ||--o{ PAYMENTS : confirms
-    TENANTS ||--o{ TENANT_SUBSCRIPTIONS : subscribes
+    TENANTS ||--o{ MODULE_SUBSCRIPTIONS : subscribes
+    PROPERTIES ||--o{ MODULE_SUBSCRIPTIONS : "scoped to"
+    MODULES ||--o{ MODULE_SUBSCRIPTIONS : "subscribed as"
 
     TENANTS {
         uuid id PK
@@ -190,16 +192,32 @@ erDiagram
         timestamp created_at
     }
 
-    TENANT_SUBSCRIPTIONS {
+    MODULES {
+        uuid id PK
+        string code UK "pms_core | restaurant_pos | future modules"
+        string name
+        boolean is_core "TRUE only for pms_core"
+        string scope "property | tenant"
+        int default_trial_days
+        numeric monthly_price
+        numeric yearly_price
+        boolean is_active
+        timestamp created_at
+    }
+
+    MODULE_SUBSCRIPTIONS {
         uuid id PK
         uuid tenant_id FK
+        uuid property_id FK "NULL if module.scope = tenant"
+        uuid module_id FK
         string plan_type "trial | monthly | yearly"
-        int branch_addon_count
+        timestamp trial_started_at
+        timestamp trial_expires_at
         numeric amount_charged
         timestamp starts_at
         timestamp ends_at
         string payment_reference
-        string status "active | expired | cancelled"
+        string status "trial | active | grace_period | suspended | cancelled"
         timestamp created_at
     }
 ```
@@ -221,4 +239,5 @@ Mermaid's ERD syntax shows structure and cardinality but can't show `CHECK` cons
 - `BOOKINGS ||--|| FOLIOS` is one-to-one: every booking has exactly one folio.
 - `INVOICES ||--o{ INVOICES` ("reprint of") is a self-referencing relationship — a reprinted invoice is a new row pointing back to the original via `reprint_of`, never an edit to the original row.
 - `USERS.property_id` participates in two different relationships depending on role: for `owner`, it's NULL (no property link); for every other role, it links to exactly one property. This is why the `PROPERTIES ||--o{ USERS` relationship is drawn as optional (`o{`) rather than mandatory.
-- Tables intentionally not yet present: restaurant/POS tables (menu items, kitchen orders), HR/payroll tables (attendance, leave, payslips), and a dedicated CBMS sync/queue table. `INVOICES.cbms_synced` is a placeholder boolean until the real CBMS module is scoped.
+- Tables intentionally not yet present: restaurant/POS operational tables (menu items, kitchen orders), HR/payroll tables (attendance, leave, payslips), and a dedicated CBMS sync/queue table. `INVOICES.cbms_synced` is a placeholder boolean until the real CBMS module is scoped.
+- `MODULE_SUBSCRIPTIONS` is deliberately generic: Core PMS and Restaurant POS (and every future module) are all just rows in `MODULES`, each with its own independent trial/paid/expired lifecycle per tenant (and per property, for property-scoped modules). Access-control checks must always query `MODULE_SUBSCRIPTIONS` for the specific module in question — never assume Core PMS status implies anything about another module's status, and vice versa.
