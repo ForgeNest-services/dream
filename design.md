@@ -1,118 +1,224 @@
-# SaaS Platform Design — Subscriptions, Roles & Tenant Lifecycle
+# Entity-Relationship Diagram — Hospitality SaaS
 
-This document covers the **platform layer** — how the product is sold, billed, and administered as a SaaS business. It's separate from `hospitality-saas-database-design.md`, which covers the internal PMS schema (rooms, bookings, folios) that each tenant uses once they're signed up.
+Complete schema reference. This is the source of truth for the backend build — every table, attribute, and relationship from `hospitality-saas-database-design.md`, rendered as one diagram.
 
----
+```mermaid
+erDiagram
+    TENANTS ||--o{ PROPERTIES : owns
+    TENANTS ||--o{ USERS : employs
+    PROPERTIES ||--o{ USERS : "staffed by"
+    PROPERTIES ||--o{ ROOM_TYPES : defines
+    ROOM_TYPES ||--o{ ROOMS : categorizes
+    PROPERTIES ||--o{ ROOMS : has
+    TENANTS ||--o{ GUESTS : hosts
+    PROPERTIES ||--o{ BOOKINGS : hosts
+    ROOMS ||--o{ BOOKINGS : "booked as"
+    GUESTS ||--o{ BOOKINGS : makes
+    USERS ||--o{ BOOKINGS : "created by"
+    BOOKINGS ||--|| FOLIOS : generates
+    FOLIOS ||--o{ FOLIO_LINE_ITEMS : contains
+    FOLIOS ||--o{ INVOICES : produces
+    TENANTS ||--o{ INVOICES : issues
+    PROPERTIES ||--o{ INVOICES : issues
+    INVOICES ||--o{ INVOICES : "reprint of"
+    TENANTS ||--o{ AUDIT_LOG : logs
+    USERS ||--o{ AUDIT_LOG : performs
+    PROPERTIES ||--o{ MERCHANT_CREDENTIALS : configures
+    FOLIOS ||--o{ PAYMENTS : "settled by"
+    USERS ||--o{ PAYMENTS : confirms
+    TENANTS ||--o{ TENANT_SUBSCRIPTIONS : subscribes
 
-## 1. Overview
+    TENANTS {
+        uuid id PK
+        string business_name
+        string pan_vat_number
+        string contact_email
+        string contact_phone
+        string subscription_plan "trial | monthly | yearly"
+        timestamp trial_started_at
+        timestamp trial_expires_at
+        string subscription_status "active | expired | suspended | cancelled"
+        int branch_addon_count
+        timestamp created_at
+        timestamp updated_at
+    }
 
-Two distinct groups of people interact with this system, and they must never be confused in the design:
+    PROPERTIES {
+        uuid id PK
+        uuid tenant_id FK
+        string name
+        text address
+        string city
+        boolean is_active
+        timestamp created_at
+    }
 
-- **Platform side (you / Forgenest)** — the vendor. Manages tenants, subscriptions, and platform health.
-- **Tenant side (hotels)** — the customers. Each tenant is one hotel business, which may have multiple branches (properties) and multiple staff members with different roles.
+    USERS {
+        uuid id PK
+        uuid tenant_id FK
+        uuid property_id FK "nullable — NULL only for role=owner"
+        string full_name
+        string email
+        string phone
+        string password_hash
+        enum role "owner | manager | front_desk | accountant | chef | waiter"
+        boolean is_active
+        timestamp last_login_at
+        timestamp created_at
+    }
 
-Everything in this document is about the relationship between these two sides — signup, trial, payment, access control at the platform level, and what happens when a subscription lapses.
+    ROOM_TYPES {
+        uuid id PK
+        uuid property_id FK
+        string name
+        numeric base_rate
+        int max_occupancy
+        timestamp created_at
+    }
 
----
+    ROOMS {
+        uuid id PK
+        uuid property_id FK
+        uuid room_type_id FK
+        string room_number
+        string floor
+        string status "available | occupied | maintenance | cleaning"
+        boolean is_active
+    }
 
-## 2. Tenant Lifecycle
+    GUESTS {
+        uuid id PK
+        uuid tenant_id FK
+        string full_name
+        string phone
+        string email
+        string id_document_type "citizenship | passport"
+        string id_document_number
+        string nationality
+        timestamp created_at
+    }
 
+    BOOKINGS {
+        uuid id PK
+        uuid property_id FK
+        uuid room_id FK
+        uuid guest_id FK
+        date check_in_date
+        date check_out_date
+        timestamp actual_check_in
+        timestamp actual_check_out
+        enum status "reserved | checked_in | checked_out | cancelled | no_show"
+        numeric rate_per_night "snapshot at booking time"
+        int num_guests
+        uuid created_by FK
+        timestamp created_at
+    }
+
+    FOLIOS {
+        uuid id PK
+        uuid booking_id FK
+        string status "open | closed | paid"
+        numeric subtotal
+        numeric vat_amount
+        numeric total_amount
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    FOLIO_LINE_ITEMS {
+        uuid id PK
+        uuid folio_id FK
+        string description
+        numeric quantity
+        numeric unit_price
+        numeric amount
+        boolean is_voided
+        text voided_reason
+        timestamp created_at
+    }
+
+    INVOICES {
+        uuid id PK
+        uuid folio_id FK
+        uuid tenant_id FK
+        uuid property_id FK
+        string invoice_number UK "fiscal-year based, unique per property"
+        string fiscal_year "Bikram Sambat, e.g. 2081-82"
+        json vat_breakdown
+        numeric total_amount
+        timestamp generated_at
+        boolean is_reprint
+        uuid reprint_of FK "self-reference to original invoice"
+        boolean cbms_synced
+    }
+
+    AUDIT_LOG {
+        uuid id PK
+        uuid tenant_id FK
+        string entity_type "booking | folio | invoice | payment etc"
+        uuid entity_id
+        string action "create | update | void | cancel"
+        uuid performed_by FK
+        json before_state
+        json after_state
+        text reason
+        timestamp created_at
+    }
+
+    MERCHANT_CREDENTIALS {
+        uuid id PK
+        uuid property_id FK
+        string provider "fonepay | esewa | khalti"
+        string mode "automated | manual"
+        string merchant_id "NULL if mode = manual"
+        string secret_key_encrypted "NULL if mode = manual"
+        string qr_image_url "NULL if mode = automated"
+        boolean is_active
+        timestamp created_at
+    }
+
+    PAYMENTS {
+        uuid id PK
+        uuid folio_id FK
+        string mode "automated | manual | cash | bank_transfer"
+        string provider "fonepay | esewa | khalti | null"
+        numeric amount
+        string status "pending | confirmed | failed"
+        string provider_txn_id
+        uuid confirmed_by FK
+        timestamp confirmed_at
+        timestamp created_at
+    }
+
+    TENANT_SUBSCRIPTIONS {
+        uuid id PK
+        uuid tenant_id FK
+        string plan_type "trial | monthly | yearly"
+        int branch_addon_count
+        numeric amount_charged
+        timestamp starts_at
+        timestamp ends_at
+        string payment_reference
+        string status "active | expired | cancelled"
+        timestamp created_at
+    }
 ```
-  signup → trial (30 days) → [converts] → active (monthly/yearly)
-                            ↘ [doesn't convert] → trial_expired (feature-gated)
-  active → [renews on time] → active (extended)
-  active → [misses renewal] → grace_period → suspended → [pays] → active
-                                                          ↘ [never pays] → cancelled
-```
 
-| Status | Meaning | Access level |
+## Constraints not expressible in ER notation
+
+Mermaid's ERD syntax shows structure and cardinality but can't show `CHECK` constraints or partial uniqueness. These are enforced at the database level per `hospitality-saas-database-design.md` and must not be lost when this gets translated into actual migrations:
+
+| Table | Constraint | Rule |
 |---|---|---|
-| `trial` | First 30 days after signup | Full feature access |
-| `trial_expired` | Trial ended, never converted | Core operations still work (bookings, check-in/out); reports export, invoice PDF download, VAT summary export disabled — see Feature Gating below |
-| `active` | Paying (monthly or yearly) | Full access |
-| `grace_period` | Payment due, short buffer window (recommend 3–5 days) before hard restriction | Full access, with a visible renewal reminder banner |
-| `suspended` | Grace period passed, no payment | Same restrictions as `trial_expired` — data preserved, not deleted |
-| `cancelled` | Tenant explicitly cancels | Read-only access to historical data for a defined retention window, then data export offered before deletion |
+| `USERS` | `chk_owner_no_property` | `property_id` must be NULL if `role = 'owner'`, and NOT NULL for every other role |
+| `BOOKINGS` | `chk_dates` | `check_out_date` must be strictly greater than `check_in_date` |
+| `MERCHANT_CREDENTIALS` | `chk_mode_fields` | if `mode = 'automated'`: `merchant_id` and `secret_key_encrypted` required; if `mode = 'manual'`: `qr_image_url` required |
+| `INVOICES` | uniqueness | `invoice_number` unique per `property_id`, not globally unique |
+| `INVOICES`, `AUDIT_LOG` | append-only | application DB role gets `INSERT`+`SELECT` only — no `UPDATE`/`DELETE` grant, enforced at the database permission level, not just application code |
 
-**Why data is never deleted on suspension:** this is deliberate leverage, discussed earlier — a hotel with three months of booking history, guest records, and invoices sitting in the system has a real reason to pay rather than switch providers and start from zero.
+## Relationship notes
 
----
-
-## 3. Subscription Plans & Pricing
-
-| Plan | Price | Billing cycle | Notes |
-|---|---|---|---|
-| Trial | Free | 30 days, one-time per tenant | Full features, one trial per business (guard against re-signup abuse using PAN/VAT or phone number matching) |
-| Monthly | NPR 2,999/month | Recurring monthly | No feature difference from Yearly — same product, different cycle |
-| Yearly | NPR 11,999/year | Recurring yearly | Effectively ~33% cheaper than monthly × 12 — deliberately structured to push yearly commitments, which also matches local B2B norms better than monthly auto-billing |
-| Branch add-on | Flat fee per additional branch/month (e.g. NPR 1,500) | Same cycle as base plan | Applies from the 2nd branch onward; 1st branch is included in the base plan price |
-
-**No room-count tiers, no per-feature upsells** — every paying tenant gets every feature. Simplicity is the differentiator against IMS/eZee's quote-based, module-by-module pricing.
-
----
-
-## 4. Feature Gating Rules
-
-Applies to `trial_expired` and `suspended` states:
-
-**Stays available** (so the hotel isn't forced to stop operating):
-- Bookings, check-in/check-out, folio management
-- Viewing existing data
-
-**Disabled until payment:**
-- Report exports (occupancy, revenue)
-- Invoice PDF downloads
-- VAT summary exports
-
-This creates real pressure to convert without ever locking a hotel out of running their front desk mid-stay — that would be an unacceptable business risk for them and a support nightmare for you.
-
----
-
-## 5. Roles & Access
-
-### 5.1 Platform-side roles (Forgenest / you)
-Not customer-facing — this is your own internal admin console.
-
-| Role | Access |
-|---|---|
-| Platform Admin | Full access: all tenants, subscription overrides, billing records, impersonation/support access into any tenant for troubleshooting |
-| Support Staff (future, once you're not the only person) | View tenant status, assist with onboarding, cannot modify billing or delete tenants |
-
-Kept minimal deliberately — at your current scale, "Platform Admin" is just you. Design the role table now so adding a Support Staff role later doesn't require a schema change.
-
-### 5.2 Tenant-side roles (hotel staff)
-Hardcoded, portal-per-role, not a permissions engine — decided earlier and detailed fully in the database design doc. Repeated here because it's core to the platform's access model:
-
-- **Owner** — spans all branches of their business, full access
-- **Manager** — under Owner, branch-scoped, most day-to-day operations
-- **Front Desk** — bookings, check-in/out, folio, payments
-- **Accountant** — invoices, reports, VAT summaries; no booking/room edit access
-- **Chef** *(future, ships with restaurant module)* — kitchen order display
-- **Waiter** *(future, ships with restaurant module)* — mobile order-taking
-
-Multiple staff can share a role. Same role, multiple branches, multiple people — this is a category label, not a unique seat.
-
----
-
-## 6. Billing & Payment Handling (tenant → you)
-
-Nepal's payment gateways don't support true auto-recurring billing (no Stripe-style silent auto-charge) — this was confirmed earlier when researching FonePay/eSewa/Khalti. Practical handling:
-
-1. System generates an invoice/reminder a few days before the renewal date (monthly or yearly).
-2. Tenant pays via QR (your own FonePay/eSewa/Khalti merchant account) or manual bank transfer.
-3. Platform Admin (you, for now) or an automated webhook confirms payment and extends the tenant's `active` period.
-4. If unpaid past the renewal date, tenant enters `grace_period`, then `suspended` per the lifecycle above.
-
-This is manual-assisted, not fully automatic, at your current scale — automating the reminder emails/SMS is worth doing early since it's low-effort and removes the biggest manual workload as you scale past a handful of tenants.
-
----
-
-## 7. Admin Console Requirements (your internal dashboard)
-
-Minimum viable for MVP:
-- List of all tenants: name, plan, status, trial/renewal dates, branch count
-- Manual "mark as paid" action (for bank transfer / manual QR payments you confirm yourself)
-- Ability to extend a trial or override a subscription status manually (for support/goodwill cases)
-- Basic usage visibility: last login, number of active staff, number of bookings this month — useful both for support and for spotting which tenants are actually engaged vs. dormant
-
-Not needed for MVP: usage analytics dashboards, cohort/churn reporting, automated dunning sequences — these are v2 admin-console improvements once you have enough tenants for them to matter.
+- `BOOKINGS ||--|| FOLIOS` is one-to-one: every booking has exactly one folio.
+- `INVOICES ||--o{ INVOICES` ("reprint of") is a self-referencing relationship — a reprinted invoice is a new row pointing back to the original via `reprint_of`, never an edit to the original row.
+- `USERS.property_id` participates in two different relationships depending on role: for `owner`, it's NULL (no property link); for every other role, it links to exactly one property. This is why the `PROPERTIES ||--o{ USERS` relationship is drawn as optional (`o{`) rather than mandatory.
+- Tables intentionally not yet present: restaurant/POS tables (menu items, kitchen orders), HR/payroll tables (attendance, leave, payslips), and a dedicated CBMS sync/queue table. `INVOICES.cbms_synced` is a placeholder boolean until the real CBMS module is scoped.
