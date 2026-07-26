@@ -1,5 +1,5 @@
 services:
-  api:
+  api: &python-service
     build:
       context: ./api
       dockerfile: Dockerfile
@@ -23,7 +23,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - forge-network
+      - app-network
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
       interval: 10s
@@ -38,7 +38,7 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - forge-network
+      - app-network
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -50,21 +50,22 @@ services:
     container_name: worker
     command: python worker.py
     ports: []
+    networks:
+      - app-network
     healthcheck:
       disable: true
     depends_on:
       redis:
         condition: service_healthy
-  
+
+
   ui:
     build:
       context: ./ui
       dockerfile: Dockerfile
     container_name: ui
-    env_file:
-      - .env
     ports:
-      - "3000:3000"
+      - "3000:80"
     networks:
       - app-network
     restart: unless-stopped
@@ -87,5 +88,5 @@ volumes:
   postgres_data:
 
 networks:
-  forge-network:
-    external: true
+  app-network:
+    driver: bridge
