@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Unbounded";
+  src: url("../fonts/Unbounded-ExtraLight.ttf") format("woff2");
+  font-weight: 200;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Unbounded";
+  src: url("../fonts/ClashDisplay-Light.ttf") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Unbounded";
+  src: url("../fonts/Unbounded-Regular.ttf") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Unbounded";
+  src: url("../fonts/Unbounded-Medium.ttf") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Unbounded";
+  src: url("../fonts/Unbounded-Semibold.ttf") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Unbounded";
+  src: url("../fonts/Unbounded-Bold.ttf") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+
+/* Apply globally */
+@layer base {
+  body {
+    font-family: "Unbounded", sans-serif;
+  }
+}
