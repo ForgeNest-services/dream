@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block header %}
+<div class="header">
+    <h1>Welcome to {{ business_name }}!</h1>
+</div>
+{% endblock %}
+
+{% block content %}
+<p>Hi {{ recipient_name }},</p>
+
+<p><strong>{{ invited_by }}</strong> has invited you to join <strong>{{ business_name }}</strong> on Dream as a <strong>{{ role }}</strong>.</p>
+
+<p>Click the button below to accept the invitation and set up your account:</p>
+
+<center>
+    <a href="{{ invitation_link }}" class="cta-button">Accept Invitation</a>
+</center>
+
+<p>If you didn't expect this invitation, you can safely ignore this email.</p>
+{% endblock %}

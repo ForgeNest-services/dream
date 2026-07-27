@@ -14,10 +14,21 @@ from features.auth import router as auth_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables initialized")
+    try:
+        logger.info("Initializing database tables...")
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database tables: {type(e).__name__}: {str(e)}")
+        raise
 
-    seed_superadmin()
+    try:
+        logger.info("Seeding superadmin...")
+        seed_superadmin()
+        logger.info("Superadmin seeding completed")
+    except Exception as e:
+        logger.error(f"Failed to seed superadmin: {type(e).__name__}: {str(e)}")
+        raise
 
     yield
 

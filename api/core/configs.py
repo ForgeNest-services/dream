@@ -18,5 +18,8 @@ class Settings:
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
     GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
     GOOGLE_REDIRECT_URI: str = os.getenv("GOOGLE_REDIRECT_URI", "")
+    BREVO_API_KEY: str = os.getenv("BREVO_API_KEY", "")
+    BREVO_FROM_EMAIL: str = os.getenv("BREVO_FROM_EMAIL", "")
+    BREVO_FROM_NAME: str = os.getenv("BREVO_FROM_NAME", "Dream")
 
 settings = Settings()

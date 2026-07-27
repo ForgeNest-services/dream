@@ -13,6 +13,11 @@ services:
     networks:
       - app-network
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   postgres:
     image: postgres:15-alpine

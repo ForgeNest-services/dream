@@ -20,41 +20,88 @@ from features.auth.schemas import (
     TokenData,
 )
 from utils.logger import logger
+from utils.otp import generate_otp, store_otp, verify_otp
 
 
 class AuthService:
     @staticmethod
-    def register_tenant(db: Session, data: RegisterRequest) -> dict:
+    def register(db: Session, data: RegisterRequest) -> dict:
         existing_user = UserRepository.get_by_email(db, data.email)
         if existing_user:
             logger.warning(f"Registration failed: email already exists: {data.email}")
             return {"success": False, "error_code": "EMAIL_ALREADY_EXISTS"}
 
         try:
-            tenant = TenantRepository.create(
-                db,
-                name=data.business_name,
-                pan=data.pan,
-                business_address=data.business_address,
-                business_phone=data.business_phone,
-                business_email=data.business_email,
-            )
-            logger.info(
-                f"Tenant created: {tenant.id}",
-                extra={"business_name": data.business_name},
-            )
-
             password_hash = hash_password(data.password)
+
             user = UserRepository.create(
                 db,
-                tenant_id=tenant.id,
+                tenant_id=None,
                 full_name=data.full_name,
                 email=data.email,
                 password_hash=password_hash,
                 is_owner=True,
                 role=UserRole.OWNER,
             )
-            logger.info(f"Owner user created: {user.id}", extra={"email": data.email})
+            logger.info(f"User created (unverified): {user.id}", extra={"email": data.email})
+
+            otp = generate_otp()
+            store_otp(user.id, otp, purpose="verification", ttl=60)
+            logger.info(f"OTP generated for verification - {user.id}")
+
+            return {
+                "success": True,
+                "user": UserData.model_validate(user),
+                "otp_sent": True,
+                "otp_code": otp,
+                "message": "Verification email sent. Please verify your email.",
+            }
+
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Registration failed: {str(e)}")
+            return {"success": False, "error_code": "REGISTRATION_FAILED"}
+
+    @staticmethod
+    def add_business_info(
+        db: Session,
+        email: str,
+        business_name: str,
+        business_address: str,
+        pan: str = None,
+        business_phone: str = None,
+        business_email: str = None,
+    ) -> dict:
+        user = UserRepository.get_by_email(db, email)
+        if not user:
+            logger.warning(f"Business registration failed: user not found - {email}")
+            return {"success": False, "error_code": "USER_NOT_FOUND"}
+
+        if not user.is_verified:
+            logger.warning(f"Business registration failed: email not verified - {email}")
+            return {"success": False, "error_code": "EMAIL_NOT_VERIFIED"}
+
+        if user.tenant_id:
+            logger.warning(f"Business registration failed: tenant already exists - {email}")
+            return {"success": False, "error_code": "TENANT_EXISTS"}
+
+        try:
+            tenant = TenantRepository.create(
+                db,
+                name=business_name,
+                pan=pan,
+                business_address=business_address,
+                business_phone=business_phone,
+                business_email=business_email,
+            )
+            logger.info(
+                f"Tenant created: {tenant.id}",
+                extra={"business_name": business_name},
+            )
+
+            user.tenant_id = tenant.id
+            db.commit()
+            logger.info(f"User linked to tenant: {user.id} -> {tenant.id}")
 
             tokens = AuthService._issue_tokens_for_user(user)
 
@@ -63,12 +110,13 @@ class AuthService:
                 "user": UserData.model_validate(user),
                 "tenant": TenantData.model_validate(tenant),
                 "tokens": tokens,
+                "message": "Business registered successfully",
             }
 
         except Exception as e:
             db.rollback()
-            logger.error(f"Registration failed: {str(e)}")
-            return {"success": False, "error_code": "REGISTRATION_FAILED"}
+            logger.error(f"Business registration failed: {str(e)}")
+            return {"success": False, "error_code": "BUSINESS_REGISTRATION_FAILED"}
 
     @staticmethod
     def login(db: Session, data: LoginRequest) -> dict:
@@ -86,6 +134,10 @@ class AuthService:
 
         user = UserRepository.get_by_email(db, data.email)
         if user and user.is_active:
+            if not user.is_verified:
+                logger.warning(f"Login attempt with unverified email: {data.email}")
+                return {"success": False, "error_code": "EMAIL_NOT_VERIFIED"}
+
             if verify_password(data.password, user.password_hash):
                 tokens = AuthService._issue_tokens_for_user(user)
                 logger.info(f"User login: {user.email}")
@@ -191,7 +243,9 @@ class AuthService:
                 picture_url=picture_url,
                 role=UserRole.OWNER,
             )
-            logger.info(f"Google user created: {user.id}", extra={"email": email})
+            user.is_verified = True
+            db.commit()
+            logger.info(f"Google user created and auto-verified: {user.id}", extra={"email": email})
 
             tokens = AuthService._issue_tokens_for_user(user)
 
@@ -206,6 +260,52 @@ class AuthService:
             db.rollback()
             logger.error(f"Google signup failed: {str(e)}")
             return {"success": False, "error_code": "SIGNUP_FAILED"}
+
+    @staticmethod
+    def verify_otp(db: Session, email: str, otp_code: str) -> dict:
+        user = UserRepository.get_by_email(db, email)
+        if not user:
+            logger.warning(f"OTP verification failed: user not found - {email}")
+            return {"success": False, "error_code": "USER_NOT_FOUND"}
+
+        if user.is_verified:
+            logger.info(f"User already verified: {email}")
+            return {"success": False, "error_code": "ALREADY_VERIFIED"}
+
+        if verify_otp(user.id, otp_code, purpose="verification"):
+            user.is_verified = True
+            db.commit()
+            logger.info(f"User verified: {email}")
+            return {
+                "success": True,
+                "user": UserData.model_validate(user),
+                "message": "Email verified successfully",
+            }
+        else:
+            logger.warning(f"Invalid OTP for {email}")
+            return {"success": False, "error_code": "INVALID_OTP"}
+
+    @staticmethod
+    def resend_verification_otp(db: Session, email: str) -> dict:
+        user = UserRepository.get_by_email(db, email)
+        if not user:
+            logger.warning(f"Resend OTP failed: user not found - {email}")
+            return {"success": False, "error_code": "USER_NOT_FOUND"}
+
+        if user.is_verified:
+            logger.info(f"User already verified: {email}")
+            return {"success": False, "error_code": "ALREADY_VERIFIED"}
+
+        otp = generate_otp()
+        store_otp(user.id, otp, purpose="verification", ttl=60)
+        logger.info(f"OTP resent for {email}")
+
+        return {
+            "success": True,
+            "message": "Verification email sent",
+            "otp_sent": True,
+            "otp_code": otp,
+        }
 
     @staticmethod
     def create_team_member(

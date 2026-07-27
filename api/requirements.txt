@@ -13,3 +13,5 @@ pydantic
 pydantic-settings
 email-validator
 google-auth
+sib-api-v3-sdk
+jinja2

@@ -5,9 +5,12 @@ class RegisterRequest(BaseModel):
     full_name: str
     email: EmailStr
     password: str
+
+
+class BusinessRegisterRequest(BaseModel):
     business_name: str
-    pan: str
-    business_address: str = None
+    business_address: str
+    pan: str = None
     business_phone: str = None
     business_email: EmailStr = None
 
@@ -24,7 +27,7 @@ class UserData(BaseModel):
     full_name: str
     email: str
     is_owner: bool
-    tenant_id: str
+    tenant_id: str | None = None
 
 
 class TenantData(BaseModel):
@@ -47,12 +50,12 @@ class GoogleCallbackRequest(BaseModel):
 class GoogleCompleteRequest(BaseModel):
     email: EmailStr
     full_name: str
+    picture_url: str = None
     business_name: str
-    pan: str
-    business_address: str = None
+    business_address: str
+    pan: str = None
     business_phone: str = None
     business_email: EmailStr = None
-    picture_url: str = None
 
 
 class GoogleCallbackResponse(BaseModel):
@@ -68,3 +71,12 @@ class CreateTeamMemberRequest(BaseModel):
     email: EmailStr
     full_name: str
     role: str
+
+
+class VerifyOTPRequest(BaseModel):
+    email: EmailStr
+    otp_code: str
+
+
+class ResendOTPRequest(BaseModel):
+    email: EmailStr

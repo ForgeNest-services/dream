@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.deps import get_current_user, require_role
+from core.queue import job_queue
 from utils.helpers import success_response, error_response
 from features.auth.schemas import (
     RegisterRequest,
@@ -10,15 +11,20 @@ from features.auth.schemas import (
     GoogleCallbackRequest,
     GoogleCompleteRequest,
     CreateTeamMemberRequest,
+    VerifyOTPRequest,
+    ResendOTPRequest,
+    BusinessRegisterRequest,
 )
 from features.auth.service import AuthService
+from features.auth.repository import UserRepository
+from jobs.email_jobs import send_team_invitation_email, send_otp_verification_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register")
 def register(data: RegisterRequest, db: Session = Depends(get_db)):
-    result = AuthService.register_tenant(db, data)
+    result = AuthService.register(db, data)
 
     if not result["success"]:
         if result["error_code"] == "EMAIL_ALREADY_EXISTS":
@@ -33,14 +39,128 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
             500,
         )
 
+    if result.get("otp_sent"):
+        job_queue.enqueue(
+            send_otp_verification_email,
+            recipient_email=result["user"].email,
+            recipient_name=result["user"].full_name,
+            otp_code=result["otp_code"],
+            expiry_minutes=1,
+        )
+
+    return success_response(
+        data={
+            "user": result["user"].model_dump(),
+        },
+        message="Account created. Please verify your email with the OTP sent.",
+        status_code=201,
+    )
+
+
+@router.post("/business-register")
+def business_register(
+    data: BusinessRegisterRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not current_user:
+        return error_response(
+            "UNAUTHORIZED",
+            "Please login first",
+            401,
+        )
+
+    if current_user["type"] == "superadmin":
+        return error_response(
+            "INVALID_REQUEST",
+            "Superadmin cannot register business",
+            400,
+        )
+
+    user = current_user["user"]
+    result = AuthService.add_business_info(
+        db,
+        user.email,
+        data.business_name,
+        data.business_address,
+        data.pan,
+        data.business_phone,
+        data.business_email,
+    )
+
+    if not result["success"]:
+        if result["error_code"] == "USER_NOT_FOUND":
+            return error_response("USER_NOT_FOUND", "User not found", 404)
+        elif result["error_code"] == "EMAIL_NOT_VERIFIED":
+            return error_response("EMAIL_NOT_VERIFIED", "Please verify email first", 400)
+        elif result["error_code"] == "TENANT_EXISTS":
+            return error_response("TENANT_EXISTS", "Business already registered", 400)
+        return error_response(
+            "BUSINESS_REGISTRATION_FAILED",
+            "Failed to register business",
+            500,
+        )
+
     return success_response(
         data={
             "user": result["user"].model_dump(),
             "tenant": result["tenant"].model_dump(),
             "tokens": result["tokens"],
         },
-        message="Account created successfully",
+        message="Business registered successfully",
         status_code=201,
+    )
+
+
+@router.post("/verify-otp")
+def verify_otp(data: VerifyOTPRequest, db: Session = Depends(get_db)):
+    result = AuthService.verify_otp(db, data.email, data.otp_code)
+
+    if not result["success"]:
+        if result["error_code"] == "USER_NOT_FOUND":
+            return error_response("USER_NOT_FOUND", "User not found", 404)
+        elif result["error_code"] == "ALREADY_VERIFIED":
+            return error_response("ALREADY_VERIFIED", "Email already verified", 400)
+        elif result["error_code"] == "INVALID_OTP":
+            return error_response("INVALID_OTP", "Invalid or expired OTP", 401)
+        return error_response("VERIFICATION_FAILED", "Failed to verify email", 500)
+
+    user = UserRepository.get_by_email(db, data.email)
+    tokens = AuthService._issue_tokens_for_user(user)
+
+    return success_response(
+        data={
+            "user": result.get("user", UserData.model_validate(user)).model_dump(),
+            "tokens": tokens,
+        },
+        message="Email verified successfully. Proceed to register business details.",
+    )
+
+
+@router.post("/resend-verification-otp")
+def resend_verification_otp(data: ResendOTPRequest, db: Session = Depends(get_db)):
+    result = AuthService.resend_verification_otp(db, data.email)
+
+    if not result["success"]:
+        if result["error_code"] == "USER_NOT_FOUND":
+            return error_response("USER_NOT_FOUND", "User not found", 404)
+        elif result["error_code"] == "ALREADY_VERIFIED":
+            return error_response("ALREADY_VERIFIED", "Email already verified", 400)
+        return error_response("RESEND_FAILED", "Failed to resend OTP", 500)
+
+    if result.get("otp_sent"):
+        user = UserRepository.get_by_email(db, data.email)
+        job_queue.enqueue(
+            send_otp_verification_email,
+            recipient_email=user.email,
+            recipient_name=user.full_name,
+            otp_code=result["otp_code"],
+            expiry_minutes=1,
+        )
+
+    return success_response(
+        data={"message": result["message"]},
+        message="Verification email sent",
     )
 
 
@@ -233,8 +353,24 @@ def create_team_member(
             500,
         )
 
+    # Queue invitation email as background job
+    from features.auth.repository import TenantRepository
+
+    tenant = TenantRepository.get_by_id(db, user.tenant_id)
+    invitation_link = f"http://localhost:8000/invite?email={data.email}&token=TODO"
+
+    job_queue.enqueue(
+        send_team_invitation_email,
+        recipient_email=data.email,
+        recipient_name=data.full_name,
+        invited_by=user.full_name,
+        business_name=tenant.name,
+        role=data.role,
+        invitation_link=invitation_link,
+    )
+
     return success_response(
         data={"user": result["user"].model_dump()},
-        message="Team member created successfully",
+        message="Team member created successfully, invitation email sent",
         status_code=201,
     )
