@@ -4,6 +4,7 @@ from core.security import (
     verify_password,
     create_access_token,
     create_refresh_token,
+    verify_google_token,
 )
 from features.auth.repository import (
     TenantRepository,
@@ -43,6 +44,7 @@ class AuthService:
                 email=data.email,
                 password_hash=password_hash,
                 is_owner=True,
+                role="owner",
             )
             logger.info(f"Owner user created: {user.id}", extra={"email": data.email})
 
@@ -113,3 +115,71 @@ class AuthService:
             access_token=access_token,
             refresh_token=refresh_token,
         ).model_dump()
+
+    @staticmethod
+    def google_callback(db: Session, id_token_str: str) -> dict:
+        payload = verify_google_token(id_token_str)
+        if not payload:
+            logger.warning("Invalid Google token")
+            return {"success": False, "error_code": "INVALID_TOKEN"}
+
+        email = payload.get("email")
+        user = UserRepository.get_by_email(db, email)
+
+        if user and user.is_active:
+            tokens = AuthService._issue_tokens_for_user(user)
+            logger.info(f"Google login: {email}")
+            return {
+                "success": True,
+                "user_exists": True,
+                "user": UserData.model_validate(user),
+                "tokens": tokens,
+            }
+
+        logger.info(f"New Google user: {email}")
+        return {
+            "success": True,
+            "user_exists": False,
+            "email": email,
+            "name": payload.get("name"),
+            "picture": payload.get("picture"),
+        }
+
+    @staticmethod
+    def google_complete(
+        db: Session, email: str, full_name: str, business_name: str, picture_url: str = None
+    ) -> dict:
+        existing_user = UserRepository.get_by_email(db, email)
+        if existing_user:
+            logger.warning(f"Google signup failed: email already exists: {email}")
+            return {"success": False, "error_code": "EMAIL_ALREADY_EXISTS"}
+
+        try:
+            tenant = TenantRepository.create(db, business_name)
+            logger.info(f"Tenant created: {tenant.id}", extra={"business_name": business_name})
+
+            user = UserRepository.create(
+                db,
+                tenant_id=tenant.id,
+                full_name=full_name,
+                email=email,
+                password_hash=None,
+                is_owner=True,
+                picture_url=picture_url,
+                role="owner",
+            )
+            logger.info(f"Google user created: {user.id}", extra={"email": email})
+
+            tokens = AuthService._issue_tokens_for_user(user)
+
+            return {
+                "success": True,
+                "user": UserData.model_validate(user),
+                "tenant": TenantData.model_validate(tenant),
+                "tokens": tokens,
+            }
+
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Google signup failed: {str(e)}")
+            return {"success": False, "error_code": "SIGNUP_FAILED"}

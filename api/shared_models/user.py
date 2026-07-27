@@ -14,6 +14,8 @@ class User(Base):
     full_name = Column(String(255), nullable=False)
     email = Column(String(255), nullable=False, unique=True)
     password_hash = Column(String(255), nullable=True)
+    picture_url = Column(String(500), nullable=True)
+    role = Column(String(50), default="staff")
     is_owner = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)

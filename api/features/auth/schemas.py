@@ -34,3 +34,23 @@ class TokenData(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+
+
+class GoogleCallbackRequest(BaseModel):
+    id_token: str
+
+
+class GoogleCompleteRequest(BaseModel):
+    email: EmailStr
+    full_name: str
+    business_name: str
+    picture_url: str = None
+
+
+class GoogleCallbackResponse(BaseModel):
+    user_exists: bool
+    email: str
+    name: str = None
+    picture: str = None
+    user: UserData = None
+    tokens: TokenData = None

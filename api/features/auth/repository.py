@@ -25,6 +25,8 @@ class UserRepository:
         email: str,
         password_hash: str,
         is_owner: bool = False,
+        picture_url: str = None,
+        role: str = "staff",
     ) -> User:
         user = User(
             tenant_id=tenant_id,
@@ -32,6 +34,8 @@ class UserRepository:
             email=email,
             password_hash=password_hash,
             is_owner=is_owner,
+            picture_url=picture_url,
+            role=role,
             is_active=True,
         )
         db.add(user)

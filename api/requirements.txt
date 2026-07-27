@@ -12,3 +12,4 @@ python-multipart
 pydantic
 pydantic-settings
 email-validator
+google-auth
