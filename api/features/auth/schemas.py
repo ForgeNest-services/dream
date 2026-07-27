@@ -6,6 +6,10 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     business_name: str
+    pan: str
+    business_address: str = None
+    business_phone: str = None
+    business_email: EmailStr = None
 
 
 class LoginRequest(BaseModel):
@@ -44,6 +48,10 @@ class GoogleCompleteRequest(BaseModel):
     email: EmailStr
     full_name: str
     business_name: str
+    pan: str
+    business_address: str = None
+    business_phone: str = None
+    business_email: EmailStr = None
     picture_url: str = None
 
 
@@ -54,3 +62,9 @@ class GoogleCallbackResponse(BaseModel):
     picture: str = None
     user: UserData = None
     tokens: TokenData = None
+
+
+class CreateTeamMemberRequest(BaseModel):
+    email: EmailStr
+    full_name: str
+    role: str

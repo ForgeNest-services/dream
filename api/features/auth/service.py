@@ -6,6 +6,7 @@ from core.security import (
     create_refresh_token,
     verify_google_token,
 )
+from core.roles import UserRole
 from features.auth.repository import (
     TenantRepository,
     UserRepository,
@@ -30,7 +31,14 @@ class AuthService:
             return {"success": False, "error_code": "EMAIL_ALREADY_EXISTS"}
 
         try:
-            tenant = TenantRepository.create(db, data.business_name)
+            tenant = TenantRepository.create(
+                db,
+                name=data.business_name,
+                pan=data.pan,
+                business_address=data.business_address,
+                business_phone=data.business_phone,
+                business_email=data.business_email,
+            )
             logger.info(
                 f"Tenant created: {tenant.id}",
                 extra={"business_name": data.business_name},
@@ -44,7 +52,7 @@ class AuthService:
                 email=data.email,
                 password_hash=password_hash,
                 is_owner=True,
-                role="owner",
+                role=UserRole.OWNER,
             )
             logger.info(f"Owner user created: {user.id}", extra={"email": data.email})
 
@@ -147,7 +155,15 @@ class AuthService:
 
     @staticmethod
     def google_complete(
-        db: Session, email: str, full_name: str, business_name: str, picture_url: str = None
+        db: Session,
+        email: str,
+        full_name: str,
+        business_name: str,
+        pan: str,
+        picture_url: str = None,
+        business_address: str = None,
+        business_phone: str = None,
+        business_email: str = None,
     ) -> dict:
         existing_user = UserRepository.get_by_email(db, email)
         if existing_user:
@@ -155,7 +171,14 @@ class AuthService:
             return {"success": False, "error_code": "EMAIL_ALREADY_EXISTS"}
 
         try:
-            tenant = TenantRepository.create(db, business_name)
+            tenant = TenantRepository.create(
+                db,
+                name=business_name,
+                pan=pan,
+                business_address=business_address,
+                business_phone=business_phone,
+                business_email=business_email,
+            )
             logger.info(f"Tenant created: {tenant.id}", extra={"business_name": business_name})
 
             user = UserRepository.create(
@@ -166,7 +189,7 @@ class AuthService:
                 password_hash=None,
                 is_owner=True,
                 picture_url=picture_url,
-                role="owner",
+                role=UserRole.OWNER,
             )
             logger.info(f"Google user created: {user.id}", extra={"email": email})
 
@@ -183,3 +206,47 @@ class AuthService:
             db.rollback()
             logger.error(f"Google signup failed: {str(e)}")
             return {"success": False, "error_code": "SIGNUP_FAILED"}
+
+    @staticmethod
+    def create_team_member(
+        db: Session, tenant_id: str, caller_id: str, caller_role: str, email: str, full_name: str, role: str
+    ) -> dict:
+        existing_user = UserRepository.get_by_email(db, email)
+        if existing_user:
+            logger.warning(f"Team member creation failed: email already exists: {email}")
+            return {"success": False, "error_code": "EMAIL_ALREADY_EXISTS"}
+
+        allowed_roles = UserRole.get_roles_below(caller_role)
+
+        if role not in allowed_roles:
+            logger.warning(
+                f"Team member creation failed: {caller_role} cannot create {role}",
+                extra={"caller_role": caller_role, "requested_role": role},
+            )
+            return {"success": False, "error_code": "ROLE_NOT_ALLOWED"}
+
+        try:
+            user = UserRepository.create(
+                db,
+                tenant_id=tenant_id,
+                full_name=full_name,
+                email=email,
+                password_hash=None,
+                role=role,
+                is_owner=False,
+                owner_id=caller_id,
+            )
+            logger.info(
+                f"Team member created: {user.id}",
+                extra={"email": email, "role": role, "created_by": caller_id},
+            )
+
+            return {
+                "success": True,
+                "user": UserData.model_validate(user),
+            }
+
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Team member creation failed: {str(e)}")
+            return {"success": False, "error_code": "CREATION_FAILED"}

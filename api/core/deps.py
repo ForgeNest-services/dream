@@ -1,4 +1,4 @@
-from fastapi import Depends, Header
+from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.security import decode_token
@@ -26,7 +26,26 @@ def get_current_user(
 
     if payload.get("is_superadmin"):
         admin = PlatformAdminRepository.get_by_id(db, payload.get("admin_id"))
+        if not admin:
+            return None
         return {"type": "superadmin", "admin": admin}
 
     user = UserRepository.get_by_id(db, payload.get("user_id"))
     return {"type": "user", "user": user}
+
+
+def require_role(allowed_roles: list):
+    def check(current_user: dict = Depends(get_current_user)):
+        if not current_user:
+            raise HTTPException(401, "Unauthorized")
+
+        if current_user["type"] == "superadmin":
+            return current_user
+
+        user = current_user["user"]
+        if user.role not in allowed_roles:
+            raise HTTPException(403, "Insufficient permissions")
+
+        return current_user
+
+    return check

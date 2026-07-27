@@ -11,6 +11,10 @@ class Tenant(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False)
+    pan = Column(String(255), nullable=True)
+    business_address = Column(String(500), nullable=True)
+    business_phone = Column(String(20), nullable=True)
+    business_email = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")

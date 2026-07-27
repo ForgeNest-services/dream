@@ -4,8 +4,21 @@ from shared_models import Tenant, User, PlatformAdmin
 
 class TenantRepository:
     @staticmethod
-    def create(db: Session, name: str) -> Tenant:
-        tenant = Tenant(name=name)
+    def create(
+        db: Session,
+        name: str,
+        pan: str = None,
+        business_address: str = None,
+        business_phone: str = None,
+        business_email: str = None,
+    ) -> Tenant:
+        tenant = Tenant(
+            name=name,
+            pan=pan,
+            business_address=business_address,
+            business_phone=business_phone,
+            business_email=business_email,
+        )
         db.add(tenant)
         db.commit()
         db.refresh(tenant)
@@ -27,6 +40,7 @@ class UserRepository:
         is_owner: bool = False,
         picture_url: str = None,
         role: str = "staff",
+        owner_id: str = None,
     ) -> User:
         user = User(
             tenant_id=tenant_id,
@@ -36,6 +50,7 @@ class UserRepository:
             is_owner=is_owner,
             picture_url=picture_url,
             role=role,
+            owner_id=owner_id,
             is_active=True,
         )
         db.add(user)
