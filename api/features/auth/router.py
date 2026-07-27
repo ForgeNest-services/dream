@@ -224,25 +224,28 @@ def get_current_user_info(
     user = current_user["user"]
     from features.auth.repository import TenantRepository
 
-    tenant = TenantRepository.get_by_id(db, user.tenant_id)
-    return success_response(
-        data={
-            "id": user.id,
-            "email": user.email,
-            "full_name": user.full_name,
-            "role": user.role,
-            "picture_url": user.picture_url,
-            "tenant_id": user.tenant_id,
-            "tenant": {
+    response_data = {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "role": user.role,
+        "picture_url": user.picture_url,
+        "tenant_id": user.tenant_id,
+    }
+
+    if user.tenant_id:
+        tenant = TenantRepository.get_by_id(db, user.tenant_id)
+        if tenant:
+            response_data["tenant"] = {
                 "id": tenant.id,
                 "name": tenant.name,
                 "pan": tenant.pan,
                 "business_address": tenant.business_address,
                 "business_phone": tenant.business_phone,
                 "business_email": tenant.business_email,
-            },
-        },
-    )
+            }
+
+    return success_response(data=response_data)
 
 
 @router.post("/google/callback")
