@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { BusinessRegisterForm } from './forms/BusinessRegisterForm';
 import { Spinner } from '@/components/shared/Spinner';
+import { colors, spacing } from '@/lib/design-tokens';
 
 export function BusinessRegisterContent() {
   const router = useRouter();
@@ -24,7 +25,13 @@ export function BusinessRegisterContent() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div style={{
+        display: 'flex',
+        minHeight: '100vh',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.neutral[0],
+      }}>
         <Spinner size="lg" />
       </div>
     );
@@ -35,13 +42,36 @@ export function BusinessRegisterContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: colors.neutral[0],
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: spacing.lg,
+    }}>
+      <div style={{
+        width: '100%',
+        maxWidth: '400px',
+      }}>
+        <div style={{
+          textAlign: 'center',
+          marginBottom: spacing.xl,
+        }}>
+          <h1 style={{
+            fontSize: '36px',
+            fontWeight: '700',
+            color: colors.neutral[900],
+            marginBottom: spacing.sm,
+            fontFamily: 'var(--font-playfair)',
+          }}>
             Complete Your Registration
           </h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-2">
+          <p style={{
+            fontSize: '16px',
+            color: colors.neutral[600],
+            marginTop: spacing.sm,
+          }}>
             Add your business details
           </p>
         </div>

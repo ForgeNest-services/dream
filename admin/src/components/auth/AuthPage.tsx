@@ -7,12 +7,13 @@ import { LoginForm } from './forms/LoginForm';
 import { RegisterForm } from './forms/RegisterForm';
 import { OtpVerificationForm } from './forms/OtpVerificationForm';
 import { Spinner } from '@/components/shared/Spinner';
+import { colors, spacing } from '@/lib/design-tokens';
 
 type AuthStep = 'login' | 'register' | 'verify-otp';
 
 export function AuthPage() {
   const router = useRouter();
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const [step, setStep] = useState<AuthStep>('login');
   const [registrationEmail, setRegistrationEmail] = useState('');
 
@@ -24,7 +25,7 @@ export function AuthPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.neutral[0] }}>
         <Spinner size="lg" />
       </div>
     );
@@ -35,33 +36,65 @@ export function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-slate-900 dark:text-white">Dream</h1>
-          <p className="text-slate-600 dark:text-slate-400 mt-2">Admin Dashboard</p>
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: spacing.lg,
+      backgroundColor: colors.neutral[0],
+    }}>
+      <div style={{ width: '100%', maxWidth: '400px' }}>
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: spacing.xl }}>
+          <h1 style={{
+            fontSize: '36px',
+            fontWeight: '700',
+            color: colors.neutral[900],
+            marginBottom: spacing.sm,
+            fontFamily: 'var(--font-playfair)',
+          }}>
+            Dream
+          </h1>
+          <p style={{ fontSize: '16px', color: colors.neutral[500] }}>
+            Admin Dashboard
+          </p>
         </div>
 
         {/* Tabs */}
         {step !== 'verify-otp' && (
-          <div className="flex gap-2 mb-8">
+          <div style={{ display: 'flex', gap: spacing.sm, marginBottom: spacing.xl }}>
             <button
               onClick={() => setStep('login')}
-              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                step === 'login'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700'
-              }`}
+              style={{
+                flex: 1,
+                padding: `${spacing.md} ${spacing.lg}`,
+                borderRadius: '8px',
+                fontWeight: '600',
+                fontSize: '14px',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                backgroundColor: step === 'login' ? colors.primary[400] : colors.neutral[100],
+                color: step === 'login' ? colors.neutral[0] : colors.neutral[700],
+              }}
             >
-              Login
+              Sign In
             </button>
             <button
               onClick={() => setStep('register')}
-              className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-                step === 'register'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700'
-              }`}
+              style={{
+                flex: 1,
+                padding: `${spacing.md} ${spacing.lg}`,
+                borderRadius: '8px',
+                fontWeight: '600',
+                fontSize: '14px',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                backgroundColor: step === 'register' ? colors.primary[400] : colors.neutral[100],
+                color: step === 'register' ? colors.neutral[0] : colors.neutral[700],
+              }}
             >
               Sign Up
             </button>
@@ -84,7 +117,16 @@ export function AuthPage() {
           <div>
             <button
               onClick={() => setStep('register')}
-              className="mb-4 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              style={{
+                marginBottom: spacing.lg,
+                fontSize: '14px',
+                color: colors.primary[400],
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: '500',
+                padding: 0,
+              }}
             >
               ← Back
             </button>

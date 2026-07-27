@@ -1,16 +1,27 @@
 import { Sidebar } from '@/components/layout/Sidebar';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { ReactNode } from 'react';
+import { colors, spacing } from '@/lib/design-tokens';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <ProtectedRoute>
-      <div className="flex h-screen bg-slate-50 dark:bg-slate-950">
+      <div style={{
+        display: 'flex',
+        height: '100vh',
+        backgroundColor: colors.neutral[0],
+      }}>
         <Sidebar />
 
         {/* Main content */}
-        <main className="flex-1 overflow-auto lg:ml-64">
-          <div className="p-4 md:p-8">
+        <main style={{
+          flex: 1,
+          overflowY: 'auto',
+          marginLeft: '256px',
+        }}>
+          <div style={{
+            padding: `${spacing.md} ${spacing.lg}`,
+          }}>
             {children}
           </div>
         </main>

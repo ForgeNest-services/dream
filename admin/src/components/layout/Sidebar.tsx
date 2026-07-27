@@ -3,40 +3,33 @@
 import { useAuth } from '@/hooks/useAuth';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import {
-  LayoutDashboard,
-  Users,
-  Settings,
-  LogOut,
-  Menu,
-  X,
-  Shield,
-} from 'lucide-react';
 import { useState } from 'react';
+import { MdMenu, MdClose, MdDashboard, MdPeople, MdSettings, MdShield, MdLogout } from 'react-icons/md';
+import { colors, spacing } from '@/lib/design-tokens';
 
 const navigationItems = [
   {
     label: 'Dashboard',
     href: '/dashboard',
-    icon: LayoutDashboard,
+    icon: MdDashboard,
     roles: ['owner', 'manager', 'staff', 'accountant'],
   },
   {
     label: 'Team Members',
     href: '/dashboard/team',
-    icon: Users,
+    icon: MdPeople,
     roles: ['owner', 'manager'],
   },
   {
     label: 'Settings',
     href: '/dashboard/settings',
-    icon: Settings,
+    icon: MdSettings,
     roles: ['owner'],
   },
   {
     label: 'Admin Panel',
     href: '/admin',
-    icon: Shield,
+    icon: MdShield,
     roles: ['superadmin'],
   },
 ];
@@ -46,6 +39,7 @@ export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
 
   if (!user) return null;
 
@@ -68,30 +62,82 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Mobile toggle */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-slate-900 text-white"
-      >
-        {isOpen ? <X size={24} /> : <Menu size={24} />}
-      </button>
+      {/* Mobile toggle - only show on mobile */}
+      {typeof window !== 'undefined' && window.innerWidth < 1024 && (
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          style={{
+            position: 'fixed',
+            top: spacing.md,
+            left: spacing.md,
+            zIndex: 50,
+            padding: spacing.sm,
+            borderRadius: '8px',
+            backgroundColor: colors.neutral[900],
+            color: colors.neutral[0],
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '44px',
+            height: '44px',
+          }}
+        >
+          {isOpen ? <MdClose size={24} /> : <MdMenu size={24} />}
+        </button>
+      )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 h-screen w-64 bg-slate-900 text-white z-40 transition-transform duration-300 ${
-          isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        }`}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          height: '100vh',
+          width: '256px',
+          backgroundColor: colors.neutral[900],
+          color: colors.neutral[0],
+          zIndex: 40,
+          display: 'flex',
+          flexDirection: 'column',
+          transform: typeof window !== 'undefined' && window.innerWidth < 1024
+            ? (isOpen ? 'translateX(0)' : 'translateX(-100%)')
+            : 'translateX(0)',
+          transition: 'transform 0.3s ease',
+        }}
       >
         {/* Logo/Brand */}
-        <div className="p-6 border-b border-slate-700">
-          <h1 className="text-2xl font-bold">Dream</h1>
-          <p className="text-sm text-slate-400 mt-1">
+        <div style={{
+          padding: spacing.lg,
+          borderBottom: `1px solid ${colors.neutral[700]}`,
+        }}>
+          <h1 style={{
+            fontSize: '24px',
+            fontWeight: '700',
+            color: colors.neutral[0],
+            fontFamily: 'var(--font-playfair)',
+          }}>
+            Dream
+          </h1>
+          <p style={{
+            fontSize: '13px',
+            color: colors.neutral[400],
+            marginTop: spacing.xs,
+          }}>
             {isSuperAdmin ? 'Superadmin' : user.email || 'User'}
           </p>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-6 space-y-2">
+        <nav style={{
+          flex: 1,
+          padding: spacing.lg,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: spacing.xs,
+          overflowY: 'auto',
+        }}>
           {visibleItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname.startsWith(item.href);
@@ -101,11 +147,33 @@ export function Sidebar() {
                 key={item.href}
                 href={item.href}
                 onClick={() => setIsOpen(false)}
-                className={`flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
-                  isActive
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-300 hover:bg-slate-800'
-                }`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: spacing.md,
+                  paddingLeft: spacing.md,
+                  paddingRight: spacing.md,
+                  paddingTop: spacing.sm,
+                  paddingBottom: spacing.sm,
+                  borderRadius: '8px',
+                  backgroundColor: isActive ? colors.primary[400] : 'transparent',
+                  color: isActive ? colors.neutral[0] : colors.neutral[300],
+                  textDecoration: 'none',
+                  transition: 'all 0.2s',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.backgroundColor = colors.neutral[800];
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }
+                }}
               >
                 <Icon size={20} />
                 <span>{item.label}</span>
@@ -115,21 +183,55 @@ export function Sidebar() {
         </nav>
 
         {/* Logout */}
-        <div className="p-6 border-t border-slate-700">
+        <div style={{
+          padding: spacing.lg,
+          borderTop: `1px solid ${colors.neutral[700]}`,
+        }}>
           <button
             onClick={handleLogout}
-            className="flex items-center gap-3 px-4 py-2 rounded-lg w-full text-slate-300 hover:bg-slate-800 transition-colors"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: spacing.md,
+              paddingLeft: spacing.md,
+              paddingRight: spacing.md,
+              paddingTop: spacing.sm,
+              paddingBottom: spacing.sm,
+              borderRadius: '8px',
+              width: '100%',
+              backgroundColor: 'transparent',
+              color: colors.neutral[300],
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = colors.neutral[800];
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
           >
-            <LogOut size={20} />
+            <MdLogout size={20} />
             <span>Logout</span>
           </button>
         </div>
       </aside>
 
-      {/* Mobile overlay */}
-      {isOpen && (
+      {/* Mobile overlay - only show on mobile when open */}
+      {isOpen && typeof window !== 'undefined' && window.innerWidth < 1024 && (
         <div
-          className="fixed inset-0 bg-black/50 z-30 lg:hidden"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            zIndex: 30,
+          }}
           onClick={() => setIsOpen(false)}
         />
       )}

@@ -3,8 +3,10 @@
 import { useForm } from 'react-hook-form';
 import { useBusinessRegister } from '@/hooks/useBusinessRegister';
 import { BusinessRegisterRequest } from '@/types/api';
-import { Spinner } from '@/components/shared/Spinner';
-import { Building2, MapPin, AlertCircle, Mail, Phone } from 'lucide-react';
+import { FormInput } from '@/components/ui/FormInput';
+import { Button } from '@/components/ui/Button';
+import { MdOutlineBusiness, MdOutlineLocationOn, MdOutlineDescription, MdOutlineEmail, MdOutlinePhone, MdOutlineErrorOutline } from 'react-icons/md';
+import { colors, spacing } from '@/lib/design-tokens';
 
 export function BusinessRegisterForm() {
   const { register, handleSubmit, formState: { errors } } = useForm<BusinessRegisterRequest>();
@@ -15,128 +17,92 @@ export function BusinessRegisterForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      {/* Business Name */}
-      <div>
-        <label htmlFor="business_name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-          Business Name <span className="text-red-500">*</span>
-        </label>
-        <div className="relative">
-          <Building2 className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-          <input
-            {...register('business_name', { required: 'Business name is required' })}
-            type="text"
-            id="business_name"
-            className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            placeholder="Your Business Name"
-            disabled={isLoading}
-          />
-        </div>
-        {errors.business_name && (
-          <p className="text-red-500 text-sm mt-1">{errors.business_name.message}</p>
-        )}
-      </div>
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <FormInput
+        {...register('business_name', { required: 'Business name is required' })}
+        type="text"
+        placeholder="Your Business Name"
+        label="Business Name"
+        error={errors.business_name?.message}
+        icon={<MdOutlineBusiness size={20} />}
+        disabled={isLoading}
+      />
 
-      {/* Business Address */}
-      <div>
-        <label htmlFor="business_address" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-          Business Address <span className="text-red-500">*</span>
-        </label>
-        <div className="relative">
-          <MapPin className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-          <input
-            {...register('business_address', { required: 'Business address is required' })}
-            type="text"
-            id="business_address"
-            className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            placeholder="123 Business Street"
-            disabled={isLoading}
-          />
-        </div>
-        {errors.business_address && (
-          <p className="text-red-500 text-sm mt-1">{errors.business_address.message}</p>
-        )}
-      </div>
+      <FormInput
+        {...register('business_address', { required: 'Business address is required' })}
+        type="text"
+        placeholder="123 Business Street"
+        label="Business Address"
+        error={errors.business_address?.message}
+        icon={<MdOutlineLocationOn size={20} />}
+        disabled={isLoading}
+      />
 
-      {/* PAN */}
-      <div>
-        <label htmlFor="pan" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-          PAN (Tax ID)
-        </label>
-        <input
-          {...register('pan')}
-          type="text"
-          id="pan"
-          className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-          placeholder="12345ABCDE"
-          disabled={isLoading}
-        />
-      </div>
+      <FormInput
+        {...register('pan')}
+        type="text"
+        placeholder="12345ABCDE"
+        label="PAN (Tax ID)"
+        error={errors.pan?.message}
+        icon={<MdOutlineDescription size={20} />}
+        disabled={isLoading}
+      />
 
-      {/* Business Email */}
-      <div>
-        <label htmlFor="business_email" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-          Business Email
-        </label>
-        <div className="relative">
-          <Mail className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-          <input
-            {...register('business_email', {
-              pattern: {
-                value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                message: 'Invalid email address',
-              },
-            })}
-            type="email"
-            id="business_email"
-            className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            placeholder="business@example.com"
-            disabled={isLoading}
-          />
-        </div>
-        {errors.business_email && (
-          <p className="text-red-500 text-sm mt-1">{errors.business_email.message}</p>
-        )}
-      </div>
+      <FormInput
+        {...register('business_email', {
+          pattern: {
+            value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+            message: 'Invalid email address',
+          },
+        })}
+        type="email"
+        placeholder="business@example.com"
+        label="Business Email"
+        error={errors.business_email?.message}
+        icon={<MdOutlineEmail size={20} />}
+        disabled={isLoading}
+      />
 
-      {/* Business Phone */}
-      <div>
-        <label htmlFor="business_phone" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-          Business Phone
-        </label>
-        <div className="relative">
-          <Phone className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-          <input
-            {...register('business_phone')}
-            type="tel"
-            id="business_phone"
-            className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            placeholder="+1 (555) 000-0000"
-            disabled={isLoading}
-          />
-        </div>
-      </div>
+      <FormInput
+        {...register('business_phone')}
+        type="tel"
+        placeholder="+1 (555) 000-0000"
+        label="Business Phone"
+        error={errors.business_phone?.message}
+        icon={<MdOutlinePhone size={20} />}
+        disabled={isLoading}
+      />
 
       {/* API Error */}
       {error && (
-        <div className="flex gap-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+        <div
+          style={{
+            padding: spacing.md,
+            backgroundColor: `${colors.status.error}15`,
+            border: `1px solid ${colors.status.error}30`,
+            borderRadius: '8px',
+            marginBottom: spacing.lg,
+            display: 'flex',
+            gap: spacing.md,
+          }}
+        >
+          <div style={{ color: colors.status.error, flexShrink: 0 }}>
+            <MdOutlineErrorOutline size={20} />
+          </div>
           <div>
-            <p className="text-sm font-medium text-red-900 dark:text-red-200">Registration Failed</p>
-            <p className="text-sm text-red-800 dark:text-red-300">{error.message}</p>
+            <p style={{ fontWeight: '600', color: colors.status.error, fontSize: '14px' }}>
+              Registration Failed
+            </p>
+            <p style={{ color: colors.status.error, fontSize: '13px', opacity: 0.8 }}>
+              {error.message}
+            </p>
           </div>
         </div>
       )}
 
-      {/* Submit Button */}
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-      >
-        {isLoading && <Spinner size="sm" />}
+      <Button type="submit" isLoading={isLoading} size="lg">
         {isLoading ? 'Registering...' : 'Complete Registration'}
-      </button>
+      </Button>
     </form>
   );
 }

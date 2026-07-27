@@ -1,137 +1,125 @@
 'use client';
 
-import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useRegister } from '@/hooks/useRegister';
 import { RegisterRequest } from '@/types/api';
-import { Spinner } from '@/components/shared/Spinner';
-import { User, Mail, Lock, AlertCircle } from 'lucide-react';
+import { FormInput } from '@/components/ui/FormInput';
+import { Button } from '@/components/ui/Button';
+import { MdOutlinePerson, MdOutlineEmail, MdOutlineLock, MdOutlineCheckCircleOutline, MdOutlineErrorOutline } from 'react-icons/md';
+import { colors, spacing } from '@/lib/design-tokens';
 
 interface RegisterFormProps {
   onSuccess?: (email: string) => void;
 }
 
 export function RegisterForm({ onSuccess }: RegisterFormProps) {
-  const { register, handleSubmit, formState: { errors }, watch } = useForm<RegisterRequest>();
+  const { register, handleSubmit, formState: { errors }, watch } = useForm<RegisterRequest & { confirmPassword: string }>();
   const { register: submitRegister, isLoading, error } = useRegister();
-  const [showPassword, setShowPassword] = useState(false);
-  const email = watch('email');
+  const password = watch('password');
 
-  const onSubmit = async (data: RegisterRequest) => {
-    const success = await submitRegister(data);
+  const onSubmit = async (data: RegisterRequest & { confirmPassword: string }) => {
+    if (data.password !== data.confirmPassword) {
+      return;
+    }
+    const success = await submitRegister(data as RegisterRequest);
     if (success && onSuccess) {
       onSuccess(data.email);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      {/* Full Name */}
-      <div>
-        <label htmlFor="full_name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-          Full Name <span className="text-red-500">*</span>
-        </label>
-        <div className="relative">
-          <User className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-          <input
-            {...register('full_name', { required: 'Full name is required' })}
-            type="text"
-            id="full_name"
-            className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            placeholder="John Doe"
-            disabled={isLoading}
-          />
-        </div>
-        {errors.full_name && (
-          <p className="text-red-500 text-sm mt-1">{errors.full_name.message}</p>
-        )}
-      </div>
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <FormInput
+        {...register('full_name', { required: 'Full name is required' })}
+        type="text"
+        placeholder="Full Name"
+        label="Full Name"
+        error={errors.full_name?.message}
+        icon={<MdOutlinePerson size={20} />}
+        disabled={isLoading}
+      />
 
-      {/* Email */}
-      <div>
-        <label htmlFor="email" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-          Email <span className="text-red-500">*</span>
-        </label>
-        <div className="relative">
-          <Mail className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-          <input
-            {...register('email', {
-              required: 'Email is required',
-              pattern: {
-                value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                message: 'Invalid email address',
-              },
-            })}
-            type="email"
-            id="email"
-            className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            placeholder="you@example.com"
-            disabled={isLoading}
-          />
-        </div>
-        {errors.email && (
-          <p className="text-red-500 text-sm mt-1">{errors.email.message}</p>
-        )}
-      </div>
+      <FormInput
+        {...register('email', {
+          required: 'Email is required',
+          pattern: {
+            value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+            message: 'Invalid email address',
+          },
+        })}
+        type="email"
+        placeholder="Email"
+        label="Email"
+        error={errors.email?.message}
+        icon={<MdOutlineEmail size={20} />}
+        disabled={isLoading}
+      />
 
-      {/* Password */}
-      <div>
-        <label htmlFor="password" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-          Password <span className="text-red-500">*</span>
-        </label>
-        <div className="relative">
-          <Lock className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-          <input
-            {...register('password', {
-              required: 'Password is required',
-              minLength: {
-                value: 8,
-                message: 'Password must be at least 8 characters',
-              },
-            })}
-            type={showPassword ? 'text' : 'password'}
-            id="password"
-            className="w-full pl-10 pr-10 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            placeholder="••••••••"
-            disabled={isLoading}
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-            disabled={isLoading}
-          >
-            {showPassword ? '👁️' : '👁️‍🗨️'}
-          </button>
-        </div>
-        {errors.password && (
-          <p className="text-red-500 text-sm mt-1">{errors.password.message}</p>
-        )}
-      </div>
+      <FormInput
+        {...register('password', {
+          required: 'Password is required',
+          minLength: {
+            value: 8,
+            message: 'Password must be at least 8 characters',
+          },
+        })}
+        type="password"
+        placeholder="Password"
+        label="Password"
+        error={errors.password?.message}
+        icon={<MdOutlineLock size={20} />}
+        showPasswordToggle
+        disabled={isLoading}
+      />
+
+      <FormInput
+        {...register('confirmPassword', {
+          required: 'Please confirm your password',
+          validate: (value) => value === password || 'Passwords do not match',
+        })}
+        type="password"
+        placeholder="Confirm Password"
+        label="Confirm Password"
+        error={errors.confirmPassword?.message}
+        icon={<MdOutlineCheckCircleOutline size={20} />}
+        showPasswordToggle
+        disabled={isLoading}
+      />
 
       {/* API Error */}
       {error && (
-        <div className="flex gap-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+        <div
+          style={{
+            padding: spacing.md,
+            backgroundColor: `${colors.status.error}15`,
+            border: `1px solid ${colors.status.error}30`,
+            borderRadius: '8px',
+            marginBottom: spacing.lg,
+            display: 'flex',
+            gap: spacing.md,
+          }}
+        >
+          <div style={{ color: colors.status.error, flexShrink: 0 }}>
+            <MdOutlineErrorOutline size={20} />
+          </div>
           <div>
-            <p className="text-sm font-medium text-red-900 dark:text-red-200">Registration Failed</p>
-            <p className="text-sm text-red-800 dark:text-red-300">{error.message}</p>
+            <p style={{ fontWeight: '600', color: colors.status.error, fontSize: '14px' }}>
+              Registration Failed
+            </p>
+            <p style={{ color: colors.status.error, fontSize: '13px', opacity: 0.8 }}>
+              {error.message}
+            </p>
           </div>
         </div>
       )}
 
       {/* Submit Button */}
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-      >
-        {isLoading && <Spinner size="sm" />}
+      <Button type="submit" isLoading={isLoading} size="lg">
         {isLoading ? 'Creating Account...' : 'Create Account'}
-      </button>
+      </Button>
 
-      <p className="text-center text-xs text-slate-500 dark:text-slate-400">
-        We'll send an OTP to your email to verify your account
+      <p style={{ textAlign: 'center', fontSize: '13px', color: colors.neutral[500], marginTop: spacing.lg }}>
+        We'll send a verification code to your email
       </p>
     </form>
   );

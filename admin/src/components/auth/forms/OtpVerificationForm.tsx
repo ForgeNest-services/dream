@@ -3,8 +3,10 @@
 import { useForm } from 'react-hook-form';
 import { useVerifyOtp } from '@/hooks/useVerifyOtp';
 import { VerifyOTPRequest } from '@/types/api';
-import { Spinner } from '@/components/shared/Spinner';
-import { Mail, Lock, AlertCircle } from 'lucide-react';
+import { FormInput } from '@/components/ui/FormInput';
+import { Button } from '@/components/ui/Button';
+import { MdOutlineEmail, MdOutlineLock, MdOutlineErrorOutline } from 'react-icons/md';
+import { colors, spacing } from '@/lib/design-tokens';
 
 interface OtpVerificationFormProps {
   email: string;
@@ -21,34 +23,50 @@ export function OtpVerificationForm({ email }: OtpVerificationFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)}>
       {/* Email (Read-only) */}
-      <div>
-        <label htmlFor="email" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+      <div style={{ marginBottom: spacing.xl }}>
+        <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: colors.neutral[700], marginBottom: spacing.sm }}>
           Email
         </label>
-        <div className="relative">
-          <Mail className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+        <div style={{ position: 'relative' }}>
+          <div style={{ position: 'absolute', left: spacing.md, top: '12px', color: colors.neutral[400], display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <MdOutlineEmail size={20} />
+          </div>
           <input
             type="email"
-            id="email"
             value={email}
             disabled
-            className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 cursor-not-allowed"
+            style={{
+              width: '100%',
+              paddingLeft: '44px',
+              paddingRight: spacing.md,
+              paddingTop: spacing.md,
+              paddingBottom: spacing.md,
+              border: `1px solid ${colors.neutral[200]}`,
+              borderRadius: '8px',
+              backgroundColor: colors.neutral[100],
+              color: colors.neutral[600],
+              cursor: 'not-allowed',
+              fontFamily: 'inherit',
+              fontSize: '14px',
+            }}
           />
         </div>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+        <p style={{ fontSize: '12px', color: colors.neutral[500], marginTop: spacing.xs }}>
           OTP sent to this email
         </p>
       </div>
 
       {/* OTP Code */}
-      <div>
-        <label htmlFor="otp_code" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-          Verification Code <span className="text-red-500">*</span>
+      <div style={{ marginBottom: spacing.xl }}>
+        <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: colors.neutral[700], marginBottom: spacing.sm }}>
+          Verification Code <span style={{ color: colors.status.error }}>*</span>
         </label>
-        <div className="relative">
-          <Lock className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+        <div style={{ position: 'relative' }}>
+          <div style={{ position: 'absolute', left: spacing.md, top: '12px', color: colors.neutral[400], display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <MdOutlineLock size={20} />
+          </div>
           <input
             {...register('otp_code', {
               required: 'Verification code is required',
@@ -58,42 +76,84 @@ export function OtpVerificationForm({ email }: OtpVerificationFormProps) {
               },
             })}
             type="text"
-            id="otp_code"
             maxLength={6}
             inputMode="numeric"
-            className="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-center text-2xl tracking-widest font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            placeholder="000000"
             disabled={isLoading}
+            style={{
+              width: '100%',
+              paddingLeft: '44px',
+              paddingRight: spacing.md,
+              paddingTop: spacing.md,
+              paddingBottom: spacing.md,
+              border: `1px solid ${errors.otp_code ? colors.status.error : colors.neutral[200]}`,
+              borderRadius: '8px',
+              backgroundColor: colors.neutral[0],
+              color: colors.neutral[900],
+              fontSize: '20px',
+              fontWeight: '600',
+              letterSpacing: '4px',
+              textAlign: 'center',
+              fontFamily: 'monospace',
+              fontFeatureSettings: 'none',
+              transition: 'all 0.2s',
+              cursor: isLoading ? 'not-allowed' : 'text',
+              opacity: isLoading ? 0.6 : 1,
+              boxShadow: errors.otp_code ? `0 0 0 3px ${colors.status.error}20` : 'none',
+              outline: 'none',
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = colors.primary[400];
+              e.currentTarget.style.boxShadow = `0 0 0 3px ${colors.primary[400]}20`;
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = errors.otp_code ? colors.status.error : colors.neutral[200];
+              e.currentTarget.style.boxShadow = errors.otp_code ? `0 0 0 3px ${colors.status.error}20` : 'none';
+            }}
+            placeholder="000000"
           />
         </div>
         {errors.otp_code && (
-          <p className="text-red-500 text-sm mt-1">{errors.otp_code.message}</p>
+          <div style={{ display: 'flex', gap: spacing.sm, marginTop: spacing.md }}>
+            <MdOutlineErrorOutline size={16} style={{ color: colors.status.error, flexShrink: 0, marginTop: '2px' }} />
+            <p style={{ fontSize: '13px', color: colors.status.error }}>{errors.otp_code.message}</p>
+          </div>
         )}
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+        <p style={{ fontSize: '12px', color: colors.neutral[500], marginTop: spacing.xs }}>
           Enter the 6-digit code sent to your email
         </p>
       </div>
 
       {/* API Error */}
       {error && (
-        <div className="flex gap-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-          <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+        <div
+          style={{
+            padding: spacing.md,
+            backgroundColor: `${colors.status.error}15`,
+            border: `1px solid ${colors.status.error}30`,
+            borderRadius: '8px',
+            marginBottom: spacing.lg,
+            display: 'flex',
+            gap: spacing.md,
+          }}
+        >
+          <div style={{ color: colors.status.error, flexShrink: 0 }}>
+            <MdOutlineErrorOutline size={20} />
+          </div>
           <div>
-            <p className="text-sm font-medium text-red-900 dark:text-red-200">Verification Failed</p>
-            <p className="text-sm text-red-800 dark:text-red-300">{error.message}</p>
+            <p style={{ fontWeight: '600', color: colors.status.error, fontSize: '14px' }}>
+              Verification Failed
+            </p>
+            <p style={{ color: colors.status.error, fontSize: '13px', opacity: 0.8 }}>
+              {error.message}
+            </p>
           </div>
         </div>
       )}
 
       {/* Submit Button */}
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-      >
-        {isLoading && <Spinner size="sm" />}
+      <Button type="submit" isLoading={isLoading} size="lg">
         {isLoading ? 'Verifying...' : 'Verify & Continue'}
-      </button>
+      </Button>
     </form>
   );
 }
