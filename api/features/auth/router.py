@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from core.database import get_db
+from core.deps import get_current_user
 from utils.helpers import success_response, error_response
-from features.auth.schemas import RegisterRequest, LoginRequest
+from features.auth.schemas import RegisterRequest, LoginRequest, UserData
 from features.auth.service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -63,4 +64,29 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
             "tokens": result["tokens"],
         },
         message="Login successful",
+    )
+
+
+@router.get("/me")
+def get_current_user_info(current_user: dict = Depends(get_current_user)):
+    if not current_user:
+        return error_response(
+            "UNAUTHORIZED",
+            "Invalid or missing authentication token",
+            401,
+        )
+
+    if current_user["type"] == "superadmin":
+        admin = current_user["admin"]
+        return success_response(
+            data={
+                "id": admin.id,
+                "email": admin.email,
+                "is_superadmin": True,
+            },
+        )
+
+    user = current_user["user"]
+    return success_response(
+        data=UserData.model_validate(user).model_dump(),
     )

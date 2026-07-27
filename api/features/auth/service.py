@@ -50,8 +50,8 @@ class AuthService:
 
             return {
                 "success": True,
-                "user": UserData.from_orm(user),
-                "tenant": TenantData.from_orm(tenant),
+                "user": UserData.model_validate(user),
+                "tenant": TenantData.model_validate(tenant),
                 "tokens": tokens,
             }
 
@@ -81,7 +81,7 @@ class AuthService:
                 logger.info(f"User login: {user.email}")
                 return {
                     "success": True,
-                    "user": UserData.from_orm(user),
+                    "user": UserData.model_validate(user),
                     "tokens": tokens,
                 }
 
