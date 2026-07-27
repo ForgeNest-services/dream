@@ -22,7 +22,6 @@ def get_db():
 
 @event.listens_for(engine, "connect")
 def set_rls_tenant_id(dbapi_conn, _connection_record):
-    """Set app.current_tenant_id for PostgreSQL RLS"""
     if "postgresql" in settings.DATABASE_URL:
         cursor = dbapi_conn.cursor()
         cursor.execute("SET app.current_tenant_id = ''")

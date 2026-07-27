@@ -8,12 +8,13 @@ from utils.logger import logger
 from core.database import Base, engine
 from core.seed import seed_superadmin
 import shared_models
+from features.auth import router as auth_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
-    logger.info("✓ Database tables initialized")
+    logger.info("Database tables initialized")
 
     seed_superadmin()
 
@@ -38,6 +39,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
 
 
 @app.exception_handler(StarletteHTTPException)
