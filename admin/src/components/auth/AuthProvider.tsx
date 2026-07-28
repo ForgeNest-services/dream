@@ -1,6 +1,7 @@
 'use client';
 
 import { ReactNode, useEffect, useState } from 'react';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { useAuthStore } from '@/store/auth-store';
 import { Spinner } from '@/components/shared/Spinner';
 import { logger } from '@/lib/logger';
@@ -29,6 +30,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     initAuth();
   }, [hydrate]);
 
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
   if (!isHydrated) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
@@ -37,5 +40,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <GoogleOAuthProvider clientId={googleClientId || ''}>
+      {children}
+    </GoogleOAuthProvider>
+  );
 }

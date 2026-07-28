@@ -7,7 +7,7 @@ WORKDIR /app
 
 COPY .pnpmrc package.json pnpm-lock.yaml* ./
 
-RUN pnpm install --frozen-lockfile || true 
+RUN pnpm install --no-frozen-lockfile || true 
 
 FROM base AS builder
 WORKDIR /app

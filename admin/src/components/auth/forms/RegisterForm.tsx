@@ -1,12 +1,16 @@
 'use client';
 
 import { useForm } from 'react-hook-form';
+import { GoogleLogin } from '@react-oauth/google';
 import { useRegister } from '@/hooks/useRegister';
 import { RegisterRequest } from '@/types/api';
 import { FormInput } from '@/components/ui/FormInput';
 import { Button } from '@/components/ui/Button';
 import { MdOutlinePerson, MdOutlineEmail, MdOutlineLock, MdOutlineCheckCircleOutline, MdOutlineErrorOutline } from 'react-icons/md';
 import { colors, spacing } from '@/lib/design-tokens';
+import { authApi } from '@/services/auth-api';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
 interface RegisterFormProps {
   onSuccess?: (email: string) => void;
@@ -16,6 +20,8 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   const { register, handleSubmit, formState: { errors }, watch } = useForm<RegisterRequest & { confirmPassword: string }>();
   const { register: submitRegister, isLoading, error } = useRegister();
   const password = watch('password');
+  const router = useRouter();
+  const [googleError, setGoogleError] = useState<string | null>(null);
 
   const onSubmit = async (data: RegisterRequest & { confirmPassword: string }) => {
     if (data.password !== data.confirmPassword) {
@@ -25,6 +31,38 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
     if (success && onSuccess) {
       onSuccess(data.email);
     }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse: any) => {
+    try {
+      setGoogleError(null);
+      const idToken = credentialResponse.credential;
+      const response = await authApi.googleCallback({ id_token: idToken });
+
+      if (!response.data) {
+        throw new Error('Invalid response from server');
+      }
+
+      if (response.data.user_exists) {
+        // User already exists, redirect to login
+        router.push('/');
+      } else {
+        // New user, save details and redirect to business registration
+        localStorage.setItem('googleRegistration', JSON.stringify({
+          email: response.data.email,
+          name: response.data.name,
+          picture: response.data.picture,
+          id_token: idToken,
+        }));
+        router.push('/business-register');
+      }
+    } catch (err: any) {
+      setGoogleError(err.message || 'Google login failed');
+    }
+  };
+
+  const handleGoogleError = () => {
+    setGoogleError('Google login failed. Please try again.');
   };
 
   return (
@@ -121,6 +159,51 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       <p style={{ textAlign: 'center', fontSize: '13px', color: colors.neutral[500], marginTop: spacing.lg }}>
         We'll send a verification code to your email
       </p>
+
+      {/* Google Login Divider */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: spacing.md,
+        marginTop: spacing.xl,
+        marginBottom: spacing.xl,
+      }}>
+        <div style={{ flex: 1, height: '1px', backgroundColor: colors.neutral[200] }} />
+        <span style={{ color: colors.neutral[500], fontSize: '13px' }}>Or continue with</span>
+        <div style={{ flex: 1, height: '1px', backgroundColor: colors.neutral[200] }} />
+      </div>
+
+      {/* Google Error */}
+      {googleError && (
+        <div
+          style={{
+            padding: spacing.md,
+            backgroundColor: `${colors.status.error}15`,
+            border: `1px solid ${colors.status.error}30`,
+            borderRadius: '8px',
+            marginBottom: spacing.lg,
+            display: 'flex',
+            gap: spacing.md,
+          }}
+        >
+          <div style={{ color: colors.status.error, flexShrink: 0 }}>
+            <MdOutlineErrorOutline size={20} />
+          </div>
+          <p style={{ color: colors.status.error, fontSize: '13px' }}>
+            {googleError}
+          </p>
+        </div>
+      )}
+
+      {/* Google Login Button */}
+      <div style={{ display: 'flex', justifyContent: 'center' }}>
+        <GoogleLogin
+          onSuccess={handleGoogleSuccess}
+          onError={handleGoogleError}
+          theme="outline"
+          size="large"
+        />
+      </div>
     </form>
   );
 }
