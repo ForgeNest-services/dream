@@ -39,100 +39,166 @@ export function AuthPage() {
     <div style={{
       minHeight: '100vh',
       display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: spacing.lg,
       backgroundColor: colors.neutral[0],
     }}>
-      <div style={{ width: '100%', maxWidth: '400px' }}>
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: spacing.xl }}>
+      {/* Left Side - Branding */}
+      <div style={{
+        flex: 1,
+        background: `linear-gradient(135deg, ${colors.primary[800]} 0%, ${colors.primary[600]} 100%)`,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: spacing.xl,
+        color: colors.neutral[0],
+        minHeight: '100vh',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        {/* Abstract Background Elements */}
+        <div style={{
+          position: 'absolute',
+          width: '400px',
+          height: '400px',
+          borderRadius: '50%',
+          background: 'rgba(255, 255, 255, 0.05)',
+          top: '-100px',
+          left: '-100px',
+        }} />
+        <div style={{
+          position: 'absolute',
+          width: '300px',
+          height: '300px',
+          borderRadius: '50%',
+          background: 'rgba(255, 255, 255, 0.03)',
+          bottom: '-50px',
+          right: '-50px',
+        }} />
+        <div style={{
+          position: 'absolute',
+          width: '200px',
+          height: '200px',
+          borderRadius: '50%',
+          background: 'rgba(255, 255, 255, 0.07)',
+          top: '50%',
+          right: '10%',
+        }} />
+
+        <div style={{ textAlign: 'center', maxWidth: '300px', position: 'relative', zIndex: 1 }}>
           <h1 style={{
-            fontSize: '36px',
+            fontSize: '40px',
             fontWeight: '700',
-            color: colors.neutral[900],
-            marginBottom: spacing.sm,
+            marginBottom: spacing.md,
             fontFamily: 'var(--font-playfair)',
           }}>
-            Dream
+            Welcome
           </h1>
-          <p style={{ fontSize: '16px', color: colors.neutral[500] }}>
-            Admin Dashboard
+          <p style={{
+            fontSize: '16px',
+            opacity: 0.85,
+            lineHeight: '1.6',
+          }}>
+            Streamline your workflow and manage everything with ease
           </p>
         </div>
+      </div>
 
-        {/* Tabs */}
-        {step !== 'verify-otp' && (
-          <div style={{ display: 'flex', gap: spacing.sm, marginBottom: spacing.xl }}>
-            <button
-              onClick={() => setStep('login')}
-              style={{
-                flex: 1,
-                padding: `${spacing.md} ${spacing.lg}`,
-                borderRadius: '8px',
+      {/* Right Side - Form */}
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: spacing.xl,
+      }}>
+        <div style={{ width: '100%', maxWidth: '400px' }}>
+          {/* Form Header */}
+          {step !== 'verify-otp' && (
+            <div style={{ marginBottom: spacing.xl }}>
+              <h2 style={{
+                fontSize: '24px',
                 fontWeight: '600',
-                fontSize: '14px',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                backgroundColor: step === 'login' ? colors.primary[400] : colors.neutral[100],
-                color: step === 'login' ? colors.neutral[0] : colors.neutral[700],
-              }}
-            >
-              Sign In
-            </button>
-            <button
-              onClick={() => setStep('register')}
-              style={{
-                flex: 1,
-                padding: `${spacing.md} ${spacing.lg}`,
-                borderRadius: '8px',
-                fontWeight: '600',
-                fontSize: '14px',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                backgroundColor: step === 'register' ? colors.primary[400] : colors.neutral[100],
-                color: step === 'register' ? colors.neutral[0] : colors.neutral[700],
-              }}
-            >
-              Sign Up
-            </button>
-          </div>
-        )}
+                color: colors.neutral[900],
+                marginBottom: spacing.md,
+              }}>
+                {step === 'login' ? 'Welcome Back!' : 'Create Account'}
+              </h2>
+            </div>
+          )}
 
-        {/* Forms */}
-        {step === 'login' && <LoginForm />}
+          {/* Tabs */}
+          {step !== 'verify-otp' && (
+            <div style={{ display: 'flex', gap: spacing.sm, marginBottom: spacing.xl }}>
+              <button
+                onClick={() => setStep('login')}
+                style={{
+                  flex: 1,
+                  padding: `${spacing.sm} ${spacing.md}`,
+                  borderRadius: '24px',
+                  fontWeight: '600',
+                  fontSize: '13px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  backgroundColor: step === 'login' ? colors.primary[400] : colors.neutral[100],
+                  color: step === 'login' ? colors.neutral[0] : colors.neutral[700],
+                }}
+              >
+                Sign In
+              </button>
+              <button
+                onClick={() => setStep('register')}
+                style={{
+                  flex: 1,
+                  padding: `${spacing.sm} ${spacing.md}`,
+                  borderRadius: '24px',
+                  fontWeight: '600',
+                  fontSize: '13px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  backgroundColor: step === 'register' ? colors.primary[400] : colors.neutral[100],
+                  color: step === 'register' ? colors.neutral[0] : colors.neutral[700],
+                }}
+              >
+                Sign Up
+              </button>
+            </div>
+          )}
 
-        {step === 'register' && (
-          <RegisterForm
-            onSuccess={(email) => {
-              setRegistrationEmail(email);
-              setStep('verify-otp');
-            }}
-          />
-        )}
+          {/* Forms */}
+          {step === 'login' && <LoginForm />}
 
-        {step === 'verify-otp' && (
-          <div>
-            <button
-              onClick={() => setStep('register')}
-              style={{
-                marginBottom: spacing.lg,
-                fontSize: '14px',
-                color: colors.primary[400],
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                fontWeight: '500',
-                padding: 0,
+          {step === 'register' && (
+            <RegisterForm
+              onSuccess={(email) => {
+                setRegistrationEmail(email);
+                setStep('verify-otp');
               }}
-            >
-              ← Back
-            </button>
-            <OtpVerificationForm email={registrationEmail} />
-          </div>
-        )}
+            />
+          )}
+
+          {step === 'verify-otp' && (
+            <div>
+              <button
+                onClick={() => setStep('register')}
+                style={{
+                  marginBottom: spacing.lg,
+                  fontSize: '14px',
+                  color: colors.primary[600],
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                  padding: 0,
+                }}
+              >
+                ← Back
+              </button>
+              <OtpVerificationForm email={registrationEmail} />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

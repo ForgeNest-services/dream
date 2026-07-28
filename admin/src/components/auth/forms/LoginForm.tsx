@@ -161,7 +161,7 @@ export function LoginForm() {
       )}
 
       {/* Google Login Button */}
-      <div style={{ display: 'flex', justifyContent: 'center' }}>
+      <div style={{ width: '100%' }}>
         <GoogleLogin
           onSuccess={handleGoogleSuccess}
           onError={handleGoogleError}

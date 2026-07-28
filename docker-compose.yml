@@ -79,6 +79,10 @@ services:
     build:
       context: ./admin
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+        NEXT_PUBLIC_ENVIRO: ${NEXT_PUBLIC_ENVIRO}
     container_name: admin
     env_file:
       - .env

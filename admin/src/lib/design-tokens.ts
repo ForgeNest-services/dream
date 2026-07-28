@@ -1,14 +1,16 @@
-// Apple-style Design Tokens
+// Modern Blue Design Tokens
 export const colors = {
-  // Primary - Light Green
+  // Primary - Blue
   primary: {
-    50: '#f0fdf4',
-    100: '#dcfce7',
-    200: '#bbf7d0',
-    300: '#86efac',
-    400: '#4ade80', // Main green
-    500: '#22c55e',
-    600: '#16a34a',
+    50: '#eff6ff',
+    100: '#dbeafe',
+    200: '#bfdbfe',
+    300: '#93c5fd',
+    400: '#3b82f6', // Main blue
+    500: '#2563eb',
+    600: '#1d4ed8',
+    700: '#1e40af',
+    800: '#1e3a8a',
   },
 
   // Neutrals - Clean whites and grays

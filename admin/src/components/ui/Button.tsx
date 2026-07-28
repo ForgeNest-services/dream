@@ -36,7 +36,7 @@ const variantStyles = {
 const sizeStyles = {
   sm: { padding: `${spacing.sm} ${spacing.lg}`, fontSize: '14px' },
   md: { padding: `${spacing.md} ${spacing.xl}`, fontSize: '16px' },
-  lg: { padding: `${spacing.lg} ${spacing.xl}`, fontSize: '18px' },
+  lg: { padding: `${spacing.md} ${spacing.xl}`, fontSize: '16px' },
 };
 
 export function Button({
@@ -62,7 +62,7 @@ export function Button({
         backgroundColor: style.background,
         color: style.color,
         border: style.border,
-        borderRadius: radius.md,
+        borderRadius: '24px',
         cursor: disabled || isLoading ? 'not-allowed' : 'pointer',
         transition: 'all 0.2s',
         display: 'flex',
