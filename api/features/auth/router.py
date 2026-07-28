@@ -311,10 +311,9 @@ def google_complete(data: GoogleCompleteRequest, db: Session = Depends(get_db)):
     return success_response(
         data={
             "user": result["user"].model_dump(),
-            "tenant": result["tenant"].model_dump(),
             "tokens": result["tokens"],
         },
-        message="Account created successfully",
+        message="Account created successfully. Please complete business registration.",
         status_code=201,
     )
 

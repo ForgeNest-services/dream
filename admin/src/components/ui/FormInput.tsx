@@ -68,7 +68,7 @@ export function FormInput({
             paddingLeft: icon ? '44px' : spacing.lg,
             paddingRight: showPasswordToggle && isPassword ? '44px' : spacing.lg,
             border: `1px solid ${error ? colors.status.error : colors.neutral[200]}`,
-            borderRadius: radius.md,
+            borderRadius: '24px',
             backgroundColor: disabled ? colors.neutral[100] : colors.neutral[0],
             fontSize: '16px',
             fontFamily: 'inherit',
@@ -78,10 +78,10 @@ export function FormInput({
             boxShadow: error ? `0 0 0 3px ${colors.status.error}20` : undefined,
           }}
           onFocus={(e) => {
-            e.currentTarget.style.borderColor = error ? colors.status.error : colors.primary[400];
+            e.currentTarget.style.borderColor = error ? colors.status.error : colors.primary[800];
             e.currentTarget.style.boxShadow = error
               ? `0 0 0 3px ${colors.status.error}20`
-              : `0 0 0 3px ${colors.primary[400]}20`;
+              : `0 0 0 3px ${colors.primary[800]}20`;
           }}
           onBlur={(e) => {
             e.currentTarget.style.borderColor = error ? colors.status.error : colors.neutral[200];

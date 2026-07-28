@@ -14,10 +14,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles = {
   primary: {
-    background: colors.primary[400],
+    background: colors.primary[800],
     color: colors.neutral[0],
-    hover: colors.primary[500],
-    border: `1px solid ${colors.primary[400]}`,
+    hover: colors.primary[700],
+    border: `1px solid ${colors.primary[800]}`,
   },
   secondary: {
     background: colors.neutral[100],

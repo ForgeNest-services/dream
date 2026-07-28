@@ -110,6 +110,7 @@ export function AuthPage() {
         alignItems: 'center',
         justifyContent: 'center',
         padding: spacing.xl,
+        backgroundColor: colors.primary[50],
       }}>
         <div style={{ width: '100%', maxWidth: '400px' }}>
           {/* Form Header */}
@@ -133,14 +134,14 @@ export function AuthPage() {
                 onClick={() => setStep('login')}
                 style={{
                   flex: 1,
-                  padding: `${spacing.sm} ${spacing.md}`,
+                  padding: `${spacing.md} ${spacing.xl}`,
                   borderRadius: '24px',
                   fontWeight: '600',
-                  fontSize: '13px',
+                  fontSize: '14px',
                   border: 'none',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
-                  backgroundColor: step === 'login' ? colors.primary[400] : colors.neutral[100],
+                  backgroundColor: step === 'login' ? colors.primary[800] : colors.neutral[100],
                   color: step === 'login' ? colors.neutral[0] : colors.neutral[700],
                 }}
               >
@@ -150,14 +151,14 @@ export function AuthPage() {
                 onClick={() => setStep('register')}
                 style={{
                   flex: 1,
-                  padding: `${spacing.sm} ${spacing.md}`,
+                  padding: `${spacing.md} ${spacing.xl}`,
                   borderRadius: '24px',
                   fontWeight: '600',
-                  fontSize: '13px',
+                  fontSize: '14px',
                   border: 'none',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
-                  backgroundColor: step === 'register' ? colors.primary[400] : colors.neutral[100],
+                  backgroundColor: step === 'register' ? colors.primary[800] : colors.neutral[100],
                   color: step === 'register' ? colors.neutral[0] : colors.neutral[700],
                 }}
               >
@@ -185,7 +186,7 @@ export function AuthPage() {
                 style={{
                   marginBottom: spacing.lg,
                   fontSize: '14px',
-                  color: colors.primary[600],
+                  color: colors.primary[800],
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',

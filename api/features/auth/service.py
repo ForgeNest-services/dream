@@ -223,19 +223,9 @@ class AuthService:
             return {"success": False, "error_code": "EMAIL_ALREADY_EXISTS"}
 
         try:
-            tenant = TenantRepository.create(
-                db,
-                name=business_name,
-                pan=pan,
-                business_address=business_address,
-                business_phone=business_phone,
-                business_email=business_email,
-            )
-            logger.info(f"Tenant created: {tenant.id}", extra={"business_name": business_name})
-
             user = UserRepository.create(
                 db,
-                tenant_id=tenant.id,
+                tenant_id=None,
                 full_name=full_name,
                 email=email,
                 password_hash=None,
@@ -252,7 +242,6 @@ class AuthService:
             return {
                 "success": True,
                 "user": UserData.model_validate(user),
-                "tenant": TenantData.model_validate(tenant),
                 "tokens": tokens,
             }
 

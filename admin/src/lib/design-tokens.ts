@@ -1,16 +1,16 @@
-// Modern Blue Design Tokens
+// Modern Dark Blue Design Tokens
 export const colors = {
-  // Primary - Blue
+  // Primary - Dark Navy Blue (#0A2947)
   primary: {
-    50: '#eff6ff',
-    100: '#dbeafe',
-    200: '#bfdbfe',
-    300: '#93c5fd',
-    400: '#3b82f6', // Main blue
-    500: '#2563eb',
-    600: '#1d4ed8',
-    700: '#1e40af',
-    800: '#1e3a8a',
+    50: '#E8EDF2',
+    100: '#D7E1F2',
+    200: '#B3CBEA',
+    300: '#8FAADB',
+    400: '#4A7CB3',
+    500: '#2D5A94',
+    600: '#1B4B7C',
+    700: '#0D3252',
+    800: '#0A2947',
   },
 
   // Neutrals - Clean whites and grays
@@ -33,7 +33,7 @@ export const colors = {
     error: '#ef4444',
     warning: '#f59e0b',
     success: '#10b981',
-    info: '#3b82f6',
+    info: '#0A2947',
   },
 };
 

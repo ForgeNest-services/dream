@@ -40,8 +40,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     );
   }
 
+  if (!googleClientId) {
+    logger.warn('Google Client ID not configured in environment');
+  }
+
   return (
-    <GoogleOAuthProvider clientId={googleClientId || ''}>
+    <GoogleOAuthProvider clientId={googleClientId || 'placeholder'}>
       {children}
     </GoogleOAuthProvider>
   );
