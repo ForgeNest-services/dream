@@ -133,21 +133,28 @@ class AuthService:
                 }
 
         user = UserRepository.get_by_email(db, data.email)
-        if user and user.is_active:
-            if not user.is_verified:
-                logger.warning(f"Login attempt with unverified email: {data.email}")
-                return {"success": False, "error_code": "EMAIL_NOT_VERIFIED"}
+        if not user:
+            logger.warning(f"Login failed: user not found for {data.email}")
+            return {"success": False, "error_code": "USER_NOT_FOUND"}
 
-            if verify_password(data.password, user.password_hash):
-                tokens = AuthService._issue_tokens_for_user(user)
-                logger.info(f"User login: {user.email}")
-                return {
-                    "success": True,
-                    "user": UserData.model_validate(user),
-                    "tokens": tokens,
-                }
+        if not user.is_active:
+            logger.warning(f"Login failed: inactive user {data.email}")
+            return {"success": False, "error_code": "ACCOUNT_INACTIVE"}
 
-        logger.warning(f"Login failed: invalid credentials for {data.email}")
+        if not user.is_verified:
+            logger.warning(f"Login attempt with unverified email: {data.email}")
+            return {"success": False, "error_code": "EMAIL_NOT_VERIFIED"}
+
+        if user.password_hash and verify_password(data.password, user.password_hash):
+            tokens = AuthService._issue_tokens_for_user(user)
+            logger.info(f"User login: {user.email}")
+            return {
+                "success": True,
+                "user": UserData.model_validate(user),
+                "tokens": tokens,
+            }
+
+        logger.warning(f"Login failed: invalid password for {data.email}")
         return {"success": False, "error_code": "INVALID_CREDENTIALS"}
 
     @staticmethod
@@ -210,8 +217,8 @@ class AuthService:
         db: Session,
         email: str,
         full_name: str,
-        business_name: str,
-        pan: str,
+        business_name: str = None,
+        pan: str = None,
         picture_url: str = None,
         business_address: str = None,
         business_phone: str = None,
@@ -223,9 +230,19 @@ class AuthService:
             return {"success": False, "error_code": "EMAIL_ALREADY_EXISTS"}
 
         try:
+            tenant = TenantRepository.create(
+                db,
+                name=business_name or f"{full_name}'s Business",
+                pan=pan,
+                business_address=business_address or "Not set",
+                business_phone=business_phone,
+                business_email=business_email,
+            )
+            logger.info(f"Tenant auto-created for Google user: {tenant.id}", extra={"email": email})
+
             user = UserRepository.create(
                 db,
-                tenant_id=None,
+                tenant_id=tenant.id,
                 full_name=full_name,
                 email=email,
                 password_hash=None,
@@ -242,6 +259,7 @@ class AuthService:
             return {
                 "success": True,
                 "user": UserData.model_validate(user),
+                "tenant": TenantData.model_validate(tenant),
                 "tokens": tokens,
             }
 

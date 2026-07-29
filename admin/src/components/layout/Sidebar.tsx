@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { MdMenu, MdClose, MdDashboard, MdPeople, MdSettings, MdShield, MdLogout } from 'react-icons/md';
 import { colors, spacing } from '@/lib/design-tokens';
+import { Avatar } from '@/components/ui/Avatar';
 
 const navigationItems = [
   {
@@ -120,13 +121,42 @@ export function Sidebar() {
           }}>
             Dream
           </h1>
-          <p style={{
-            fontSize: '13px',
-            color: colors.neutral[400],
-            marginTop: spacing.xs,
-          }}>
-            {isSuperAdmin ? 'Superadmin' : user.email || 'User'}
-          </p>
+        </div>
+
+        {/* User Profile */}
+        <div style={{
+          padding: spacing.lg,
+          borderBottom: `1px solid ${colors.neutral[700]}`,
+          display: 'flex',
+          alignItems: 'center',
+          gap: spacing.md,
+        }}>
+          <Avatar
+            src={'picture_url' in user ? user.picture_url : null}
+            name={'full_name' in user ? user.full_name : null}
+            email={user.email}
+            size={44}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{
+              fontSize: '14px',
+              fontWeight: '600',
+              color: colors.neutral[0],
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {'full_name' in user && user.full_name ? user.full_name : user.email}
+            </p>
+            <p style={{
+              fontSize: '12px',
+              color: colors.neutral[400],
+              textTransform: 'capitalize',
+              marginTop: '2px',
+            }}>
+              {isSuperAdmin ? 'Superadmin' : userRole || 'User'}
+            </p>
+          </div>
         </div>
 
         {/* Navigation */}

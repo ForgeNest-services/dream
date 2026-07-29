@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Playfair_Display } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 
@@ -29,6 +30,7 @@ export default function RootLayout({
         className={playfair.variable}
       >
         <AuthProvider>{children}</AuthProvider>
+        <Toaster position="top-right" richColors closeButton />
       </body>
     </html>
   );

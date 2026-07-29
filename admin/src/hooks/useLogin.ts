@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { useAuth } from './useAuth';
 import { authApi } from '@/services/auth-api';
 import { LoginRequest, LoginResponse, SuperadminLoginResponse } from '@/types/api';
@@ -17,22 +18,9 @@ export function useLogin() {
       setError(null);
 
       const response = await authApi.login(data);
-
-      if (!response.success) {
-        const errorMsg = response.error?.message || 'Login failed';
-        setError({
-          code: response.error?.code || 'LOGIN_FAILED',
-          message: errorMsg,
-          statusCode: 400,
-        });
-        setAuthError(errorMsg);
-        return false;
-      }
-
       const responseData = response.data as LoginResponse | SuperadminLoginResponse;
 
       if ('is_superadmin' in responseData) {
-        // Superadmin login
         const adminResponse = responseData as SuperadminLoginResponse;
         setTokens(adminResponse.tokens);
         setUser({
@@ -40,27 +28,37 @@ export function useLogin() {
           is_active: true,
         } as PlatformAdmin, 'superadmin');
       } else {
-        // Regular user login
         const userResponse = responseData as LoginResponse;
         setTokens(userResponse.tokens);
         setUser(userResponse.user, 'user');
 
         if (!userResponse.user.tenant_id) {
+          toast.success('Welcome! Please complete your business registration.');
           router.push('/business-register');
           return true;
         }
       }
 
+      toast.success('Signed in successfully');
       router.push('/dashboard');
       return true;
     } catch (err) {
-      const apiError = err instanceof Error ? (err as unknown as ApiError) : {
-        code: 'UNKNOWN_ERROR',
-        message: 'An unexpected error occurred',
-        statusCode: 500,
-      };
-      setError(apiError);
-      setAuthError(apiError.message);
+      const apiError = err as ApiError;
+      const code = apiError?.code || 'LOGIN_FAILED';
+      const message = apiError?.message || 'Login failed';
+
+      if (code === 'USER_NOT_FOUND') {
+        toast.error('No account found with this email. Please register first.');
+      } else if (code === 'EMAIL_NOT_VERIFIED') {
+        toast.warning('Please verify your email before logging in.');
+      } else if (code === 'INVALID_CREDENTIALS') {
+        toast.error('Incorrect password. Please try again.');
+      } else {
+        toast.error(message);
+      }
+
+      setError({ code, message, statusCode: apiError?.statusCode || 400 });
+      setAuthError(message);
       return false;
     } finally {
       setIsLoading(false);

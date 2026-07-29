@@ -35,8 +35,8 @@ export interface GoogleCallbackRequest {
 export interface GoogleCompleteRequest {
   email: string;
   full_name: string;
-  business_name: string;
-  business_address: string;
+  business_name?: string;
+  business_address?: string;
   pan?: string | null;
   picture_url?: string | null;
   business_phone?: string | null;

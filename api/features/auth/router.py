@@ -169,9 +169,28 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     result = AuthService.login(db, data)
 
     if not result["success"]:
+        error_code = result.get("error_code", "INVALID_CREDENTIALS")
+        if error_code == "USER_NOT_FOUND":
+            return error_response(
+                "USER_NOT_FOUND",
+                "No account found with this email. Please register first.",
+                404,
+            )
+        if error_code == "EMAIL_NOT_VERIFIED":
+            return error_response(
+                "EMAIL_NOT_VERIFIED",
+                "Please verify your email before logging in.",
+                403,
+            )
+        if error_code == "ACCOUNT_INACTIVE":
+            return error_response(
+                "ACCOUNT_INACTIVE",
+                "Your account is inactive. Please contact support.",
+                403,
+            )
         return error_response(
             "INVALID_CREDENTIALS",
-            "Invalid email or password",
+            "Incorrect password. Please try again.",
             401,
         )
 
@@ -311,9 +330,10 @@ def google_complete(data: GoogleCompleteRequest, db: Session = Depends(get_db)):
     return success_response(
         data={
             "user": result["user"].model_dump(),
+            "tenant": result["tenant"].model_dump(),
             "tokens": result["tokens"],
         },
-        message="Account created successfully. Please complete business registration.",
+        message="Account created successfully",
         status_code=201,
     )
 

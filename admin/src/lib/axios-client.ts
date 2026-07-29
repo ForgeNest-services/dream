@@ -45,13 +45,18 @@ axiosClient.interceptors.request.use(
   }
 );
 
+// Auth endpoints where 401 is expected (wrong credentials, etc.) and shouldn't trigger token refresh
+const AUTH_ENDPOINTS = ['/auth/login', '/auth/register', '/auth/google/callback', '/auth/google/complete', '/auth/verify-otp', '/auth/refresh'];
+
 // Response interceptor
 axiosClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as any;
+    const requestUrl = originalRequest?.url || '';
+    const isAuthEndpoint = AUTH_ENDPOINTS.some((endpoint) => requestUrl.includes(endpoint));
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });

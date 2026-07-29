@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { useAuth } from './useAuth';
 import { authApi } from '@/services/auth-api';
 import { RegisterRequest, RegisterResponse } from '@/types/api';
@@ -15,33 +16,27 @@ export function useRegister() {
       setError(null);
 
       const response = await authApi.register(data);
-
-      if (!response.success) {
-        const errorMsg = response.error?.message || 'Registration failed';
-        setError({
-          code: response.error?.code || 'REGISTRATION_FAILED',
-          message: errorMsg,
-          statusCode: 400,
-        });
-        setAuthError(errorMsg);
-        return false;
-      }
-
       const responseData = response.data as RegisterResponse;
       if (!responseData?.user) {
         throw new Error('Invalid response from server');
       }
       setUser(responseData.user, 'user');
 
+      toast.success('Account created! Check your email for the verification code.');
       return true;
     } catch (err) {
-      const apiError = err instanceof Error ? (err as unknown as ApiError) : {
-        code: 'UNKNOWN_ERROR',
-        message: 'An unexpected error occurred',
-        statusCode: 500,
-      };
-      setError(apiError);
-      setAuthError(apiError.message);
+      const apiError = err as ApiError;
+      const code = apiError?.code || 'REGISTRATION_FAILED';
+      const message = apiError?.message || 'Registration failed';
+
+      if (code === 'EMAIL_ALREADY_EXISTS') {
+        toast.error('This email is already registered. Please sign in instead.');
+      } else {
+        toast.error(message);
+      }
+
+      setError({ code, message, statusCode: apiError?.statusCode || 400 });
+      setAuthError(message);
       return false;
     } finally {
       setIsLoading(false);

@@ -28,6 +28,8 @@ class UserData(BaseModel):
     email: str
     is_owner: bool
     tenant_id: str | None = None
+    role: str | None = None
+    picture_url: str | None = None
 
 
 class TenantData(BaseModel):
@@ -51,8 +53,8 @@ class GoogleCompleteRequest(BaseModel):
     email: EmailStr
     full_name: str
     picture_url: str = None
-    business_name: str
-    business_address: str
+    business_name: str = None
+    business_address: str = None
     pan: str = None
     business_phone: str = None
     business_email: EmailStr = None
