@@ -1,8 +1,22 @@
 from core.database import SessionLocal
 from core.configs import settings
 from core.security import hash_password
-from shared_models import PlatformAdmin
+from shared_models import PlatformAdmin, Module
 from utils.logger import logger
+
+
+MODULE_CATALOG = [
+    {
+        "code": "hotel_pms",
+        "name": "Hotel PMS",
+        "description": "Property management for hotels: bookings, rooms, folios, invoices.",
+        "is_core": True,
+        "scope": "tenant",
+        "default_trial_days": 30,
+        "monthly_price": 2999,
+        "yearly_price": 11999,
+    },
+]
 
 
 def seed_superadmin():
@@ -36,6 +50,29 @@ def seed_superadmin():
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to seed superadmin: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
+def seed_modules():
+    db = SessionLocal()
+    try:
+        for entry in MODULE_CATALOG:
+            existing = db.query(Module).filter(Module.code == entry["code"]).first()
+            if existing:
+                logger.info(f"Module exists: {entry['code']}")
+                continue
+
+            module = Module(**entry)
+            db.add(module)
+            db.commit()
+            db.refresh(module)
+            logger.info(f"Module created: {entry['code']}")
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to seed modules: {type(e).__name__}: {str(e)}")
         raise
     finally:
         db.close()

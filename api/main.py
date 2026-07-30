@@ -7,7 +7,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from utils.helpers import success_response, error_response, format_validation_errors
 from utils.logger import logger
 from core.database import Base, engine
-from core.seed import seed_superadmin
+from core.seed import seed_superadmin, seed_modules
 import shared_models
 from features.auth import router as auth_router
 
@@ -28,6 +28,14 @@ async def lifespan(app: FastAPI):
         logger.info("Superadmin seeding completed")
     except Exception as e:
         logger.error(f"Failed to seed superadmin: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Seeding modules...")
+        seed_modules()
+        logger.info("Module seeding completed")
+    except Exception as e:
+        logger.error(f"Failed to seed modules: {type(e).__name__}: {str(e)}")
         raise
 
     yield
