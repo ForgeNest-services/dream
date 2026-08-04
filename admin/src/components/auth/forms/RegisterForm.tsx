@@ -23,6 +23,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   const password = watch('password');
   const setUser = useAuthStore((state) => state.setUser);
   const setTokens = useAuthStore((state) => state.setTokens);
+  const setTenant = useAuthStore((state) => state.setTenant);
   const router = useRouter();
 
   const onSubmit = async (data: RegisterRequest & { confirmPassword: string }) => {
@@ -49,6 +50,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
           setTokens(response.data.tokens);
         }
         setUser(response.data.user, 'user');
+        setTenant(response.data.tenant ?? null);
         toast.success('Signed in successfully');
         router.push('/dashboard');
       } else {
@@ -66,6 +68,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
         if (completeResponse.data?.tokens) {
           setTokens(completeResponse.data.tokens);
           setUser(completeResponse.data.user, 'user');
+          setTenant(null);
           toast.success('Almost done — set up your business.');
           router.push('/dashboard');
         }

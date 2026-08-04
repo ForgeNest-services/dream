@@ -62,6 +62,7 @@ export interface ApiResponse<T = unknown> {
 
 export interface LoginResponse {
   user: User;
+  tenant?: Tenant | null;
   tokens: TokenData;
 }
 
@@ -92,6 +93,7 @@ export interface GoogleCallbackResponse {
   name?: string | null;
   picture?: string | null;
   user?: User;
+  tenant?: Tenant | null;
   tokens?: TokenData;
 }
 

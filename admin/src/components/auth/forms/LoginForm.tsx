@@ -18,6 +18,7 @@ export function LoginForm() {
   const { login, isLoading } = useLogin();
   const setUser = useAuthStore((state) => state.setUser);
   const setTokens = useAuthStore((state) => state.setTokens);
+  const setTenant = useAuthStore((state) => state.setTenant);
   const router = useRouter();
 
   const onSubmit = async (data: LoginRequest) => {
@@ -38,6 +39,7 @@ export function LoginForm() {
           setTokens(response.data.tokens);
         }
         setUser(response.data.user, 'user');
+        setTenant(response.data.tenant ?? null);
         toast.success('Signed in successfully');
         router.push('/dashboard');
       } else {
@@ -55,6 +57,7 @@ export function LoginForm() {
         if (completeResponse.data?.tokens) {
           setTokens(completeResponse.data.tokens);
           setUser(completeResponse.data.user, 'user');
+          setTenant(null);
           toast.success('Almost done — set up your business.');
           router.push('/dashboard');
         }

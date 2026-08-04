@@ -208,6 +208,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     return success_response(
         data={
             "user": result["user"].model_dump(),
+            "tenant": result["tenant"].model_dump() if result.get("tenant") else None,
             "tokens": result["tokens"],
         },
         message="Login successful",
@@ -285,6 +286,7 @@ def google_callback(data: GoogleCallbackRequest, db: Session = Depends(get_db)):
                 "user_exists": True,
                 "email": result["user"].email,
                 "user": result["user"].model_dump(),
+                "tenant": result["tenant"].model_dump() if result.get("tenant") else None,
                 "tokens": result["tokens"],
             },
             message="Login successful",

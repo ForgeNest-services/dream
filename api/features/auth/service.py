@@ -165,9 +165,17 @@ class AuthService:
         if user.password_hash and verify_password(data.password, user.password_hash):
             tokens = AuthService._issue_tokens_for_user(user)
             logger.info(f"User login: {user.email}")
+
+            tenant_data = None
+            if user.tenant_id:
+                tenant = TenantRepository.get_by_id(db, user.tenant_id)
+                if tenant:
+                    tenant_data = TenantData.model_validate(tenant)
+
             return {
                 "success": True,
                 "user": UserData.model_validate(user),
+                "tenant": tenant_data,
                 "tokens": tokens,
             }
 
@@ -222,10 +230,18 @@ class AuthService:
 
             tokens = AuthService._issue_tokens_for_user(user)
             logger.info(f"Google login: {email}")
+
+            tenant_data = None
+            if user.tenant_id:
+                tenant = TenantRepository.get_by_id(db, user.tenant_id)
+                if tenant:
+                    tenant_data = TenantData.model_validate(tenant)
+
             return {
                 "success": True,
                 "user_exists": True,
                 "user": UserData.model_validate(user),
+                "tenant": tenant_data,
                 "tokens": tokens,
             }
 
