@@ -1,5 +1,5 @@
-import { BusinessRegisterContent } from '@/components/auth/BusinessRegisterContent';
+import { redirect } from 'next/navigation';
 
 export default function BusinessRegisterPage() {
-  return <BusinessRegisterContent />;
+  redirect('/dashboard');
 }

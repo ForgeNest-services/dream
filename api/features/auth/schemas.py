@@ -53,11 +53,6 @@ class GoogleCompleteRequest(BaseModel):
     email: EmailStr
     full_name: str
     picture_url: str = None
-    business_name: str = None
-    business_address: str = None
-    pan: str = None
-    business_phone: str = None
-    business_email: EmailStr = None
 
 
 class GoogleCallbackResponse(BaseModel):

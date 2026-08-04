@@ -22,31 +22,48 @@ from features.auth.schemas import (
 from utils.logger import logger
 from utils.otp import generate_otp, store_otp, verify_otp
 
+OTP_TTL_SECONDS = 300
+
 
 class AuthService:
     @staticmethod
     def register(db: Session, data: RegisterRequest) -> dict:
         existing_user = UserRepository.get_by_email(db, data.email)
-        if existing_user:
-            logger.warning(f"Registration failed: email already exists: {data.email}")
+
+        # Verified accounts are truly taken — someone proved they own this email.
+        if existing_user and existing_user.is_verified:
+            logger.warning(f"Registration blocked: email already verified: {data.email}")
             return {"success": False, "error_code": "EMAIL_ALREADY_EXISTS"}
 
         try:
             password_hash = hash_password(data.password)
 
-            user = UserRepository.create(
-                db,
-                tenant_id=None,
-                full_name=data.full_name,
-                email=data.email,
-                password_hash=password_hash,
-                is_owner=True,
-                role=UserRole.OWNER,
-            )
-            logger.info(f"User created (unverified): {user.id}", extra={"email": data.email})
+            if existing_user:
+                # Unverified account exists — treat this as restarting verification.
+                # Overwrite the password and name so whoever actually owns the email wins.
+                existing_user.password_hash = password_hash
+                existing_user.full_name = data.full_name
+                db.commit()
+                db.refresh(existing_user)
+                user = existing_user
+                logger.info(
+                    f"Restarting verification for unverified account: {user.id}",
+                    extra={"email": data.email},
+                )
+            else:
+                user = UserRepository.create(
+                    db,
+                    tenant_id=None,
+                    full_name=data.full_name,
+                    email=data.email,
+                    password_hash=password_hash,
+                    is_owner=True,
+                    role=UserRole.OWNER,
+                )
+                logger.info(f"User created (unverified): {user.id}", extra={"email": data.email})
 
             otp = generate_otp()
-            store_otp(user.id, otp, purpose="verification", ttl=60)
+            store_otp(user.id, otp, purpose="verification", ttl=OTP_TTL_SECONDS)
             logger.info(f"OTP generated for verification - {user.id}")
 
             return {
@@ -194,6 +211,15 @@ class AuthService:
         user = UserRepository.get_by_email(db, email)
 
         if user and user.is_active:
+            # Google just proved they own this email — promote unverified accounts.
+            if not user.is_verified:
+                user.is_verified = True
+                if not user.picture_url:
+                    user.picture_url = payload.get("picture")
+                db.commit()
+                db.refresh(user)
+                logger.info(f"Google promoted unverified account: {email}")
+
             tokens = AuthService._issue_tokens_for_user(user)
             logger.info(f"Google login: {email}")
             return {
@@ -217,12 +243,7 @@ class AuthService:
         db: Session,
         email: str,
         full_name: str,
-        business_name: str = None,
-        pan: str = None,
         picture_url: str = None,
-        business_address: str = None,
-        business_phone: str = None,
-        business_email: str = None,
     ) -> dict:
         existing_user = UserRepository.get_by_email(db, email)
         if existing_user:
@@ -230,19 +251,9 @@ class AuthService:
             return {"success": False, "error_code": "EMAIL_ALREADY_EXISTS"}
 
         try:
-            tenant = TenantRepository.create(
-                db,
-                name=business_name or f"{full_name}'s Business",
-                pan=pan,
-                business_address=business_address or "Not set",
-                business_phone=business_phone,
-                business_email=business_email,
-            )
-            logger.info(f"Tenant auto-created for Google user: {tenant.id}", extra={"email": email})
-
             user = UserRepository.create(
                 db,
-                tenant_id=tenant.id,
+                tenant_id=None,
                 full_name=full_name,
                 email=email,
                 password_hash=None,
@@ -252,14 +263,16 @@ class AuthService:
             )
             user.is_verified = True
             db.commit()
-            logger.info(f"Google user created and auto-verified: {user.id}", extra={"email": email})
+            logger.info(
+                f"Google user created (pending business setup): {user.id}",
+                extra={"email": email},
+            )
 
             tokens = AuthService._issue_tokens_for_user(user)
 
             return {
                 "success": True,
                 "user": UserData.model_validate(user),
-                "tenant": TenantData.model_validate(tenant),
                 "tokens": tokens,
             }
 

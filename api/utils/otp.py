@@ -8,15 +8,15 @@ def generate_otp(length: int = 6) -> str:
     return "".join(secrets.choice("0123456789") for _ in range(length))
 
 
-def store_otp(user_id: str, otp: str, purpose: str = "verification", ttl: int = 60) -> bool:
+def store_otp(user_id: str, otp: str, purpose: str = "verification", ttl: int = 300) -> bool:
     """
-    Store OTP in Redis with TTL (1 minute by default).
+    Store OTP in Redis with TTL (5 minutes by default).
 
     Args:
         user_id: User ID
         otp: OTP code
         purpose: 'verification' or 'password_reset'
-        ttl: Time to live in seconds (default 60 = 1 minute)
+        ttl: Time to live in seconds (default 300 = 5 minutes)
 
     Returns:
         True if stored successfully

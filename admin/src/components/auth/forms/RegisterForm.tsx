@@ -14,7 +14,7 @@ import { useAuthStore } from '@/store/auth-store';
 import { useRouter } from 'next/navigation';
 
 interface RegisterFormProps {
-  onSuccess?: (email: string) => void;
+  onSuccess?: (email: string, otpExpiresIn?: number) => void;
 }
 
 export function RegisterForm({ onSuccess }: RegisterFormProps) {
@@ -23,16 +23,15 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   const password = watch('password');
   const setUser = useAuthStore((state) => state.setUser);
   const setTokens = useAuthStore((state) => state.setTokens);
-  const setTenant = useAuthStore((state) => state.setTenant);
   const router = useRouter();
 
   const onSubmit = async (data: RegisterRequest & { confirmPassword: string }) => {
     if (data.password !== data.confirmPassword) {
       return;
     }
-    const success = await submitRegister(data as RegisterRequest);
-    if (success && onSuccess) {
-      onSuccess(data.email);
+    const result = await submitRegister(data as RegisterRequest);
+    if (result.ok && onSuccess) {
+      onSuccess(data.email, result.otpExpiresIn);
     }
   };
 
@@ -67,10 +66,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
         if (completeResponse.data?.tokens) {
           setTokens(completeResponse.data.tokens);
           setUser(completeResponse.data.user, 'user');
-          if (completeResponse.data.tenant) {
-            setTenant(completeResponse.data.tenant);
-          }
-          toast.success('Account created successfully');
+          toast.success('Almost done — set up your business.');
           router.push('/dashboard');
         }
       }

@@ -45,12 +45,13 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
             recipient_email=result["user"].email,
             recipient_name=result["user"].full_name,
             otp_code=result["otp_code"],
-            expiry_minutes=1,
+            expiry_minutes=5,
         )
 
     return success_response(
         data={
             "user": result["user"].model_dump(),
+            "otp_expires_in": 300,
         },
         message="Account created. Please verify your email with the OTP sent.",
         status_code=201,
@@ -155,11 +156,11 @@ def resend_verification_otp(data: ResendOTPRequest, db: Session = Depends(get_db
             recipient_email=user.email,
             recipient_name=user.full_name,
             otp_code=result["otp_code"],
-            expiry_minutes=1,
+            expiry_minutes=5,
         )
 
     return success_response(
-        data={"message": result["message"]},
+        data={"otp_expires_in": 300},
         message="Verification email sent",
     )
 
@@ -304,14 +305,9 @@ def google_callback(data: GoogleCallbackRequest, db: Session = Depends(get_db)):
 def google_complete(data: GoogleCompleteRequest, db: Session = Depends(get_db)):
     result = AuthService.google_complete(
         db,
-        data.email,
-        data.full_name,
-        data.business_name,
-        data.pan,
-        data.picture_url,
-        data.business_address,
-        data.business_phone,
-        data.business_email,
+        email=data.email,
+        full_name=data.full_name,
+        picture_url=data.picture_url,
     )
 
     if not result["success"]:
@@ -330,10 +326,9 @@ def google_complete(data: GoogleCompleteRequest, db: Session = Depends(get_db)):
     return success_response(
         data={
             "user": result["user"].model_dump(),
-            "tenant": result["tenant"].model_dump(),
             "tokens": result["tokens"],
         },
-        message="Account created successfully",
+        message="Account created — please complete your business setup.",
         status_code=201,
     )
 
