@@ -90,12 +90,31 @@ def business_register(
     )
 
     if not result["success"]:
-        if result["error_code"] == "USER_NOT_FOUND":
+        code = result["error_code"]
+        if code == "USER_NOT_FOUND":
             return error_response("USER_NOT_FOUND", "User not found", 404)
-        elif result["error_code"] == "EMAIL_NOT_VERIFIED":
+        if code == "EMAIL_NOT_VERIFIED":
             return error_response("EMAIL_NOT_VERIFIED", "Please verify email first", 400)
-        elif result["error_code"] == "TENANT_EXISTS":
+        if code == "TENANT_EXISTS":
             return error_response("TENANT_EXISTS", "Business already registered", 400)
+        if code == "PAN_ALREADY_REGISTERED":
+            return error_response(
+                "PAN_ALREADY_REGISTERED",
+                "This PAN is already registered under another account.",
+                409,
+            )
+        if code == "BUSINESS_EMAIL_ALREADY_REGISTERED":
+            return error_response(
+                "BUSINESS_EMAIL_ALREADY_REGISTERED",
+                "This business email is already registered under another account.",
+                409,
+            )
+        if code == "BUSINESS_PHONE_ALREADY_REGISTERED":
+            return error_response(
+                "BUSINESS_PHONE_ALREADY_REGISTERED",
+                "This business phone is already registered under another account.",
+                409,
+            )
         return error_response(
             "BUSINESS_REGISTRATION_FAILED",
             "Failed to register business",

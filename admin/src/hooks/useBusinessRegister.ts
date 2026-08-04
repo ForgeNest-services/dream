@@ -29,7 +29,16 @@ export function useBusinessRegister() {
       return true;
     } catch (err) {
       const apiErr = err as ApiError;
-      toast.error(apiErr?.message || 'Could not save your business details.');
+      const code = apiErr?.code;
+      if (code === 'PAN_ALREADY_REGISTERED') {
+        toast.error('This PAN is already registered under another account.');
+      } else if (code === 'BUSINESS_EMAIL_ALREADY_REGISTERED') {
+        toast.error('This business email is already registered under another account.');
+      } else if (code === 'BUSINESS_PHONE_ALREADY_REGISTERED') {
+        toast.error('This business phone is already registered under another account.');
+      } else {
+        toast.error(apiErr?.message || 'Could not save your business details.');
+      }
       return false;
     } finally {
       setIsLoading(false);

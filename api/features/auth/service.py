@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from core.security import (
     hash_password,
     verify_password,
@@ -130,6 +131,17 @@ class AuthService:
                 "message": "Business registered successfully",
             }
 
+        except IntegrityError as e:
+            db.rollback()
+            msg = str(e.orig).lower() if e.orig else str(e).lower()
+            logger.warning(f"Business registration integrity conflict: {msg}")
+            if "pan" in msg:
+                return {"success": False, "error_code": "PAN_ALREADY_REGISTERED"}
+            if "business_email" in msg or "email" in msg:
+                return {"success": False, "error_code": "BUSINESS_EMAIL_ALREADY_REGISTERED"}
+            if "business_phone" in msg or "phone" in msg:
+                return {"success": False, "error_code": "BUSINESS_PHONE_ALREADY_REGISTERED"}
+            return {"success": False, "error_code": "BUSINESS_REGISTRATION_FAILED"}
         except Exception as e:
             db.rollback()
             logger.error(f"Business registration failed: {str(e)}")

@@ -2,6 +2,19 @@ from sqlalchemy.orm import Session
 from shared_models import Tenant, User, PlatformAdmin
 
 
+def _normalize(value: str | None, mode: str = "strip") -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if mode == "upper":
+        return cleaned.upper()
+    if mode == "lower":
+        return cleaned.lower()
+    return cleaned
+
+
 class TenantRepository:
     @staticmethod
     def create(
@@ -13,11 +26,11 @@ class TenantRepository:
         business_email: str = None,
     ) -> Tenant:
         tenant = Tenant(
-            name=name,
-            pan=pan,
-            business_address=business_address,
-            business_phone=business_phone,
-            business_email=business_email,
+            name=name.strip(),
+            pan=_normalize(pan, "upper"),
+            business_address=_normalize(business_address),
+            business_phone=_normalize(business_phone),
+            business_email=_normalize(business_email, "lower"),
         )
         db.add(tenant)
         db.commit()
