@@ -4,6 +4,7 @@ from jose import JWTError, jwt
 from google.auth.transport import requests
 from google.oauth2 import id_token
 from core.configs import settings
+from utils.logger import logger
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
@@ -56,8 +57,15 @@ def decode_token(token: str) -> dict:
 def verify_google_token(id_token_str: str) -> dict:
     try:
         payload = id_token.verify_oauth2_token(
-            id_token_str, requests.Request(), settings.GOOGLE_CLIENT_ID
+            id_token_str,
+            requests.Request(),
+            settings.GOOGLE_CLIENT_ID,
+            clock_skew_in_seconds=10,
         )
         return payload
-    except Exception:
+    except ValueError as e:
+        logger.warning(f"Google token rejected: {str(e)}")
+        return None
+    except Exception as e:
+        logger.error(f"Google token verification error: {type(e).__name__}: {str(e)}")
         return None

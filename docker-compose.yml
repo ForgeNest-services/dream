@@ -10,6 +10,7 @@ services:
       - "8000:8000"
     volumes:
       - /var/log/template:/app/logs
+      - /etc/localtime:/etc/localtime:ro
     networks:
       - app-network
     restart: unless-stopped
