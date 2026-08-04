@@ -31,9 +31,9 @@ export interface UpdateCredentialPayload {
 }
 
 export const HOTEL_PMS_ROLES = [
+  { code: 'app_owner', label: 'App Owner' },
   { code: 'manager', label: 'Manager' },
   { code: 'front_desk', label: 'Front Desk' },
-  { code: 'housekeeper', label: 'Housekeeper' },
 ] as const;
 
 export const APP_CODE_TO_API_PREFIX: Record<string, string> = {

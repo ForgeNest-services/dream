@@ -8,6 +8,7 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { type ReactNode } from "react";
+import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
 import { AppProvider } from "@/lib/app-state";
@@ -133,6 +134,7 @@ function RootComponent() {
       <AppProvider>
         {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
         <Outlet />
+        <Toaster position="top-right" richColors closeButton />
       </AppProvider>
     </QueryClientProvider>
   );

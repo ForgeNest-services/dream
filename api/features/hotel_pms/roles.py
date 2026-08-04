@@ -2,9 +2,9 @@ from enum import Enum
 
 
 class HotelPMSRole(str, Enum):
+    APP_OWNER = "app_owner"
     MANAGER = "manager"
     FRONT_DESK = "front_desk"
-    HOUSEKEEPER = "housekeeper"
 
     @classmethod
     def values(cls) -> list[str]:

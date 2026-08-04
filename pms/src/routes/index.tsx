@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Hotel, Lock, Mail } from "lucide-react";
-import { useState } from "react";
+import { Hotel, Lock, User } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,21 +17,41 @@ export const Route = createFileRoute("/")({
         content:
           "Secure staff sign-in for Dream PMS, the property management system for hotels: bookings, folios, invoices and reporting.",
       },
-      { property: "og:title", content: "Sign in — Dream PMS" },
-      {
-        property: "og:description",
-        content: "Secure staff sign-in for Dream PMS, the property management system for hotels: bookings, folios, invoices and reporting.",
-      },
     ],
   }),
   component: LoginPage,
 });
 
 function LoginPage() {
-  const { login } = useApp();
+  const { login, authed, isBootstrapping } = useApp();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("aarati@himalayagrand.com");
-  const [password, setPassword] = useState("demo1234");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!isBootstrapping && authed) {
+      navigate({ to: "/dashboard" });
+    }
+  }, [authed, isBootstrapping, navigate]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!username.trim() || !password) {
+      toast.error("Enter your username and password to continue.");
+      return;
+    }
+    setIsSubmitting(true);
+    const result = await login({ username: username.trim(), password });
+    setIsSubmitting(false);
+
+    if (!result.ok) {
+      toast.error(result.message || "Incorrect username or password.");
+      return;
+    }
+    toast.success("Signed in.");
+    navigate({ to: "/dashboard" });
+  }
 
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
@@ -72,30 +93,25 @@ function LoginPage() {
             </span>
             <h2 className="mt-4 text-3xl leading-none">Staff sign in</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Use your property credentials to continue.
+              Use the login your owner shared with you.
             </p>
           </div>
 
-          <form
-            className="surface space-y-5 p-6 sm:p-8"
-            onSubmit={(e) => {
-              e.preventDefault();
-              login();
-              navigate({ to: "/dashboard" });
-            }}
-          >
+          <form className="surface space-y-5 p-6 sm:p-8" onSubmit={handleSubmit}>
             <div className="space-y-2">
-              <Label htmlFor="email">Email address</Label>
+              <Label htmlFor="username">Username</Label>
               <div className="relative">
-                <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  id="email"
-                  type="email"
+                  id="username"
+                  type="text"
+                  autoComplete="username"
                   required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                   className="pl-9"
-                  placeholder="you@hotel.com"
+                  placeholder="e.g. manager-sunset"
+                  disabled={isSubmitting}
                 />
               </div>
             </div>
@@ -107,28 +123,24 @@ function LoginPage() {
                 <Input
                   id="password"
                   type="password"
+                  autoComplete="current-password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-9"
                   placeholder="••••••••"
+                  disabled={isSubmitting}
                 />
               </div>
             </div>
 
-            <div className="flex justify-end">
-              <button type="button" className="text-xs font-semibold text-accent hover:underline">
-                Forgot password?
-              </button>
-            </div>
-
-            <Button type="submit" className="h-11 w-full text-base">
-              Sign in
+            <Button type="submit" className="h-11 w-full text-base" disabled={isSubmitting}>
+              {isSubmitting ? "Signing in…" : "Sign in"}
             </Button>
           </form>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            Demo build — any credentials will sign you in.
+            Forgot the password? Ask your owner to reset it.
           </p>
         </div>
       </div>
