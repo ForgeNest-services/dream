@@ -92,6 +92,22 @@ services:
       - app-network
     restart: unless-stopped
 
+  pms:
+    build:
+      context: ./pms
+      dockerfile: Dockerfile
+    container_name: pms
+    ports:
+      - "3002:3002"
+    volumes:
+      - ./pms/src:/app/src
+      - ./pms/public:/app/public
+      - ./pms/vite.config.ts:/app/vite.config.ts
+      - ./pms/tsconfig.json:/app/tsconfig.json
+    networks:
+      - app-network
+    restart: unless-stopped
+
 volumes:
   redis_data:
   postgres_data:
