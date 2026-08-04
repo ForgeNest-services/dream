@@ -7,6 +7,9 @@ import {
   AppCredential,
   CreateCredentialPayload,
   UpdateCredentialPayload,
+  Branch,
+  CreateBranchPayload,
+  UpdateBranchPayload,
   APP_CODE_TO_API_PREFIX,
 } from '@/types/apps';
 
@@ -82,12 +85,12 @@ export const appsApi = {
 
   updateCredential: async (
     appCode: string,
-    role: string,
+    credId: string,
     payload: UpdateCredentialPayload,
   ): Promise<ApiResponse<AppCredential>> => {
     try {
       const response = await axiosClient.patch<ApiResponse<AppCredential>>(
-        `${credentialsPrefix(appCode)}/credentials/${role}`,
+        `${credentialsPrefix(appCode)}/credentials/${credId}`,
         payload,
       );
       return response.data;
@@ -98,15 +101,71 @@ export const appsApi = {
 
   deleteCredential: async (
     appCode: string,
-    role: string,
+    credId: string,
   ): Promise<ApiResponse<{ deleted: boolean }>> => {
     try {
       const response = await axiosClient.delete<ApiResponse<{ deleted: boolean }>>(
-        `${credentialsPrefix(appCode)}/credentials/${role}`,
+        `${credentialsPrefix(appCode)}/credentials/${credId}`,
       );
       return response.data;
     } catch (error) {
       throw normalizeError(error, 'deleteCredential');
+    }
+  },
+
+  listBranches: async (appCode: string): Promise<ApiResponse<Branch[]>> => {
+    try {
+      const response = await axiosClient.get<ApiResponse<Branch[]>>(
+        `${credentialsPrefix(appCode)}/branches`,
+      );
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'listBranches');
+    }
+  },
+
+  createBranch: async (
+    appCode: string,
+    payload: CreateBranchPayload,
+  ): Promise<ApiResponse<Branch>> => {
+    try {
+      const response = await axiosClient.post<ApiResponse<Branch>>(
+        `${credentialsPrefix(appCode)}/branches`,
+        payload,
+      );
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'createBranch');
+    }
+  },
+
+  updateBranch: async (
+    appCode: string,
+    branchId: string,
+    payload: UpdateBranchPayload,
+  ): Promise<ApiResponse<Branch>> => {
+    try {
+      const response = await axiosClient.patch<ApiResponse<Branch>>(
+        `${credentialsPrefix(appCode)}/branches/${branchId}`,
+        payload,
+      );
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'updateBranch');
+    }
+  },
+
+  deleteBranch: async (
+    appCode: string,
+    branchId: string,
+  ): Promise<ApiResponse<{ deleted: boolean }>> => {
+    try {
+      const response = await axiosClient.delete<ApiResponse<{ deleted: boolean }>>(
+        `${credentialsPrefix(appCode)}/branches/${branchId}`,
+      );
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'deleteBranch');
     }
   },
 };

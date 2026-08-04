@@ -1,0 +1,27 @@
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey
+from datetime import datetime, timezone
+import uuid
+from core.database import Base
+
+
+class HotelPMSBranch(Base):
+    __tablename__ = "hotel_pms_branches"
+    __table_args__ = ({"schema": "public"},)
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String(36), ForeignKey("public.tenants.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    address = Column(String(500), nullable=True)
+    city = Column(String(100), nullable=True)
+    phone = Column(String(20), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    def __repr__(self):
+        return f"<HotelPMSBranch(tenant_id={self.tenant_id}, name={self.name})>"

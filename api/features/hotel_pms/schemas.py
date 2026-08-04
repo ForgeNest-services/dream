@@ -8,6 +8,7 @@ class CredentialData(BaseModel):
 
     id: str
     tenant_id: str
+    branch_id: str | None
     role: str
     username: str
     created_by: str
@@ -19,6 +20,7 @@ class CreateCredentialRequest(BaseModel):
     role: str
     username: str
     password: str
+    branch_id: str | None = None
 
     @field_validator("role")
     @classmethod
@@ -56,4 +58,33 @@ class StaffLoginResponse(BaseModel):
     token: str
     role: str
     tenant_id: str
+    branch_id: str | None
     expires_at: datetime
+
+
+class BranchData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    name: str
+    address: str | None
+    city: str | None
+    phone: str | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateBranchRequest(BaseModel):
+    name: str
+    address: str | None = None
+    city: str | None = None
+    phone: str | None = None
+
+
+class UpdateBranchRequest(BaseModel):
+    name: str | None = None
+    address: str | None = None
+    city: str | None = None
+    phone: str | None = None

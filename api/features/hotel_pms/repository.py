@@ -11,9 +11,11 @@ class HotelPMSCredentialRepository:
         username: str,
         password_hash: str,
         created_by: str,
+        branch_id: str | None = None,
     ) -> HotelPMSCredential:
         cred = HotelPMSCredential(
             tenant_id=tenant_id,
+            branch_id=branch_id,
             role=role,
             username=username,
             password_hash=password_hash,
@@ -36,13 +38,14 @@ class HotelPMSCredentialRepository:
         )
 
     @staticmethod
-    def get_by_tenant_and_role(
-        db: Session, tenant_id: str, role: str
+    def get_by_tenant_branch_and_role(
+        db: Session, tenant_id: str, branch_id: str | None, role: str
     ) -> HotelPMSCredential | None:
         return (
             db.query(HotelPMSCredential)
             .filter(
                 HotelPMSCredential.tenant_id == tenant_id,
+                HotelPMSCredential.branch_id == branch_id,
                 HotelPMSCredential.role == role,
             )
             .first()
@@ -79,6 +82,20 @@ class HotelPMSCredentialRepository:
         db.commit()
         db.refresh(cred)
         return cred
+
+    @staticmethod
+    def get_by_id_for_tenant_and_role(
+        db: Session, tenant_id: str, cred_id: str, role: str
+    ) -> HotelPMSCredential | None:
+        return (
+            db.query(HotelPMSCredential)
+            .filter(
+                HotelPMSCredential.id == cred_id,
+                HotelPMSCredential.tenant_id == tenant_id,
+                HotelPMSCredential.role == role,
+            )
+            .first()
+        )
 
     @staticmethod
     def delete(db: Session, cred: HotelPMSCredential) -> None:

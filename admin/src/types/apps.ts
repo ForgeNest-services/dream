@@ -12,6 +12,7 @@ export interface App {
 export interface AppCredential {
   id: string;
   tenant_id: string;
+  branch_id: string | null;
   role: string;
   username: string;
   created_by: string;
@@ -23,12 +24,41 @@ export interface CreateCredentialPayload {
   role: string;
   username: string;
   password: string;
+  branch_id?: string | null;
 }
 
 export interface UpdateCredentialPayload {
   username?: string;
   password?: string;
 }
+
+export interface Branch {
+  id: string;
+  tenant_id: string;
+  name: string;
+  address: string | null;
+  city: string | null;
+  phone: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateBranchPayload {
+  name: string;
+  address?: string | null;
+  city?: string | null;
+  phone?: string | null;
+}
+
+export interface UpdateBranchPayload {
+  name?: string;
+  address?: string | null;
+  city?: string | null;
+  phone?: string | null;
+}
+
+export const BRANCH_SCOPED_ROLES = new Set(['manager', 'front_desk']);
 
 export const HOTEL_PMS_ROLES = [
   { code: 'app_owner', label: 'App Owner' },

@@ -2,6 +2,7 @@ from .tenant import Tenant
 from .user import User
 from .platform_admin import PlatformAdmin
 from .hotel_pms_credential import HotelPMSCredential
+from .hotel_pms_branch import HotelPMSBranch
 from .app import App
 
 __all__ = [
@@ -9,5 +10,6 @@ __all__ = [
     "User",
     "PlatformAdmin",
     "HotelPMSCredential",
+    "HotelPMSBranch",
     "App",
 ]

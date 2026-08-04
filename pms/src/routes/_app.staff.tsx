@@ -32,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { PROPERTIES } from "@/lib/app-state";
+import { useApp } from "@/lib/app-state";
 import { ALL_ROLES, ROLE_LABELS } from "@/lib/roles";
 import { staff } from "@/lib/mock-data";
 
@@ -60,6 +60,7 @@ export const Route = createFileRoute("/_app/staff")({
 
 function StaffPage() {
   const [open, setOpen] = useState(false);
+  const { properties } = useApp();
 
   return (
     <>
@@ -113,7 +114,7 @@ function StaffPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {PROPERTIES.map((p) => (
+                      {properties.map((p) => (
                         <SelectItem key={p.id} value={p.id}>
                           {p.name} — {p.location}
                         </SelectItem>

@@ -1,6 +1,7 @@
 const TOKEN_KEY = "pms.token";
 const ROLE_KEY = "pms.role";
 const TENANT_KEY = "pms.tenant_id";
+const BRANCH_KEY = "pms.branch_id";
 const USERNAME_KEY = "pms.username";
 const EXPIRES_KEY = "pms.expires_at";
 
@@ -8,6 +9,7 @@ export interface StoredAuth {
   token: string;
   role: string;
   tenantId: string;
+  branchId: string | null;
   username: string;
   expiresAt: string;
 }
@@ -18,6 +20,11 @@ export const authStorage = {
     localStorage.setItem(TOKEN_KEY, auth.token);
     localStorage.setItem(ROLE_KEY, auth.role);
     localStorage.setItem(TENANT_KEY, auth.tenantId);
+    if (auth.branchId) {
+      localStorage.setItem(BRANCH_KEY, auth.branchId);
+    } else {
+      localStorage.removeItem(BRANCH_KEY);
+    }
     localStorage.setItem(USERNAME_KEY, auth.username);
     localStorage.setItem(EXPIRES_KEY, auth.expiresAt);
   },
@@ -27,6 +34,7 @@ export const authStorage = {
     const token = localStorage.getItem(TOKEN_KEY);
     const role = localStorage.getItem(ROLE_KEY);
     const tenantId = localStorage.getItem(TENANT_KEY);
+    const branchId = localStorage.getItem(BRANCH_KEY);
     const username = localStorage.getItem(USERNAME_KEY);
     const expiresAt = localStorage.getItem(EXPIRES_KEY);
     if (!token || !role || !tenantId || !username || !expiresAt) return null;
@@ -35,7 +43,7 @@ export const authStorage = {
       this.clear();
       return null;
     }
-    return { token, role, tenantId, username, expiresAt };
+    return { token, role, tenantId, branchId, username, expiresAt };
   },
 
   clear(): void {
@@ -43,6 +51,7 @@ export const authStorage = {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(ROLE_KEY);
     localStorage.removeItem(TENANT_KEY);
+    localStorage.removeItem(BRANCH_KEY);
     localStorage.removeItem(USERNAME_KEY);
     localStorage.removeItem(EXPIRES_KEY);
   },

@@ -9,9 +9,10 @@ import {
   MdOutlinePerson,
   MdOutlineLock,
   MdOutlineClose,
+  MdOutlineBusiness,
 } from 'react-icons/md';
 import { useCredentials } from '@/hooks/useCredentials';
-import { AppCredential, APP_CODE_TO_ROLES } from '@/types/apps';
+import { AppCredential, Branch, APP_CODE_TO_ROLES, BRANCH_SCOPED_ROLES } from '@/types/apps';
 import { colors, spacing } from '@/lib/design-tokens';
 import { Spinner } from '@/components/shared/Spinner';
 import { Button } from '@/components/ui/Button';
@@ -19,25 +20,34 @@ import { FormInput } from '@/components/ui/FormInput';
 
 interface Props {
   appCode: string;
+  branches: Branch[];
+  branchesLoading: boolean;
 }
 
 type CreateFormValues = { username: string; password: string };
 type EditFormValues = { username?: string; password?: string };
 
-export function CredentialsSection({ appCode }: Props) {
-  const { credentials, isLoading, isMutating, create, update, remove } = useCredentials(appCode);
-  const [addingRole, setAddingRole] = useState<string | null>(null);
-  const [editingRole, setEditingRole] = useState<string | null>(null);
-  const [confirmDeleteRole, setConfirmDeleteRole] = useState<string | null>(null);
+// A "slot" is a (role, branch) pair that either has a credential or doesn't yet.
+type Slot = {
+  role: string;
+  branchId: string | null;
+  branchName: string | null;
+  cred: AppCredential | null;
+};
+
+export function CredentialsSection({ appCode, branches, branchesLoading }: Props) {
+  const { credentials, isLoading: credsLoading, isMutating, create, update, remove } =
+    useCredentials(appCode);
+  const [addingSlot, setAddingSlot] = useState<Slot | null>(null);
+  const [editingCred, setEditingCred] = useState<AppCredential | null>(null);
+  const [confirmDeleteCred, setConfirmDeleteCred] = useState<AppCredential | null>(null);
 
   const roles = APP_CODE_TO_ROLES[appCode] || [];
-  const rolesWithCred = new Set(credentials.map((c) => c.role));
-  const missingRoles = roles.filter((r) => !rolesWithCred.has(r.code));
+  const roleLabel = (code: string) => roles.find((r) => r.code === code)?.label || code.replace('_', ' ');
+  const branchName = (branchId: string | null) =>
+    branches.find((b) => b.id === branchId)?.name ?? null;
 
-  const roleLabel = (code: string) =>
-    roles.find((r) => r.code === code)?.label || code.replace('_', ' ');
-
-  if (isLoading) {
+  if (credsLoading || branchesLoading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: spacing['2xl'] }}>
         <Spinner size="lg" />
@@ -45,36 +55,53 @@ export function CredentialsSection({ appCode }: Props) {
     );
   }
 
+  // Build the full slot list: tenant-wide roles get one slot; branch-scoped
+  // roles get one slot per active branch.
+  const slots: Slot[] = [];
+  for (const r of roles) {
+    if (BRANCH_SCOPED_ROLES.has(r.code)) {
+      for (const b of branches) {
+        const cred = credentials.find((c) => c.role === r.code && c.branch_id === b.id) || null;
+        slots.push({ role: r.code, branchId: b.id, branchName: b.name, cred });
+      }
+    } else {
+      const cred = credentials.find((c) => c.role === r.code) || null;
+      slots.push({ role: r.code, branchId: null, branchName: null, cred });
+    }
+  }
+
+  const filledSlots = slots.filter((s) => s.cred);
+  const emptySlots = slots.filter((s) => !s.cred);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg }}>
-      {/* Existing credentials list */}
-      {credentials.length > 0 && (
+      {filledSlots.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
-          {credentials.map((cred) => (
+          {filledSlots.map((slot) => (
             <CredentialRow
-              key={cred.id}
-              cred={cred}
-              label={roleLabel(cred.role)}
-              onEdit={() => setEditingRole(cred.role)}
-              onDelete={() => setConfirmDeleteRole(cred.role)}
+              key={slot.cred!.id}
+              cred={slot.cred!}
+              label={roleLabel(slot.role)}
+              branchName={slot.branchName}
+              onEdit={() => setEditingCred(slot.cred)}
+              onDelete={() => setConfirmDeleteCred(slot.cred)}
             />
           ))}
         </div>
       )}
 
-      {/* Missing roles — "Add credential" prompts */}
-      {missingRoles.length > 0 && (
+      {emptySlots.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
           <p style={{ fontSize: '13px', color: colors.neutral[500], fontWeight: '500' }}>
-            {credentials.length === 0
+            {filledSlots.length === 0
               ? 'No credentials yet. Create one for each role your staff will use.'
               : 'Add credentials for the remaining roles:'}
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.sm }}>
-            {missingRoles.map((r) => (
+            {emptySlots.map((slot) => (
               <button
-                key={r.code}
-                onClick={() => setAddingRole(r.code)}
+                key={`${slot.role}-${slot.branchId ?? 'tenant'}`}
+                onClick={() => setAddingSlot(slot)}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -99,55 +126,56 @@ export function CredentialsSection({ appCode }: Props) {
                 }}
               >
                 <MdOutlineAdd size={16} />
-                Add {r.label}
+                Add {roleLabel(slot.role)}
+                {slot.branchName ? ` — ${slot.branchName}` : ''}
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* Create modal */}
-      {addingRole && (
+      {addingSlot && (
         <CreateCredentialModal
-          role={addingRole}
-          roleLabel={roleLabel(addingRole)}
+          role={addingSlot.role}
+          roleLabel={roleLabel(addingSlot.role)}
+          branchName={addingSlot.branchName}
           isSaving={isMutating}
-          onClose={() => setAddingRole(null)}
+          onClose={() => setAddingSlot(null)}
           onSubmit={async (values) => {
             const ok = await create({
-              role: addingRole,
+              role: addingSlot.role,
               username: values.username,
               password: values.password,
+              branch_id: addingSlot.branchId,
             });
-            if (ok) setAddingRole(null);
+            if (ok) setAddingSlot(null);
           }}
         />
       )}
 
-      {/* Edit modal */}
-      {editingRole && (
+      {editingCred && (
         <EditCredentialModal
-          role={editingRole}
-          roleLabel={roleLabel(editingRole)}
-          current={credentials.find((c) => c.role === editingRole) || null}
+          roleLabel={roleLabel(editingCred.role)}
+          branchName={branchName(editingCred.branch_id)}
+          current={editingCred}
           isSaving={isMutating}
-          onClose={() => setEditingRole(null)}
+          onClose={() => setEditingCred(null)}
           onSubmit={async (values) => {
-            const ok = await update(editingRole, values);
-            if (ok) setEditingRole(null);
+            const ok = await update(editingCred.id, values);
+            if (ok) setEditingCred(null);
           }}
         />
       )}
 
-      {/* Delete confirmation */}
-      {confirmDeleteRole && (
+      {confirmDeleteCred && (
         <ConfirmDeleteModal
-          roleLabel={roleLabel(confirmDeleteRole)}
+          roleLabel={roleLabel(confirmDeleteCred.role)}
+          branchName={branchName(confirmDeleteCred.branch_id)}
           isDeleting={isMutating}
-          onCancel={() => setConfirmDeleteRole(null)}
+          onCancel={() => setConfirmDeleteCred(null)}
           onConfirm={async () => {
-            const ok = await remove(confirmDeleteRole);
-            if (ok) setConfirmDeleteRole(null);
+            const ok = await remove(confirmDeleteCred.id);
+            if (ok) setConfirmDeleteCred(null);
           }}
         />
       )}
@@ -160,11 +188,13 @@ export function CredentialsSection({ appCode }: Props) {
 function CredentialRow({
   cred,
   label,
+  branchName,
   onEdit,
   onDelete,
 }: {
   cred: AppCredential;
   label: string;
+  branchName: string | null;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -203,9 +233,31 @@ function CredentialRow({
             color: colors.neutral[900],
             margin: 0,
             textTransform: 'capitalize',
+            display: 'flex',
+            alignItems: 'center',
+            gap: spacing.xs,
           }}
         >
           {label}
+          {branchName && (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px',
+                fontWeight: '600',
+                textTransform: 'none',
+                color: colors.primary[800],
+                backgroundColor: colors.primary[50],
+                padding: '2px 8px',
+                borderRadius: '10px',
+              }}
+            >
+              <MdOutlineBusiness size={12} />
+              {branchName}
+            </span>
+          )}
         </p>
         <p
           style={{
@@ -341,12 +393,14 @@ function ModalShell({
 function CreateCredentialModal({
   role,
   roleLabel,
+  branchName,
   isSaving,
   onClose,
   onSubmit,
 }: {
   role: string;
   roleLabel: string;
+  branchName: string | null;
   isSaving: boolean;
   onClose: () => void;
   onSubmit: (values: CreateFormValues) => Promise<void>;
@@ -357,8 +411,10 @@ function CreateCredentialModal({
     formState: { errors },
   } = useForm<CreateFormValues>();
 
+  const title = branchName ? `New ${roleLabel} credential — ${branchName}` : `New ${roleLabel} credential`;
+
   return (
-    <ModalShell title={`New ${roleLabel} credential`} onClose={onClose}>
+    <ModalShell title={title} onClose={onClose}>
       <form onSubmit={handleSubmit(onSubmit)}>
         <FormInput
           {...register('username', {
@@ -385,7 +441,7 @@ function CreateCredentialModal({
           disabled={isSaving}
         />
         <p style={{ fontSize: '12px', color: colors.neutral[500], marginBottom: spacing.lg }}>
-          Share these credentials with your {roleLabel.toLowerCase()} staff. Anyone with the login can access this role.
+          Share these credentials with your {roleLabel.toLowerCase()} staff{branchName ? ` at ${branchName}` : ''}. Anyone with the login can access this role.
         </p>
         <Button type="submit" isLoading={isSaving} size="lg">
           Create Credential
@@ -396,15 +452,15 @@ function CreateCredentialModal({
 }
 
 function EditCredentialModal({
-  role,
   roleLabel,
+  branchName,
   current,
   isSaving,
   onClose,
   onSubmit,
 }: {
-  role: string;
   roleLabel: string;
+  branchName: string | null;
   current: AppCredential | null;
   isSaving: boolean;
   onClose: () => void;
@@ -429,8 +485,10 @@ function EditCredentialModal({
     await onSubmit(payload);
   };
 
+  const title = branchName ? `Edit ${roleLabel} credential — ${branchName}` : `Edit ${roleLabel} credential`;
+
   return (
-    <ModalShell title={`Edit ${roleLabel} credential`} onClose={onClose}>
+    <ModalShell title={title} onClose={onClose}>
       <form onSubmit={handleSubmit(submit)}>
         <FormInput
           {...register('username', {
@@ -466,19 +524,25 @@ function EditCredentialModal({
 
 function ConfirmDeleteModal({
   roleLabel,
+  branchName,
   isDeleting,
   onCancel,
   onConfirm,
 }: {
   roleLabel: string;
+  branchName: string | null;
   isDeleting: boolean;
   onCancel: () => void;
   onConfirm: () => Promise<void>;
 }) {
+  const title = branchName
+    ? `Delete ${roleLabel} credential for ${branchName}?`
+    : `Delete ${roleLabel} credential?`;
+
   return (
-    <ModalShell title={`Delete ${roleLabel} credential?`} onClose={onCancel}>
+    <ModalShell title={title} onClose={onCancel}>
       <p style={{ fontSize: '14px', color: colors.neutral[700], marginBottom: spacing.lg }}>
-        This will remove the {roleLabel.toLowerCase()} login. Staff currently signed in stay signed in until their session expires; after that, they can't log in with this cred anymore.
+        This will remove the {roleLabel.toLowerCase()} login{branchName ? ` for ${branchName}` : ''}. Staff currently signed in stay signed in until their session expires; after that, they can't log in with this cred anymore.
       </p>
       <div style={{ display: 'flex', gap: spacing.sm }}>
         <button

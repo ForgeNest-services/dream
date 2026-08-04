@@ -2,8 +2,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from core.security import hash_password, verify_password
 from features.hotel_pms.repository import HotelPMSCredentialRepository
+from features.hotel_pms.branch_repository import HotelPMSBranchRepository
 from features.hotel_pms.auth import issue_staff_token
+from features.hotel_pms.roles import HotelPMSRole
 from utils.logger import logger
+
+BRANCH_SCOPED_ROLES = {HotelPMSRole.MANAGER.value, HotelPMSRole.FRONT_DESK.value}
 
 
 class HotelPMSCredentialService:
@@ -15,17 +19,27 @@ class HotelPMSCredentialService:
         role: str,
         username: str,
         password: str,
+        branch_id: str | None,
     ) -> dict:
-        existing_for_role = HotelPMSCredentialRepository.get_by_tenant_and_role(
-            db, tenant_id, role
+        if role in BRANCH_SCOPED_ROLES:
+            if not branch_id:
+                return {"success": False, "error_code": "BRANCH_REQUIRED"}
+            if not HotelPMSBranchRepository.get_by_id(db, tenant_id, branch_id):
+                return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
+        else:
+            branch_id = None
+
+        existing = HotelPMSCredentialRepository.get_by_tenant_branch_and_role(
+            db, tenant_id, branch_id, role
         )
-        if existing_for_role:
+        if existing:
             return {"success": False, "error_code": "ROLE_ALREADY_HAS_CREDENTIAL"}
 
         try:
             cred = HotelPMSCredentialRepository.create(
                 db,
                 tenant_id=tenant_id,
+                branch_id=branch_id,
                 role=role,
                 username=username,
                 password_hash=hash_password(password),
@@ -33,7 +47,7 @@ class HotelPMSCredentialService:
             )
             logger.info(
                 f"Hotel PMS credential created: {cred.id}",
-                extra={"tenant_id": tenant_id, "role": role, "username": username},
+                extra={"tenant_id": tenant_id, "branch_id": branch_id, "role": role, "username": username},
             )
             return {"success": True, "credential": cred}
         except IntegrityError:
@@ -52,11 +66,11 @@ class HotelPMSCredentialService:
     def update(
         db: Session,
         tenant_id: str,
-        role: str,
+        cred_id: str,
         username: str | None = None,
         password: str | None = None,
     ) -> dict:
-        cred = HotelPMSCredentialRepository.get_by_tenant_and_role(db, tenant_id, role)
+        cred = HotelPMSCredentialRepository.get_by_id(db, tenant_id, cred_id)
         if not cred:
             return {"success": False, "error_code": "CREDENTIAL_NOT_FOUND"}
 
@@ -67,7 +81,7 @@ class HotelPMSCredentialService:
             )
             logger.info(
                 f"Hotel PMS credential updated: {updated.id}",
-                extra={"tenant_id": tenant_id, "role": role},
+                extra={"tenant_id": tenant_id, "cred_id": cred_id},
             )
             return {"success": True, "credential": updated}
         except IntegrityError:
@@ -79,15 +93,15 @@ class HotelPMSCredentialService:
             return {"success": False, "error_code": "UPDATE_FAILED"}
 
     @staticmethod
-    def delete(db: Session, tenant_id: str, role: str) -> dict:
-        cred = HotelPMSCredentialRepository.get_by_tenant_and_role(db, tenant_id, role)
+    def delete(db: Session, tenant_id: str, cred_id: str) -> dict:
+        cred = HotelPMSCredentialRepository.get_by_id(db, tenant_id, cred_id)
         if not cred:
             return {"success": False, "error_code": "CREDENTIAL_NOT_FOUND"}
 
         HotelPMSCredentialRepository.delete(db, cred)
         logger.info(
             f"Hotel PMS credential deleted",
-            extra={"tenant_id": tenant_id, "role": role},
+            extra={"tenant_id": tenant_id, "cred_id": cred_id},
         )
         return {"success": True}
 
@@ -107,7 +121,10 @@ class HotelPMSAuthService:
             return {"success": False, "error_code": "INVALID_CREDENTIALS"}
 
         token, expires_at = issue_staff_token(
-            tenant_id=cred.tenant_id, role=cred.role, cred_id=cred.id
+            tenant_id=cred.tenant_id,
+            role=cred.role,
+            cred_id=cred.id,
+            branch_id=cred.branch_id,
         )
         logger.info(f"Hotel PMS staff login: {username} (role={cred.role})")
         return {
@@ -115,5 +132,6 @@ class HotelPMSAuthService:
             "token": token,
             "role": cred.role,
             "tenant_id": cred.tenant_id,
+            "branch_id": cred.branch_id,
             "expires_at": expires_at,
         }

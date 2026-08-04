@@ -66,7 +66,7 @@ function Dashboard() {
 
   return (
     <>
-      <PageHeader title="Today at a glance" subtitle={`Sunday, 2 August 2026 · ${property.name}`} />
+      <PageHeader title="Today at a glance" subtitle={`Sunday, 2 August 2026 · ${property?.name ?? "—"}`} />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard

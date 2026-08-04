@@ -10,6 +10,7 @@ import {
 
 import { authApi } from "./auth-api";
 import { authStorage, type StoredAuth } from "./auth-storage";
+import { branchesApi, type BranchDto } from "./branches-api";
 import { ALL_ROLES, type RoleCode } from "./roles";
 
 export type Currency = "NPR" | "USD" | "EUR" | "INR";
@@ -23,14 +24,11 @@ export const CURRENCIES: Record<Currency, string> = {
 
 export const PRODUCT_NAME = "Dream PMS";
 
-// TODO(properties): replace with real properties from backend once
-// features/hotel_pms/properties/ is built.
-export type Property = { id: string; name: string; location: string; rooms: number };
-export const PROPERTIES: Property[] = [
-  { id: "hg", name: "Himalaya Grand", location: "Thamel, Kathmandu", rooms: 36 },
-  { id: "lr", name: "Lakeside Retreat", location: "Baidam, Pokhara", rooms: 24 },
-  { id: "cv", name: "Chitwan Verandah", location: "Sauraha, Chitwan", rooms: 18 },
-];
+export type Property = { id: string; name: string; location: string };
+
+function toProperty(b: BranchDto): Property {
+  return { id: b.id, name: b.name, location: [b.city, b.address].filter(Boolean).join(", ") || "—" };
+}
 
 interface LoginArgs {
   username: string;
@@ -56,9 +54,11 @@ type AppState = {
   setCurrency: (c: Currency) => void;
 
   properties: Property[];
+  propertiesLoading: boolean;
   propertyId: string;
   setPropertyId: (id: string) => void;
-  property: Property;
+  property: Property | null;
+  canSwitchProperty: boolean;
 };
 
 const Ctx = createContext<AppState | null>(null);
@@ -73,13 +73,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [viewAsRole, setViewAsRoleState] = useState<RoleCode | null>(null);
   const [currency, setCurrency] = useState<Currency>("NPR");
-  const [propertyId, setPropertyId] = useState<string>(PROPERTIES[0]!.id);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [propertiesLoading, setPropertiesLoading] = useState(false);
+  const [propertyId, setPropertyId] = useState<string>("");
 
   useEffect(() => {
     const stored = authStorage.read();
     setAuth(stored);
     setIsBootstrapping(false);
   }, []);
+
+  useEffect(() => {
+    if (!auth) {
+      setProperties([]);
+      setPropertyId("");
+      return;
+    }
+    let cancelled = false;
+    setPropertiesLoading(true);
+    branchesApi
+      .listMine()
+      .then((response) => {
+        if (cancelled) return;
+        const branches = (response.data ?? []).map(toProperty);
+        setProperties(branches);
+        setPropertyId((current) => {
+          if (current && branches.some((b) => b.id === current)) return current;
+          return auth.branchId ?? branches[0]?.id ?? "";
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setPropertiesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [auth]);
 
   const login = useCallback(
     async ({ username, password }: LoginArgs) => {
@@ -93,6 +122,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           token: data.token,
           role: data.role,
           tenantId: data.tenant_id,
+          branchId: data.branch_id,
           username,
           expiresAt: data.expires_at,
         };
@@ -122,6 +152,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const effectiveRole: RoleCode | null =
     actualRole === "app_owner" && viewAsRole ? viewAsRole : actualRole;
 
+  // Staff logins carry a fixed branch_id — only app_owner (branch_id=null,
+  // sees every branch) can switch between properties.
+  const canSwitchProperty = actualRole === "app_owner";
+
   const value = useMemo<AppState>(
     () => ({
       authed: Boolean(auth),
@@ -136,10 +170,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       logout,
       currency,
       setCurrency,
-      properties: PROPERTIES,
+      properties,
+      propertiesLoading,
       propertyId,
       setPropertyId,
-      property: PROPERTIES.find((p) => p.id === propertyId) ?? PROPERTIES[0]!,
+      property: properties.find((p) => p.id === propertyId) ?? properties[0] ?? null,
+      canSwitchProperty,
     }),
     [
       auth,
@@ -151,7 +187,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       currency,
+      properties,
+      propertiesLoading,
       propertyId,
+      canSwitchProperty,
     ],
   );
 
