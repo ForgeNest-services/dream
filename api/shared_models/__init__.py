@@ -1,7 +1,13 @@
 from .tenant import Tenant
 from .user import User
 from .platform_admin import PlatformAdmin
-from .module import Module
-from .module_subscription import ModuleSubscription
+from .hotel_pms_credential import HotelPMSCredential
+from .app import App
 
-__all__ = ["Tenant", "User", "PlatformAdmin", "Module", "ModuleSubscription"]
+__all__ = [
+    "Tenant",
+    "User",
+    "PlatformAdmin",
+    "HotelPMSCredential",
+    "App",
+]

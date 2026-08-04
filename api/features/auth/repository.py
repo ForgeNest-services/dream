@@ -39,7 +39,7 @@ class UserRepository:
         password_hash: str,
         is_owner: bool = False,
         picture_url: str = None,
-        role: str = "staff",
+        role: str = "owner",
         owner_id: str = None,
     ) -> User:
         user = User(

@@ -12,9 +12,6 @@ from features.auth.repository import (
     UserRepository,
     PlatformAdminRepository,
 )
-from features.modules.repository import ModuleSubscriptionRepository
-
-DEFAULT_TRIAL_MODULE = "hotel_pms"
 from features.auth.schemas import (
     RegisterRequest,
     LoginRequest,
@@ -105,8 +102,6 @@ class AuthService:
             user.tenant_id = tenant.id
             db.commit()
             logger.info(f"User linked to tenant: {user.id} -> {tenant.id}")
-
-            ModuleSubscriptionRepository.start_trial(db, tenant.id, DEFAULT_TRIAL_MODULE)
 
             tokens = AuthService._issue_tokens_for_user(user)
 
@@ -258,8 +253,6 @@ class AuthService:
             user.is_verified = True
             db.commit()
             logger.info(f"Google user created and auto-verified: {user.id}", extra={"email": email})
-
-            ModuleSubscriptionRepository.start_trial(db, tenant.id, DEFAULT_TRIAL_MODULE)
 
             tokens = AuthService._issue_tokens_for_user(user)
 

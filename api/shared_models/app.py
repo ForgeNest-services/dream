@@ -1,0 +1,33 @@
+from sqlalchemy import Column, String, Boolean, DateTime, Integer, Text, JSON
+from datetime import datetime, timezone
+import uuid
+from core.database import Base
+
+
+class App(Base):
+    __tablename__ = "apps"
+    __table_args__ = ({"schema": "public"},)
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    code = Column(String(50), nullable=False, unique=True)
+    slug = Column(String(100), nullable=False, unique=True)
+    name = Column(String(100), nullable=False)
+    tagline = Column(String(255), nullable=True)
+    description = Column(Text, nullable=True)
+    icon = Column(String(50), nullable=True)
+    url = Column(String(500), nullable=False)
+    screenshots = Column(JSON, nullable=True)
+    features = Column(JSON, nullable=True)
+    display_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    is_public = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    def __repr__(self):
+        return f"<App(code={self.code}, name={self.name})>"
