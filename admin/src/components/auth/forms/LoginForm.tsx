@@ -39,6 +39,7 @@ export function LoginForm() {
           setTokens(response.data.tokens);
         }
         setUser(response.data.user, 'user');
+        setTenant(response.data.tenant ?? null);
         toast.success('Signed in successfully');
         router.push('/dashboard');
       } else {
@@ -56,10 +57,8 @@ export function LoginForm() {
         if (completeResponse.data?.tokens) {
           setTokens(completeResponse.data.tokens);
           setUser(completeResponse.data.user, 'user');
-          if (completeResponse.data.tenant) {
-            setTenant(completeResponse.data.tenant);
-          }
-          toast.success('Account created successfully');
+          setTenant(null);
+          toast.success('Almost done — set up your business.');
           router.push('/dashboard');
         }
       }

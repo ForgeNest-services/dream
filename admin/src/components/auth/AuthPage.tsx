@@ -16,6 +16,7 @@ export function AuthPage() {
   const { isAuthenticated, isLoading } = useAuth();
   const [step, setStep] = useState<AuthStep>('login');
   const [registrationEmail, setRegistrationEmail] = useState('');
+  const [otpExpiresIn, setOtpExpiresIn] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
@@ -172,8 +173,9 @@ export function AuthPage() {
 
           {step === 'register' && (
             <RegisterForm
-              onSuccess={(email) => {
+              onSuccess={(email, expiresIn) => {
                 setRegistrationEmail(email);
+                setOtpExpiresIn(expiresIn);
                 setStep('verify-otp');
               }}
             />
@@ -196,7 +198,10 @@ export function AuthPage() {
               >
                 ← Back
               </button>
-              <OtpVerificationForm email={registrationEmail} />
+              <OtpVerificationForm
+                email={registrationEmail}
+                initialExpiresIn={otpExpiresIn}
+              />
             </div>
           )}
         </div>

@@ -14,10 +14,12 @@ import {
   Hotel,
   Building2,
   Sparkles,
+  Eye,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
-import { useApp, ROLES, PRODUCT_NAME, type Role, type Currency } from "@/lib/app-state";
+import { useApp, PRODUCT_NAME, type Currency } from "@/lib/app-state";
+import { ALL_ROLES, ROLE_LABELS, type RoleCode } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -41,24 +43,45 @@ const NAV = [
   { to: "/settings", label: "Settings", icon: Settings, group: "Administration" },
 ] as const;
 
-const ALLOWED: Record<Role, string[]> = {
-  Owner: NAV.map((n) => n.to).filter((t) => t !== "/payments"),
-  Manager: NAV.map((n) => n.to).filter((t) => t !== "/settings" && t !== "/payments"),
-  "Front Desk": ["/dashboard", "/bookings", "/guests", "/folio", "/housekeeping"],
-  Accountant: ["/dashboard", "/invoices", "/payments"],
+// Menu visibility per role. Backend still authorizes every action; this only
+// filters what appears in the sidebar.
+const ALLOWED: Record<RoleCode, string[]> = {
+  app_owner: NAV.map((n) => n.to),
+  manager: NAV.map((n) => n.to).filter(
+    (t) => t !== "/settings" && t !== "/staff" && t !== "/payments",
+  ),
+  front_desk: ["/dashboard", "/bookings", "/guests", "/folio", "/housekeeping"],
 };
 
-export function allowedFor(role: Role) {
+export function allowedFor(role: RoleCode): string[] {
   return ALLOWED[role];
 }
 
 export function AppLayout({ children }: { children: ReactNode }) {
-  const { role, setRole, currency, setCurrency, userName, logout, properties, propertyId, setPropertyId, property } =
-    useApp();
+  const {
+    actualRole,
+    viewAsRole,
+    effectiveRole,
+    setViewAsRole,
+    currency,
+    setCurrency,
+    username,
+    logout,
+    properties,
+    propertyId,
+    setPropertyId,
+    property,
+  } = useApp();
+
   const [collapsed, setCollapsed] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const items = NAV.filter((n) => ALLOWED[role].includes(n.to));
+
+  const roleForMenu: RoleCode = effectiveRole ?? "front_desk";
+  const items = NAV.filter((n) => ALLOWED[roleForMenu].includes(n.to));
   const groups = Array.from(new Set(items.map((i) => i.group)));
+
+  const isPreviewingOtherRole =
+    actualRole === "app_owner" && viewAsRole !== null && viewAsRole !== "app_owner";
 
   return (
     <div className="flex min-h-screen w-full bg-background">
@@ -138,6 +161,22 @@ export function AppLayout({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {isPreviewingOtherRole && (
+          <div className="flex items-center justify-between gap-3 bg-accent px-4 py-2 text-sm text-accent-foreground lg:px-8">
+            <span className="flex items-center gap-2">
+              <Eye className="size-4" />
+              Previewing as{" "}
+              <span className="font-semibold">{ROLE_LABELS[viewAsRole!]}</span> — you still have Owner permissions.
+            </span>
+            <button
+              onClick={() => setViewAsRole(null)}
+              className="rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wide hover:bg-accent-foreground/10"
+            >
+              Exit preview
+            </button>
+          </div>
+        )}
+
         <header className="sticky top-0 z-30 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-card/90 px-4 py-3 backdrop-blur md:h-16 md:py-0 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground md:hidden">
@@ -169,18 +208,29 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <Select value={role} onValueChange={(v) => setRole(v as Role)}>
-              <SelectTrigger className="hidden h-9 w-[140px] lg:flex">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ROLES.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {r} view
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {actualRole === "app_owner" && (
+              <Select
+                value={viewAsRole ?? "app_owner"}
+                onValueChange={(v) =>
+                  setViewAsRole(v === "app_owner" ? null : (v as RoleCode))
+                }
+              >
+                <SelectTrigger
+                  className="hidden h-9 w-[160px] gap-2 lg:flex"
+                  aria-label="Preview as role"
+                >
+                  <Eye className="size-4 text-muted-foreground" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ALL_ROLES.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {r === "app_owner" ? "Owner view" : `View as ${ROLE_LABELS[r]}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
 
             <Select value={currency} onValueChange={(v) => setCurrency(v as Currency)}>
               <SelectTrigger className="h-9 w-[86px]">
@@ -197,13 +247,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
             <div className="hidden items-center gap-2 border-l border-border pl-3 sm:flex">
               <div className="text-right">
-                <p className="text-sm font-semibold leading-tight">{userName}</p>
+                <p className="text-sm font-semibold leading-tight">{username ?? "—"}</p>
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-accent">
-                  {role}
+                  {actualRole ? ROLE_LABELS[actualRole] : ""}
                 </span>
               </div>
               <span className="grid size-9 place-items-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-                {userName.slice(0, 1)}
+                {(username ?? "?").slice(0, 1).toUpperCase()}
               </span>
             </div>
 

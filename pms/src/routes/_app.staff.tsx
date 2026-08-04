@@ -32,8 +32,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ROLES, PROPERTIES } from "@/lib/app-state";
+import { PROPERTIES } from "@/lib/app-state";
+import { ALL_ROLES, ROLE_LABELS } from "@/lib/roles";
 import { staff } from "@/lib/mock-data";
+
+// legacy shim so this mock staff page still renders while we decide its fate
+const ROLES = ALL_ROLES.map((code) => ROLE_LABELS[code]);
 
 export const Route = createFileRoute("/_app/staff")({
   head: () => ({

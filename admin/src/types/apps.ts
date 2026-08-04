@@ -1,0 +1,45 @@
+export interface App {
+  id: string;
+  code: string;
+  slug: string;
+  name: string;
+  description?: string | null;
+  icon?: string | null;
+  url: string;
+  is_active: boolean;
+}
+
+export interface AppCredential {
+  id: string;
+  tenant_id: string;
+  role: string;
+  username: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCredentialPayload {
+  role: string;
+  username: string;
+  password: string;
+}
+
+export interface UpdateCredentialPayload {
+  username?: string;
+  password?: string;
+}
+
+export const HOTEL_PMS_ROLES = [
+  { code: 'app_owner', label: 'App Owner' },
+  { code: 'manager', label: 'Manager' },
+  { code: 'front_desk', label: 'Front Desk' },
+] as const;
+
+export const APP_CODE_TO_API_PREFIX: Record<string, string> = {
+  hotel_pms: '/hotel-pms',
+};
+
+export const APP_CODE_TO_ROLES: Record<string, ReadonlyArray<{ code: string; label: string }>> = {
+  hotel_pms: HOTEL_PMS_ROLES,
+};

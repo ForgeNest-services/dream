@@ -49,3 +49,54 @@ def require_role(allowed_roles: list):
         return current_user
 
     return check
+
+
+def require_platform_user(current_user: dict = Depends(get_current_user)) -> dict:
+    if not current_user or current_user["type"] != "user":
+        raise HTTPException(401, "Unauthorized")
+    return current_user
+
+
+def require_tenant_user(current_user: dict = Depends(require_platform_user)) -> dict:
+    user = current_user["user"]
+    if not user.tenant_id:
+        raise HTTPException(
+            403,
+            {
+                "error_code": "TENANT_REQUIRED",
+                "message": "Complete business registration first",
+            },
+        )
+    return current_user
+
+
+def get_staff_token(
+    authorization: str = Header(None, include_in_schema=False),
+) -> str | None:
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    return authorization[7:]
+
+
+def require_hotel_pms_staff(role: str | None = None):
+    from features.hotel_pms.auth import decode_staff_token
+
+    def _dep(token: str = Depends(get_staff_token)) -> dict:
+        if not token:
+            raise HTTPException(401, "Unauthorized")
+
+        payload = decode_staff_token(token)
+        if not payload:
+            raise HTTPException(401, "Invalid or expired token")
+
+        staff_role = payload["role"]
+        if role and staff_role != role:
+            raise HTTPException(403, "Insufficient role")
+
+        return {
+            "tenant_id": payload["tenant_id"],
+            "role": staff_role,
+            "cred_id": payload.get("cred_id"),
+        }
+
+    return _dep

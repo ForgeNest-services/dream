@@ -45,12 +45,13 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
             recipient_email=result["user"].email,
             recipient_name=result["user"].full_name,
             otp_code=result["otp_code"],
-            expiry_minutes=1,
+            expiry_minutes=5,
         )
 
     return success_response(
         data={
             "user": result["user"].model_dump(),
+            "otp_expires_in": 300,
         },
         message="Account created. Please verify your email with the OTP sent.",
         status_code=201,
@@ -89,12 +90,31 @@ def business_register(
     )
 
     if not result["success"]:
-        if result["error_code"] == "USER_NOT_FOUND":
+        code = result["error_code"]
+        if code == "USER_NOT_FOUND":
             return error_response("USER_NOT_FOUND", "User not found", 404)
-        elif result["error_code"] == "EMAIL_NOT_VERIFIED":
+        if code == "EMAIL_NOT_VERIFIED":
             return error_response("EMAIL_NOT_VERIFIED", "Please verify email first", 400)
-        elif result["error_code"] == "TENANT_EXISTS":
+        if code == "TENANT_EXISTS":
             return error_response("TENANT_EXISTS", "Business already registered", 400)
+        if code == "PAN_ALREADY_REGISTERED":
+            return error_response(
+                "PAN_ALREADY_REGISTERED",
+                "This PAN is already registered under another account.",
+                409,
+            )
+        if code == "BUSINESS_EMAIL_ALREADY_REGISTERED":
+            return error_response(
+                "BUSINESS_EMAIL_ALREADY_REGISTERED",
+                "This business email is already registered under another account.",
+                409,
+            )
+        if code == "BUSINESS_PHONE_ALREADY_REGISTERED":
+            return error_response(
+                "BUSINESS_PHONE_ALREADY_REGISTERED",
+                "This business phone is already registered under another account.",
+                409,
+            )
         return error_response(
             "BUSINESS_REGISTRATION_FAILED",
             "Failed to register business",
@@ -155,11 +175,11 @@ def resend_verification_otp(data: ResendOTPRequest, db: Session = Depends(get_db
             recipient_email=user.email,
             recipient_name=user.full_name,
             otp_code=result["otp_code"],
-            expiry_minutes=1,
+            expiry_minutes=5,
         )
 
     return success_response(
-        data={"message": result["message"]},
+        data={"otp_expires_in": 300},
         message="Verification email sent",
     )
 
@@ -207,6 +227,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     return success_response(
         data={
             "user": result["user"].model_dump(),
+            "tenant": result["tenant"].model_dump() if result.get("tenant") else None,
             "tokens": result["tokens"],
         },
         message="Login successful",
@@ -284,6 +305,7 @@ def google_callback(data: GoogleCallbackRequest, db: Session = Depends(get_db)):
                 "user_exists": True,
                 "email": result["user"].email,
                 "user": result["user"].model_dump(),
+                "tenant": result["tenant"].model_dump() if result.get("tenant") else None,
                 "tokens": result["tokens"],
             },
             message="Login successful",
@@ -304,14 +326,9 @@ def google_callback(data: GoogleCallbackRequest, db: Session = Depends(get_db)):
 def google_complete(data: GoogleCompleteRequest, db: Session = Depends(get_db)):
     result = AuthService.google_complete(
         db,
-        data.email,
-        data.full_name,
-        data.business_name,
-        data.pan,
-        data.picture_url,
-        data.business_address,
-        data.business_phone,
-        data.business_email,
+        email=data.email,
+        full_name=data.full_name,
+        picture_url=data.picture_url,
     )
 
     if not result["success"]:
@@ -330,10 +347,9 @@ def google_complete(data: GoogleCompleteRequest, db: Session = Depends(get_db)):
     return success_response(
         data={
             "user": result["user"].model_dump(),
-            "tenant": result["tenant"].model_dump(),
             "tokens": result["tokens"],
         },
-        message="Account created successfully",
+        message="Account created — please complete your business setup.",
         status_code=201,
     )
 

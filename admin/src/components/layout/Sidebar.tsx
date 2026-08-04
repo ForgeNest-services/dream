@@ -13,13 +13,13 @@ const navigationItems = [
     label: 'Dashboard',
     href: '/dashboard',
     icon: MdDashboard,
-    roles: ['owner', 'manager', 'staff', 'accountant'],
+    roles: ['owner', 'manager'],
   },
   {
     label: 'Team Members',
     href: '/dashboard/team',
     icon: MdPeople,
-    roles: ['owner', 'manager'],
+    roles: ['owner'],
   },
   {
     label: 'Settings',

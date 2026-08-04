@@ -9,14 +9,16 @@ export const Route = createFileRoute("/_app")({
 });
 
 function AppShell() {
-  const { authed } = useApp();
+  const { authed, isBootstrapping } = useApp();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!authed) navigate({ to: "/" });
-  }, [authed, navigate]);
+    if (!isBootstrapping && !authed) {
+      navigate({ to: "/" });
+    }
+  }, [authed, isBootstrapping, navigate]);
 
-  if (!authed) return null;
+  if (isBootstrapping || !authed) return null;
 
   return (
     <AppLayout>

@@ -1,55 +1,49 @@
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { useAuth } from './useAuth';
 import { authApi } from '@/services/auth-api';
 import { BusinessRegisterRequest, BusinessRegisterResponse } from '@/types/api';
 import { ApiError } from '@/types/auth';
 
 export function useBusinessRegister() {
-  const router = useRouter();
-  const { setTenant, setTokens, setUser, setUserType, setAuthError } = useAuth();
-  const [error, setError] = useState<ApiError | null>(null);
+  const { setTenant, setTokens, setUser } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
 
   const register = async (data: BusinessRegisterRequest): Promise<boolean> => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      setError(null);
-
       const response = await authApi.businessRegister(data);
-
-      if (!response.success) {
-        const errorMsg = response.error?.message || 'Registration failed';
-        setError({
-          code: response.error?.code || 'REGISTRATION_FAILED',
-          message: errorMsg,
-          statusCode: 400,
-        });
-        setAuthError(errorMsg);
-        return false;
-      }
-
       const responseData = response.data as BusinessRegisterResponse;
 
-      setTokens(responseData.tokens);
-      setUser(responseData.user, 'user');
-      setTenant(responseData.tenant);
+      if (responseData?.tokens) {
+        setTokens(responseData.tokens);
+      }
+      if (responseData?.user) {
+        setUser(responseData.user, 'user');
+      }
+      if (responseData?.tenant) {
+        setTenant(responseData.tenant);
+      }
 
-      router.push('/dashboard');
+      toast.success('Business set up. Your apps are ready.');
       return true;
     } catch (err) {
-      const apiError = err instanceof Error ? (err as unknown as ApiError) : {
-        code: 'UNKNOWN_ERROR',
-        message: 'An unexpected error occurred',
-        statusCode: 500,
-      };
-      setError(apiError);
-      setAuthError(apiError.message);
+      const apiErr = err as ApiError;
+      const code = apiErr?.code;
+      if (code === 'PAN_ALREADY_REGISTERED') {
+        toast.error('This PAN is already registered under another account.');
+      } else if (code === 'BUSINESS_EMAIL_ALREADY_REGISTERED') {
+        toast.error('This business email is already registered under another account.');
+      } else if (code === 'BUSINESS_PHONE_ALREADY_REGISTERED') {
+        toast.error('This business phone is already registered under another account.');
+      } else {
+        toast.error(apiErr?.message || 'Could not save your business details.');
+      }
       return false;
     } finally {
       setIsLoading(false);
     }
   };
 
-  return { register, isLoading, error, clearError: () => setError(null) };
+  return { register, isLoading };
 }

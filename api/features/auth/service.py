@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from core.security import (
     hash_password,
     verify_password,
@@ -12,9 +13,6 @@ from features.auth.repository import (
     UserRepository,
     PlatformAdminRepository,
 )
-from features.modules.repository import ModuleSubscriptionRepository
-
-DEFAULT_TRIAL_MODULE = "hotel_pms"
 from features.auth.schemas import (
     RegisterRequest,
     LoginRequest,
@@ -25,31 +23,48 @@ from features.auth.schemas import (
 from utils.logger import logger
 from utils.otp import generate_otp, store_otp, verify_otp
 
+OTP_TTL_SECONDS = 300
+
 
 class AuthService:
     @staticmethod
     def register(db: Session, data: RegisterRequest) -> dict:
         existing_user = UserRepository.get_by_email(db, data.email)
-        if existing_user:
-            logger.warning(f"Registration failed: email already exists: {data.email}")
+
+        # Verified accounts are truly taken — someone proved they own this email.
+        if existing_user and existing_user.is_verified:
+            logger.warning(f"Registration blocked: email already verified: {data.email}")
             return {"success": False, "error_code": "EMAIL_ALREADY_EXISTS"}
 
         try:
             password_hash = hash_password(data.password)
 
-            user = UserRepository.create(
-                db,
-                tenant_id=None,
-                full_name=data.full_name,
-                email=data.email,
-                password_hash=password_hash,
-                is_owner=True,
-                role=UserRole.OWNER,
-            )
-            logger.info(f"User created (unverified): {user.id}", extra={"email": data.email})
+            if existing_user:
+                # Unverified account exists — treat this as restarting verification.
+                # Overwrite the password and name so whoever actually owns the email wins.
+                existing_user.password_hash = password_hash
+                existing_user.full_name = data.full_name
+                db.commit()
+                db.refresh(existing_user)
+                user = existing_user
+                logger.info(
+                    f"Restarting verification for unverified account: {user.id}",
+                    extra={"email": data.email},
+                )
+            else:
+                user = UserRepository.create(
+                    db,
+                    tenant_id=None,
+                    full_name=data.full_name,
+                    email=data.email,
+                    password_hash=password_hash,
+                    is_owner=True,
+                    role=UserRole.OWNER,
+                )
+                logger.info(f"User created (unverified): {user.id}", extra={"email": data.email})
 
             otp = generate_otp()
-            store_otp(user.id, otp, purpose="verification", ttl=60)
+            store_otp(user.id, otp, purpose="verification", ttl=OTP_TTL_SECONDS)
             logger.info(f"OTP generated for verification - {user.id}")
 
             return {
@@ -106,8 +121,6 @@ class AuthService:
             db.commit()
             logger.info(f"User linked to tenant: {user.id} -> {tenant.id}")
 
-            ModuleSubscriptionRepository.start_trial(db, tenant.id, DEFAULT_TRIAL_MODULE)
-
             tokens = AuthService._issue_tokens_for_user(user)
 
             return {
@@ -118,6 +131,17 @@ class AuthService:
                 "message": "Business registered successfully",
             }
 
+        except IntegrityError as e:
+            db.rollback()
+            msg = str(e.orig).lower() if e.orig else str(e).lower()
+            logger.warning(f"Business registration integrity conflict: {msg}")
+            if "pan" in msg:
+                return {"success": False, "error_code": "PAN_ALREADY_REGISTERED"}
+            if "business_email" in msg or "email" in msg:
+                return {"success": False, "error_code": "BUSINESS_EMAIL_ALREADY_REGISTERED"}
+            if "business_phone" in msg or "phone" in msg:
+                return {"success": False, "error_code": "BUSINESS_PHONE_ALREADY_REGISTERED"}
+            return {"success": False, "error_code": "BUSINESS_REGISTRATION_FAILED"}
         except Exception as e:
             db.rollback()
             logger.error(f"Business registration failed: {str(e)}")
@@ -153,9 +177,17 @@ class AuthService:
         if user.password_hash and verify_password(data.password, user.password_hash):
             tokens = AuthService._issue_tokens_for_user(user)
             logger.info(f"User login: {user.email}")
+
+            tenant_data = None
+            if user.tenant_id:
+                tenant = TenantRepository.get_by_id(db, user.tenant_id)
+                if tenant:
+                    tenant_data = TenantData.model_validate(tenant)
+
             return {
                 "success": True,
                 "user": UserData.model_validate(user),
+                "tenant": tenant_data,
                 "tokens": tokens,
             }
 
@@ -199,12 +231,29 @@ class AuthService:
         user = UserRepository.get_by_email(db, email)
 
         if user and user.is_active:
+            # Google just proved they own this email — promote unverified accounts.
+            if not user.is_verified:
+                user.is_verified = True
+                if not user.picture_url:
+                    user.picture_url = payload.get("picture")
+                db.commit()
+                db.refresh(user)
+                logger.info(f"Google promoted unverified account: {email}")
+
             tokens = AuthService._issue_tokens_for_user(user)
             logger.info(f"Google login: {email}")
+
+            tenant_data = None
+            if user.tenant_id:
+                tenant = TenantRepository.get_by_id(db, user.tenant_id)
+                if tenant:
+                    tenant_data = TenantData.model_validate(tenant)
+
             return {
                 "success": True,
                 "user_exists": True,
                 "user": UserData.model_validate(user),
+                "tenant": tenant_data,
                 "tokens": tokens,
             }
 
@@ -222,12 +271,7 @@ class AuthService:
         db: Session,
         email: str,
         full_name: str,
-        business_name: str = None,
-        pan: str = None,
         picture_url: str = None,
-        business_address: str = None,
-        business_phone: str = None,
-        business_email: str = None,
     ) -> dict:
         existing_user = UserRepository.get_by_email(db, email)
         if existing_user:
@@ -235,19 +279,9 @@ class AuthService:
             return {"success": False, "error_code": "EMAIL_ALREADY_EXISTS"}
 
         try:
-            tenant = TenantRepository.create(
-                db,
-                name=business_name or f"{full_name}'s Business",
-                pan=pan,
-                business_address=business_address or "Not set",
-                business_phone=business_phone,
-                business_email=business_email,
-            )
-            logger.info(f"Tenant auto-created for Google user: {tenant.id}", extra={"email": email})
-
             user = UserRepository.create(
                 db,
-                tenant_id=tenant.id,
+                tenant_id=None,
                 full_name=full_name,
                 email=email,
                 password_hash=None,
@@ -257,16 +291,16 @@ class AuthService:
             )
             user.is_verified = True
             db.commit()
-            logger.info(f"Google user created and auto-verified: {user.id}", extra={"email": email})
-
-            ModuleSubscriptionRepository.start_trial(db, tenant.id, DEFAULT_TRIAL_MODULE)
+            logger.info(
+                f"Google user created (pending business setup): {user.id}",
+                extra={"email": email},
+            )
 
             tokens = AuthService._issue_tokens_for_user(user)
 
             return {
                 "success": True,
                 "user": UserData.model_validate(user),
-                "tenant": TenantData.model_validate(tenant),
                 "tokens": tokens,
             }
 

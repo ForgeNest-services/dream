@@ -7,9 +7,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from utils.helpers import success_response, error_response, format_validation_errors
 from utils.logger import logger
 from core.database import Base, engine
-from core.seed import seed_superadmin, seed_modules
+from core.seed import seed_superadmin, seed_apps
 import shared_models
 from features.auth import router as auth_router
+from features.hotel_pms import router as hotel_pms_router
+from features.apps import router as apps_router
 
 
 @asynccontextmanager
@@ -31,11 +33,11 @@ async def lifespan(app: FastAPI):
         raise
 
     try:
-        logger.info("Seeding modules...")
-        seed_modules()
-        logger.info("Module seeding completed")
+        logger.info("Seeding apps...")
+        seed_apps()
+        logger.info("App seeding completed")
     except Exception as e:
-        logger.error(f"Failed to seed modules: {type(e).__name__}: {str(e)}")
+        logger.error(f"Failed to seed apps: {type(e).__name__}: {str(e)}")
         raise
 
     yield
@@ -61,6 +63,8 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(hotel_pms_router)
+app.include_router(apps_router)
 
 
 @app.exception_handler(StarletteHTTPException)

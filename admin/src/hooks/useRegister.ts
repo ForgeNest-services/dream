@@ -5,43 +5,39 @@ import { authApi } from '@/services/auth-api';
 import { RegisterRequest, RegisterResponse } from '@/types/api';
 import { ApiError } from '@/types/auth';
 
+interface RegisterResult {
+  ok: boolean;
+  otpExpiresIn?: number;
+}
+
 export function useRegister() {
-  const { setUser, setUserType, setAuthError } = useAuth();
-  const [error, setError] = useState<ApiError | null>(null);
+  const { setUser } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
 
-  const register = async (data: RegisterRequest): Promise<boolean> => {
+  const register = async (data: RegisterRequest): Promise<RegisterResult> => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
-      setError(null);
-
       const response = await authApi.register(data);
-      const responseData = response.data as RegisterResponse;
+      const responseData = response.data as RegisterResponse & { otp_expires_in?: number };
       if (!responseData?.user) {
         throw new Error('Invalid response from server');
       }
       setUser(responseData.user, 'user');
 
-      toast.success('Account created! Check your email for the verification code.');
-      return true;
+      toast.success('Account created — check your email for the code.');
+      return { ok: true, otpExpiresIn: responseData.otp_expires_in };
     } catch (err) {
-      const apiError = err as ApiError;
-      const code = apiError?.code || 'REGISTRATION_FAILED';
-      const message = apiError?.message || 'Registration failed';
-
-      if (code === 'EMAIL_ALREADY_EXISTS') {
-        toast.error('This email is already registered. Please sign in instead.');
+      const apiErr = err as ApiError;
+      if (apiErr?.code === 'EMAIL_ALREADY_EXISTS') {
+        toast.error('This email is already registered. Sign in instead.');
       } else {
-        toast.error(message);
+        toast.error(apiErr?.message || 'Registration failed');
       }
-
-      setError({ code, message, statusCode: apiError?.statusCode || 400 });
-      setAuthError(message);
-      return false;
+      return { ok: false };
     } finally {
       setIsLoading(false);
     }
   };
 
-  return { register, isLoading, error, clearError: () => setError(null) };
+  return { register, isLoading };
 }
