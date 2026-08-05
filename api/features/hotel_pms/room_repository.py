@@ -1,5 +1,8 @@
+from decimal import Decimal
 from sqlalchemy.orm import Session
 from shared_models import PMSRoom
+
+_UNSET = object()
 
 
 class RoomRepository:
@@ -12,6 +15,7 @@ class RoomRepository:
         room_number: str,
         floor: str | None,
         status: str,
+        rate_override: Decimal | None = None,
     ) -> PMSRoom:
         room = PMSRoom(
             tenant_id=tenant_id,
@@ -20,6 +24,7 @@ class RoomRepository:
             room_number=room_number.strip(),
             floor=floor.strip() if floor else None,
             status=status,
+            rate_override=rate_override,
         )
         db.add(room)
         db.commit()
@@ -56,6 +61,7 @@ class RoomRepository:
         floor: str | None = None,
         status: str | None = None,
         is_active: bool | None = None,
+        rate_override=_UNSET,  # sentinel: pass None explicitly to clear
     ) -> PMSRoom:
         if room_type_id is not None:
             room.room_type_id = room_type_id
@@ -67,6 +73,8 @@ class RoomRepository:
             room.status = status
         if is_active is not None:
             room.is_active = is_active
+        if rate_override is not _UNSET:
+            room.rate_override = rate_override
         db.commit()
         db.refresh(room)
         return room

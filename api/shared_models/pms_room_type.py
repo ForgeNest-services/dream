@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Numeric, Boolean, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, Integer, Numeric, Boolean, DateTime, ForeignKey, Index, text
 from datetime import datetime, timezone
 import uuid
 from core.database import Base
@@ -7,7 +7,13 @@ from core.database import Base
 class PMSRoomType(Base):
     __tablename__ = "pms_room_types"
     __table_args__ = (
-        UniqueConstraint("branch_id", "name", name="uq_pms_room_type_branch_name"),
+        Index(
+            "uq_pms_room_type_active_name",
+            "branch_id",
+            "name",
+            unique=True,
+            postgresql_where=text("is_active = true"),
+        ),
         {"schema": "public"},
     )
 

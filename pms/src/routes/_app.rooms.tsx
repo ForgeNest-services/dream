@@ -303,7 +303,22 @@ function RoomsPage() {
                           </TableCell>
                           <TableCell className="text-muted-foreground">{r.floor ?? "—"}</TableCell>
                           <TableCell className="text-right font-semibold">
-                            {typeInfo ? money(Number(typeInfo.base_rate)) : "—"}
+                            {(() => {
+                              const override = r.rate_override != null ? Number(r.rate_override) : null;
+                              const base = typeInfo ? Number(typeInfo.base_rate) : null;
+                              const effective = override ?? base;
+                              if (effective == null) return "—";
+                              return (
+                                <div className="flex flex-col items-end">
+                                  <span>{money(effective)}</span>
+                                  {override != null && base != null && override !== base && (
+                                    <span className="text-[10px] font-normal uppercase tracking-wider text-accent">
+                                      Custom
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className={meta.classes}>
@@ -477,6 +492,8 @@ function RoomsPage() {
             room_number: roomEditing.room_number,
             floor: roomEditing.floor ?? "",
             status: roomEditing.status,
+            rate_override:
+              roomEditing.rate_override != null ? Number(roomEditing.rate_override) : null,
           }}
           onClose={() => setRoomEditing(null)}
           onSubmit={async (values) => {
@@ -511,6 +528,7 @@ interface RoomFormValues {
   room_number: string;
   floor?: string | null;
   status: RoomStatus;
+  rate_override?: number | null;
 }
 
 function RoomFormDialog({
@@ -541,7 +559,12 @@ function RoomFormDialog({
   const [roomNumber, setRoomNumber] = useState(initial?.room_number ?? "");
   const [floor, setFloor] = useState(initial?.floor ?? "");
   const [status, setStatus] = useState<RoomStatus>(initial?.status ?? "available");
+  const [rateOverride, setRateOverride] = useState<string>(
+    initial?.rate_override != null ? String(initial.rate_override) : "",
+  );
   const [showTypeCreator, setShowTypeCreator] = useState(false);
+
+  const selectedType = roomTypes.find((t) => t.id === roomTypeId);
 
   const handleTypeChange = (value: string) => {
     if (value === CREATE_TYPE_SENTINEL) {
@@ -563,11 +586,15 @@ function RoomFormDialog({
             onSubmit={async (e) => {
               e.preventDefault();
               if (!roomTypeId || !roomNumber.trim()) return;
+              const rateVal = rateOverride.trim();
+              const rateNum = rateVal ? Number(rateVal) : null;
+              if (rateNum !== null && (Number.isNaN(rateNum) || rateNum <= 0)) return;
               await onSubmit({
                 room_type_id: roomTypeId,
                 room_number: roomNumber.trim(),
                 floor: floor.trim() || null,
                 status,
+                rate_override: rateNum,
               });
             }}
           >
@@ -626,7 +653,7 @@ function RoomFormDialog({
               </Select>
             </div>
 
-            <div className="space-y-2 sm:col-span-2">
+            <div className="space-y-2">
               <Label>Status</Label>
               <Select value={status} onValueChange={(v) => setStatus(v as RoomStatus)} disabled={isSaving}>
                 <SelectTrigger>
@@ -643,6 +670,29 @@ function RoomFormDialog({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="room-rate">
+                Custom rate <span className="text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="room-rate"
+                type="number"
+                min={1}
+                step="0.01"
+                value={rateOverride}
+                onChange={(e) => setRateOverride(e.target.value)}
+                placeholder={
+                  selectedType
+                    ? `Type default: ${Number(selectedType.base_rate)}`
+                    : "Leave empty to use type's rate"
+                }
+                disabled={isSaving}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Overrides the room type's base rate for this specific room. Leave empty to use the type's rate.
+              </p>
             </div>
 
             <DialogFooter className="sm:col-span-2">

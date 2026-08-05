@@ -180,6 +180,7 @@ class RoomData(BaseModel):
     room_number: str
     floor: str | None
     status: str
+    rate_override: Decimal | None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -190,6 +191,7 @@ class CreateRoomRequest(BaseModel):
     room_number: str
     floor: str | None = None
     status: str = "available"
+    rate_override: Decimal | None = None
 
     @field_validator("room_number")
     @classmethod
@@ -204,6 +206,48 @@ class UpdateRoomRequest(BaseModel):
     room_number: str | None = None
     floor: str | None = None
     status: str | None = None
+    rate_override: Decimal | None = None
+
+
+class GuestData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    full_name: str
+    phone: str | None
+    email: str | None
+    id_document_type: str | None
+    id_document_number: str | None
+    nationality: str | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateGuestRequest(BaseModel):
+    full_name: str
+    phone: str | None = None
+    email: str | None = None
+    id_document_type: str | None = None
+    id_document_number: str | None = None
+    nationality: str | None = None
+
+    @field_validator("full_name")
+    @classmethod
+    def name_required(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Full name is required")
+        return v
+
+
+class UpdateGuestRequest(BaseModel):
+    full_name: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    id_document_type: str | None = None
+    id_document_number: str | None = None
+    nationality: str | None = None
 
 
 class UpdateBranchRequest(BaseModel):

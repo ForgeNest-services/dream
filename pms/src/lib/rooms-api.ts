@@ -11,6 +11,7 @@ export interface RoomDto {
   room_number: string;
   floor: string | null;
   status: RoomStatus;
+  rate_override: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -21,6 +22,7 @@ export interface CreateRoomPayload {
   room_number: string;
   floor?: string | null;
   status?: RoomStatus;
+  rate_override?: number | null;
 }
 
 export interface UpdateRoomPayload {
@@ -28,6 +30,7 @@ export interface UpdateRoomPayload {
   room_number?: string;
   floor?: string | null;
   status?: RoomStatus;
+  rate_override?: number | null;
 }
 
 export const roomsApi = {

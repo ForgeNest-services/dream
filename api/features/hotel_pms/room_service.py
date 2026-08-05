@@ -1,6 +1,7 @@
+from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from features.hotel_pms.room_repository import RoomRepository
+from features.hotel_pms.room_repository import RoomRepository, _UNSET
 from features.hotel_pms.room_type_repository import RoomTypeRepository
 from features.hotel_pms.branch_repository import HotelPMSBranchRepository
 from utils.logger import logger
@@ -37,6 +38,7 @@ class RoomService:
         room_number: str,
         floor: str | None,
         status: str,
+        rate_override: Decimal | None = None,
     ) -> dict:
         if not RoomService._assert_branch(db, tenant_id, branch_id):
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
@@ -44,6 +46,8 @@ class RoomService:
             return {"success": False, "error_code": "ROOM_TYPE_NOT_FOUND"}
         if status not in ROOM_STATUSES:
             return {"success": False, "error_code": "INVALID_STATUS"}
+        if rate_override is not None and rate_override <= 0:
+            return {"success": False, "error_code": "INVALID_RATE"}
 
         try:
             room = RoomRepository.create(
@@ -54,6 +58,7 @@ class RoomService:
                 room_number=room_number,
                 floor=floor,
                 status=status,
+                rate_override=rate_override,
             )
             logger.info(
                 f"Room created: {room.id}",
@@ -78,6 +83,7 @@ class RoomService:
         room_number: str | None = None,
         floor: str | None = None,
         status: str | None = None,
+        rate_override=_UNSET,
     ) -> dict:
         room = RoomRepository.get_by_id(db, tenant_id, room_id)
         if not room or room.branch_id != branch_id:
@@ -90,6 +96,9 @@ class RoomService:
         if status is not None and status not in ROOM_STATUSES:
             return {"success": False, "error_code": "INVALID_STATUS"}
 
+        if rate_override is not _UNSET and rate_override is not None and rate_override <= 0:
+            return {"success": False, "error_code": "INVALID_RATE"}
+
         try:
             updated = RoomRepository.update(
                 db,
@@ -98,6 +107,7 @@ class RoomService:
                 room_number=room_number,
                 floor=floor,
                 status=status,
+                rate_override=rate_override,
             )
             return {"success": True, "room": updated}
         except IntegrityError:

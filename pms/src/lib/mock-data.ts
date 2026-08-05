@@ -47,33 +47,6 @@ export const bookings: Booking[] = [
   { id: "b8", ref: "BK-24808", guest: "Tom Bakker", room: "203", roomType: "Standard Double", checkIn: "2026-07-30", checkOut: "2026-08-02", nights: 3, guests: 2, rate: 4500, status: "cancelled" },
 ];
 
-export type Guest = {
-  id: string;
-  name: string;
-  phone: string;
-  email: string;
-  idType: string;
-  nationality: string;
-  stays: number;
-};
-
-export const guests: Guest[] = [
-  { id: "g1", name: "Nabin Karki", phone: "+977 9841 223344", email: "nabin.karki@mail.com", idType: "Citizenship", nationality: "Nepal", stays: 6 },
-  { id: "g2", name: "Elena Fischer", phone: "+49 151 2233 445", email: "e.fischer@mail.de", idType: "Passport", nationality: "Germany", stays: 2 },
-  { id: "g3", name: "Rahul Menon", phone: "+91 98200 11223", email: "rahul.menon@mail.in", idType: "Passport", nationality: "India", stays: 4 },
-  { id: "g4", name: "Sita Gurung", phone: "+977 9802 556677", email: "sita.g@mail.com", idType: "Citizenship", nationality: "Nepal", stays: 9 },
-  { id: "g5", name: "James O'Connor", phone: "+353 87 445 2211", email: "j.oconnor@mail.ie", idType: "Passport", nationality: "Ireland", stays: 1 },
-  { id: "g6", name: "Mika Tanaka", phone: "+81 90 8877 2211", email: "mika.t@mail.jp", idType: "Passport", nationality: "Japan", stays: 3 },
-];
-
-export const guestStays: Record<string, { ref: string; room: string; dates: string; amount: number }[]> = {
-  g1: [
-    { ref: "BK-24801", room: "104", dates: "02 Aug – 05 Aug 2026", amount: 13500 },
-    { ref: "BK-23120", room: "212", dates: "14 Mar – 16 Mar 2026", amount: 14400 },
-    { ref: "BK-22087", room: "101", dates: "02 Jan – 04 Jan 2026", amount: 9000 },
-  ],
-};
-
 export type Invoice = {
   id: string;
   number: string;

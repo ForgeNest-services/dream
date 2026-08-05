@@ -18,6 +18,9 @@ from features.hotel_pms.schemas import (
     CreateRoomRequest,
     UpdateRoomRequest,
     RoomData,
+    CreateGuestRequest,
+    UpdateGuestRequest,
+    GuestData,
 )
 from features.hotel_pms.service import (
     HotelPMSCredentialService,
@@ -26,6 +29,7 @@ from features.hotel_pms.service import (
 from features.hotel_pms.branch_service import HotelPMSBranchService
 from features.hotel_pms.room_type_service import RoomTypeService
 from features.hotel_pms.room_service import RoomService
+from features.hotel_pms.guest_service import GuestService
 
 
 router = APIRouter(prefix="/hotel-pms", tags=["hotel-pms"])
@@ -420,6 +424,7 @@ def create_room(
         room_number=data.room_number,
         floor=data.floor,
         status=data.status,
+        rate_override=data.rate_override,
     )
 
     if not result["success"]:
@@ -430,6 +435,8 @@ def create_room(
             return error_response("ROOM_TYPE_NOT_FOUND", "Room type not found in this branch.", 404)
         if code == "INVALID_STATUS":
             return error_response("INVALID_STATUS", "Invalid status value.", 400)
+        if code == "INVALID_RATE":
+            return error_response("INVALID_RATE", "Rate must be greater than 0.", 400)
         if code == "ROOM_NUMBER_TAKEN":
             return error_response("ROOM_NUMBER_TAKEN", "A room with this number already exists in this branch.", 409)
         return error_response("CREATION_FAILED", "Failed to create room.", 500)
@@ -454,16 +461,17 @@ def update_room(
         raise HTTPException(403, "Only Owner or Manager can edit rooms")
     _assert_branch_scope(staff, branch_id)
 
-    result = RoomService.update(
-        db,
-        tenant_id=staff["tenant_id"],
-        branch_id=branch_id,
-        room_id=room_id,
-        room_type_id=data.room_type_id,
-        room_number=data.room_number,
-        floor=data.floor,
-        status=data.status,
-    )
+    payload = data.model_dump(exclude_unset=True)
+    kwargs = {
+        "tenant_id": staff["tenant_id"],
+        "branch_id": branch_id,
+        "room_id": room_id,
+    }
+    for key in ("room_type_id", "room_number", "floor", "status", "rate_override"):
+        if key in payload:
+            kwargs[key] = payload[key]
+
+    result = RoomService.update(db, **kwargs)
 
     if not result["success"]:
         code = result["error_code"]
@@ -473,6 +481,8 @@ def update_room(
             return error_response("ROOM_TYPE_NOT_FOUND", "Room type not found in this branch.", 404)
         if code == "INVALID_STATUS":
             return error_response("INVALID_STATUS", "Invalid status value.", 400)
+        if code == "INVALID_RATE":
+            return error_response("INVALID_RATE", "Rate must be greater than 0.", 400)
         if code == "ROOM_NUMBER_TAKEN":
             return error_response("ROOM_NUMBER_TAKEN", "A room with this number already exists in this branch.", 409)
         return error_response("UPDATE_FAILED", "Failed to update room.", 500)
@@ -499,3 +509,92 @@ def delete_room(
     if not result["success"]:
         return error_response("ROOM_NOT_FOUND", "Room not found.", 404)
     return success_response(data={"deleted": True}, message="Room removed")
+
+
+# ---------------------------------------------------------------------------
+# Guests (staff-facing — tenant-scoped, no branch check)
+# ---------------------------------------------------------------------------
+
+@router.get("/guests")
+def list_guests(
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    guests = GuestService.list_for_tenant(db, staff["tenant_id"])
+    return success_response(
+        data=[GuestData.model_validate(g).model_dump(mode="json") for g in guests]
+    )
+
+
+@router.post("/guests")
+def create_guest(
+    data: CreateGuestRequest,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    result = GuestService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        full_name=data.full_name,
+        phone=data.phone,
+        email=data.email,
+        id_document_type=data.id_document_type,
+        id_document_number=data.id_document_number,
+        nationality=data.nationality,
+    )
+
+    if not result["success"]:
+        return error_response("CREATION_FAILED", "Failed to create guest.", 500)
+
+    return success_response(
+        data=GuestData.model_validate(result["guest"]).model_dump(mode="json"),
+        message="Guest created",
+        status_code=201,
+    )
+
+
+@router.patch("/guests/{guest_id}")
+def update_guest(
+    guest_id: str,
+    data: UpdateGuestRequest,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    result = GuestService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        guest_id=guest_id,
+        full_name=data.full_name,
+        phone=data.phone,
+        email=data.email,
+        id_document_type=data.id_document_type,
+        id_document_number=data.id_document_number,
+        nationality=data.nationality,
+    )
+
+    if not result["success"]:
+        code = result["error_code"]
+        if code == "GUEST_NOT_FOUND":
+            return error_response("GUEST_NOT_FOUND", "Guest not found.", 404)
+        return error_response("UPDATE_FAILED", "Failed to update guest.", 500)
+
+    return success_response(
+        data=GuestData.model_validate(result["guest"]).model_dump(mode="json"),
+        message="Guest updated",
+    )
+
+
+@router.delete("/guests/{guest_id}")
+def delete_guest(
+    guest_id: str,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] != "app_owner":
+        from fastapi import HTTPException
+        raise HTTPException(403, "Only Owner can remove guests")
+
+    result = GuestService.delete(db, tenant_id=staff["tenant_id"], guest_id=guest_id)
+    if not result["success"]:
+        return error_response("GUEST_NOT_FOUND", "Guest not found.", 404)
+    return success_response(data={"deleted": True}, message="Guest removed")
