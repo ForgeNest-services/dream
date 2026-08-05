@@ -22,38 +22,6 @@ export const bookingStatusClass: Record<BookingStatus, string> = {
   cancelled: "bg-destructive/10 text-destructive border-destructive/25",
 };
 
-export type Room = {
-  id: string;
-  number: string;
-  type: string;
-  floor: number;
-  rate: number;
-  status: RoomStatus;
-};
-
-export const roomTypes = [
-  { id: "rt1", name: "Standard Double", baseRate: 4500, capacity: 2, count: 14 },
-  { id: "rt2", name: "Deluxe King", baseRate: 7200, capacity: 2, count: 10 },
-  { id: "rt3", name: "Twin Executive", baseRate: 6400, capacity: 3, count: 8 },
-  { id: "rt4", name: "Himalaya Suite", baseRate: 14500, capacity: 4, count: 4 },
-];
-
-const statuses: RoomStatus[] = ["available", "occupied", "cleaning", "maintenance"];
-
-export const rooms: Room[] = Array.from({ length: 36 }, (_, i) => {
-  const floor = Math.floor(i / 12) + 1;
-  const type = roomTypes[i % roomTypes.length]!;
-  const status = statuses[(i * 7 + floor) % 4 === 3 && i % 5 !== 0 ? 0 : (i * 3) % 4]!;
-  return {
-    id: `r${i + 1}`,
-    number: `${floor}${String((i % 12) + 1).padStart(2, "0")}`,
-    type: type.name,
-    floor,
-    rate: type.baseRate,
-    status,
-  };
-});
-
 export type Booking = {
   id: string;
   ref: string;

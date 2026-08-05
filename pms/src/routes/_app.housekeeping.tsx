@@ -13,8 +13,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useApp } from "@/lib/app-state";
-import { rooms } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
+
+// TODO(phase-3): replace with real rooms from GET /hotel-pms/branches/{id}/rooms
+const rooms: {
+  id: string;
+  number: string;
+  type: string;
+  floor: number;
+  status: "available" | "occupied" | "cleaning" | "maintenance";
+}[] = [];
 
 export const Route = createFileRoute("/_app/housekeeping")({
   head: () => ({

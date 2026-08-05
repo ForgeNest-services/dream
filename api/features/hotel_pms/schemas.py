@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import datetime
 from features.hotel_pms.roles import HotelPMSRole
@@ -81,6 +82,84 @@ class CreateBranchRequest(BaseModel):
     address: str | None = None
     city: str | None = None
     phone: str | None = None
+
+
+class RoomTypeData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    name: str
+    base_rate: Decimal
+    capacity: int
+    count: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateRoomTypeRequest(BaseModel):
+    name: str
+    base_rate: Decimal
+    capacity: int = 2
+    count: int = 0
+
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Name is required")
+        return v
+
+    @field_validator("base_rate")
+    @classmethod
+    def base_rate_positive(cls, v: Decimal) -> Decimal:
+        if v <= 0:
+            raise ValueError("Base rate must be greater than 0")
+        return v
+
+    @field_validator("capacity")
+    @classmethod
+    def capacity_at_least_one(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("Capacity must be at least 1")
+        return v
+
+    @field_validator("count")
+    @classmethod
+    def count_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("Count cannot be negative")
+        return v
+
+
+class UpdateRoomTypeRequest(BaseModel):
+    name: str | None = None
+    base_rate: Decimal | None = None
+    capacity: int | None = None
+    count: int | None = None
+
+    @field_validator("base_rate")
+    @classmethod
+    def base_rate_positive(cls, v: Decimal | None) -> Decimal | None:
+        if v is not None and v <= 0:
+            raise ValueError("Base rate must be greater than 0")
+        return v
+
+    @field_validator("capacity")
+    @classmethod
+    def capacity_at_least_one(cls, v: int | None) -> int | None:
+        if v is not None and v < 1:
+            raise ValueError("Capacity must be at least 1")
+        return v
+
+    @field_validator("count")
+    @classmethod
+    def count_non_negative(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError("Count cannot be negative")
+        return v
 
 
 class UpdateBranchRequest(BaseModel):

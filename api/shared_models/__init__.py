@@ -3,6 +3,7 @@ from .user import User
 from .platform_admin import PlatformAdmin
 from .hotel_pms_credential import HotelPMSCredential
 from .hotel_pms_branch import HotelPMSBranch
+from .pms_room_type import PMSRoomType
 from .app import App
 
 __all__ = [
@@ -11,5 +12,6 @@ __all__ = [
     "PlatformAdmin",
     "HotelPMSCredential",
     "HotelPMSBranch",
+    "PMSRoomType",
     "App",
 ]

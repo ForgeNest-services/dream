@@ -12,12 +12,16 @@ from features.hotel_pms.schemas import (
     CreateBranchRequest,
     UpdateBranchRequest,
     BranchData,
+    CreateRoomTypeRequest,
+    UpdateRoomTypeRequest,
+    RoomTypeData,
 )
 from features.hotel_pms.service import (
     HotelPMSCredentialService,
     HotelPMSAuthService,
 )
 from features.hotel_pms.branch_service import HotelPMSBranchService
+from features.hotel_pms.room_type_service import RoomTypeService
 
 
 router = APIRouter(prefix="/hotel-pms", tags=["hotel-pms"])
@@ -251,3 +255,123 @@ def delete_branch(
         return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
 
     return success_response(data={"deleted": True}, message="Branch removed")
+
+
+# ---------------------------------------------------------------------------
+# Room Types (staff-facing — managed from PMS)
+# ---------------------------------------------------------------------------
+
+def _assert_branch_scope(staff: dict, branch_id: str) -> None:
+    """Managers/front-desk can only touch their own branch. Owner spans all."""
+    from fastapi import HTTPException
+    if staff["role"] == "app_owner":
+        return
+    if staff.get("branch_id") != branch_id:
+        raise HTTPException(403, "Not allowed for this branch")
+
+
+@router.get("/branches/{branch_id}/room-types")
+def list_room_types(
+    branch_id: str,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = RoomTypeService.list_for_branch(db, staff["tenant_id"], branch_id)
+    if not result["success"]:
+        return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
+    return success_response(
+        data=[RoomTypeData.model_validate(rt).model_dump(mode="json") for rt in result["room_types"]]
+    )
+
+
+@router.post("/branches/{branch_id}/room-types")
+def create_room_type(
+    branch_id: str,
+    data: CreateRoomTypeRequest,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("app_owner", "manager"):
+        from fastapi import HTTPException
+        raise HTTPException(403, "Only Owner or Manager can create room types")
+    _assert_branch_scope(staff, branch_id)
+
+    result = RoomTypeService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        name=data.name,
+        base_rate=data.base_rate,
+        capacity=data.capacity,
+        count=data.count,
+    )
+
+    if not result["success"]:
+        code = result["error_code"]
+        if code == "BRANCH_NOT_FOUND":
+            return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
+        if code == "NAME_TAKEN":
+            return error_response("NAME_TAKEN", "A room type with this name already exists in this branch.", 409)
+        return error_response("CREATION_FAILED", "Failed to create room type.", 500)
+
+    return success_response(
+        data=RoomTypeData.model_validate(result["room_type"]).model_dump(mode="json"),
+        message="Room type created",
+        status_code=201,
+    )
+
+
+@router.patch("/branches/{branch_id}/room-types/{room_type_id}")
+def update_room_type(
+    branch_id: str,
+    room_type_id: str,
+    data: UpdateRoomTypeRequest,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("app_owner", "manager"):
+        from fastapi import HTTPException
+        raise HTTPException(403, "Only Owner or Manager can edit room types")
+    _assert_branch_scope(staff, branch_id)
+
+    result = RoomTypeService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        room_type_id=room_type_id,
+        name=data.name,
+        base_rate=data.base_rate,
+        capacity=data.capacity,
+        count=data.count,
+    )
+
+    if not result["success"]:
+        code = result["error_code"]
+        if code == "ROOM_TYPE_NOT_FOUND":
+            return error_response("ROOM_TYPE_NOT_FOUND", "Room type not found.", 404)
+        if code == "NAME_TAKEN":
+            return error_response("NAME_TAKEN", "A room type with this name already exists in this branch.", 409)
+        return error_response("UPDATE_FAILED", "Failed to update room type.", 500)
+
+    return success_response(
+        data=RoomTypeData.model_validate(result["room_type"]).model_dump(mode="json"),
+        message="Room type updated",
+    )
+
+
+@router.delete("/branches/{branch_id}/room-types/{room_type_id}")
+def delete_room_type(
+    branch_id: str,
+    room_type_id: str,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] != "app_owner":
+        from fastapi import HTTPException
+        raise HTTPException(403, "Only Owner can delete room types")
+    _assert_branch_scope(staff, branch_id)
+
+    result = RoomTypeService.delete(db, tenant_id=staff["tenant_id"], room_type_id=room_type_id)
+    if not result["success"]:
+        return error_response("ROOM_TYPE_NOT_FOUND", "Room type not found.", 404)
+    return success_response(data={"deleted": True}, message="Room type removed")

@@ -32,7 +32,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useMoney } from "@/lib/app-state";
-import { bookings, bookingStatusClass, rooms, roomTypes, type BookingStatus } from "@/lib/mock-data";
+import { bookings, bookingStatusClass, type BookingStatus } from "@/lib/mock-data";
+
+// TODO(phase-3): replace with real rooms + room types from API
+const rooms: { id: string; number: string; type: string }[] = [];
+const roomTypes: { id: string; name: string }[] = [];
 
 export const Route = createFileRoute("/_app/bookings")({
   head: () => ({
@@ -110,9 +114,9 @@ function BookingsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Room</Label>
-                  <Select defaultValue={rooms[0]!.number}>
+                  <Select disabled={rooms.length === 0}>
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder={rooms.length === 0 ? "No rooms yet (Phase 3)" : "Pick a room"} />
                     </SelectTrigger>
                     <SelectContent>
                       {rooms.slice(0, 18).map((r) => (
@@ -227,7 +231,7 @@ function BookingsPage() {
                   <div className="text-sm font-semibold">
                     Room {b.room}
                     <span className="block text-xs font-normal text-muted-foreground">
-                      {roomTypes[Number(b.room) % roomTypes.length]!.name}
+                      {roomTypes.length > 0 ? roomTypes[Number(b.room) % roomTypes.length]!.name : "—"}
                     </span>
                   </div>
                   {Array.from({ length: 7 }).map((_, i) => {
