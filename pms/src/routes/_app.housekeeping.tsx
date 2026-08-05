@@ -104,7 +104,7 @@ function HousekeepingPage() {
     <>
       <PageHeader
         title="Housekeeping board"
-        subtitle={`Room servicing queue · ${property.name}`}
+        subtitle={`Room servicing queue · ${property?.name ?? "—"}`}
         action={
           <Select value={floor} onValueChange={setFloor}>
             <SelectTrigger className="h-10 w-[150px]">

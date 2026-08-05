@@ -42,9 +42,13 @@ export function useCredentials(appCode: string) {
     } catch (err) {
       const apiErr = err as ApiError;
       if (apiErr.code === 'ROLE_ALREADY_HAS_CREDENTIAL') {
-        toast.error(`A credential for '${payload.role}' already exists.`);
+        toast.error(`A credential for '${payload.role}' already exists for this branch.`);
       } else if (apiErr.code === 'USERNAME_TAKEN') {
         toast.error('That username is already in use. Pick another.');
+      } else if (apiErr.code === 'BRANCH_REQUIRED') {
+        toast.error('Select a branch for this role.');
+      } else if (apiErr.code === 'BRANCH_NOT_FOUND') {
+        toast.error('Selected branch not found.');
       } else {
         toast.error(apiErr.message || 'Failed to create credential');
       }
@@ -55,12 +59,12 @@ export function useCredentials(appCode: string) {
   };
 
   const update = async (
-    role: string,
+    credId: string,
     payload: UpdateCredentialPayload,
   ): Promise<boolean> => {
     setIsMutating(true);
     try {
-      await appsApi.updateCredential(appCode, role, payload);
+      await appsApi.updateCredential(appCode, credId, payload);
       toast.success('Credential updated');
       await fetch();
       return true;
@@ -77,10 +81,10 @@ export function useCredentials(appCode: string) {
     }
   };
 
-  const remove = async (role: string): Promise<boolean> => {
+  const remove = async (credId: string): Promise<boolean> => {
     setIsMutating(true);
     try {
-      await appsApi.deleteCredential(appCode, role);
+      await appsApi.deleteCredential(appCode, credId);
       toast.success('Credential removed');
       await fetch();
       return true;

@@ -68,9 +68,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
     username,
     logout,
     properties,
+    propertiesLoading,
     propertyId,
     setPropertyId,
     property,
+    canSwitchProperty,
   } = useApp();
 
   const [collapsed, setCollapsed] = useState(false);
@@ -182,29 +184,43 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground md:hidden">
               <Hotel className="size-5" />
             </span>
-            <Select value={propertyId} onValueChange={setPropertyId}>
-              <SelectTrigger
-                className="h-11 min-w-0 max-w-[280px] gap-2 border-border bg-secondary/60 px-3"
-                aria-label="Switch property"
-              >
+            {canSwitchProperty ? (
+              <Select value={propertyId} onValueChange={setPropertyId}>
+                <SelectTrigger
+                  className="h-11 min-w-0 max-w-[280px] gap-2 border-border bg-secondary/60 px-3"
+                  aria-label="Switch property"
+                >
+                  <Building2 className="size-4 shrink-0 text-accent" />
+                  <span className="min-w-0 text-left">
+                    <span className="block truncate font-display text-[15px] font-semibold leading-tight">
+                      {property?.name ?? (propertiesLoading ? "Loading…" : "No branch")}
+                    </span>
+                    <span className="block truncate text-[11px] text-muted-foreground">
+                      {property?.location ?? ""}
+                    </span>
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  {properties.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} — {p.location}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="flex h-11 min-w-0 max-w-[280px] items-center gap-2 rounded-md border border-border bg-secondary/60 px-3">
                 <Building2 className="size-4 shrink-0 text-accent" />
                 <span className="min-w-0 text-left">
                   <span className="block truncate font-display text-[15px] font-semibold leading-tight">
-                    {property.name}
+                    {property?.name ?? (propertiesLoading ? "Loading…" : "No branch")}
                   </span>
                   <span className="block truncate text-[11px] text-muted-foreground">
-                    {property.location}
+                    {property?.location ?? ""}
                   </span>
                 </span>
-              </SelectTrigger>
-              <SelectContent>
-                {properties.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name} — {p.location}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">

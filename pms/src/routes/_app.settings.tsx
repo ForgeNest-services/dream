@@ -98,7 +98,7 @@ function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" subtitle={`Configuration and billing for ${property.name}`} />
+      <PageHeader title="Settings" subtitle={`Configuration and billing for ${property?.name ?? "—"}`} />
 
       <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
         <div className="space-y-6">
@@ -107,7 +107,7 @@ function SettingsPage() {
             <form className="mt-5 grid gap-4 sm:grid-cols-2">
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="pname">Property name</Label>
-                <Input key={property.id} id="pname" defaultValue={property.name} />
+                <Input key={property?.id} id="pname" defaultValue={property?.name ?? ""} />
               </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="addr">Address</Label>

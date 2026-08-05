@@ -97,6 +97,7 @@ def require_hotel_pms_staff(role: str | None = None):
             "tenant_id": payload["tenant_id"],
             "role": staff_role,
             "cred_id": payload.get("cred_id"),
+            "branch_id": payload.get("branch_id"),
         }
 
     return _dep
