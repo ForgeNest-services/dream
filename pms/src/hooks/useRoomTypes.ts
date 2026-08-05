@@ -34,18 +34,21 @@ export function useRoomTypes(branchId: string | null | undefined) {
     fetch();
   }, [fetch]);
 
-  const create = async (payload: CreateRoomTypePayload): Promise<boolean> => {
-    if (!branchId) return false;
+  const create = async (payload: CreateRoomTypePayload): Promise<RoomTypeDto | null> => {
+    if (!branchId) return null;
     setIsMutating(true);
     try {
-      await roomTypesApi.create(branchId, payload);
-      toast.success("Room type created");
-      await fetch();
-      return true;
+      const response = await roomTypesApi.create(branchId, payload);
+      const created = response.data ?? null;
+      if (created) {
+        toast.success("Room type created");
+        await fetch();
+      }
+      return created;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to create room type";
       toast.error(message);
-      return false;
+      return null;
     } finally {
       setIsMutating(false);
     }

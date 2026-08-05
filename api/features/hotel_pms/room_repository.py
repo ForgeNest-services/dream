@@ -1,0 +1,72 @@
+from sqlalchemy.orm import Session
+from shared_models import PMSRoom
+
+
+class RoomRepository:
+    @staticmethod
+    def create(
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        room_type_id: str,
+        room_number: str,
+        floor: str | None,
+        status: str,
+    ) -> PMSRoom:
+        room = PMSRoom(
+            tenant_id=tenant_id,
+            branch_id=branch_id,
+            room_type_id=room_type_id,
+            room_number=room_number.strip(),
+            floor=floor.strip() if floor else None,
+            status=status,
+        )
+        db.add(room)
+        db.commit()
+        db.refresh(room)
+        return room
+
+    @staticmethod
+    def get_by_id(db: Session, tenant_id: str, room_id: str) -> PMSRoom | None:
+        return (
+            db.query(PMSRoom)
+            .filter(PMSRoom.id == room_id, PMSRoom.tenant_id == tenant_id)
+            .first()
+        )
+
+    @staticmethod
+    def list_for_branch(db: Session, tenant_id: str, branch_id: str) -> list[PMSRoom]:
+        return (
+            db.query(PMSRoom)
+            .filter(
+                PMSRoom.tenant_id == tenant_id,
+                PMSRoom.branch_id == branch_id,
+                PMSRoom.is_active == True,
+            )
+            .order_by(PMSRoom.room_number)
+            .all()
+        )
+
+    @staticmethod
+    def update(
+        db: Session,
+        room: PMSRoom,
+        room_type_id: str | None = None,
+        room_number: str | None = None,
+        floor: str | None = None,
+        status: str | None = None,
+        is_active: bool | None = None,
+    ) -> PMSRoom:
+        if room_type_id is not None:
+            room.room_type_id = room_type_id
+        if room_number is not None:
+            room.room_number = room_number.strip()
+        if floor is not None:
+            room.floor = floor.strip() if floor else None
+        if status is not None:
+            room.status = status
+        if is_active is not None:
+            room.is_active = is_active
+        db.commit()
+        db.refresh(room)
+        return room

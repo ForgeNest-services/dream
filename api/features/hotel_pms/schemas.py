@@ -162,6 +162,50 @@ class UpdateRoomTypeRequest(BaseModel):
         return v
 
 
+class RoomTypeSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+
+
+class RoomData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    room_type_id: str
+    room_type: RoomTypeSummary | None = None
+    room_number: str
+    floor: str | None
+    status: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateRoomRequest(BaseModel):
+    room_type_id: str
+    room_number: str
+    floor: str | None = None
+    status: str = "available"
+
+    @field_validator("room_number")
+    @classmethod
+    def number_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Room number is required")
+        return v
+
+
+class UpdateRoomRequest(BaseModel):
+    room_type_id: str | None = None
+    room_number: str | None = None
+    floor: str | None = None
+    status: str | None = None
+
+
 class UpdateBranchRequest(BaseModel):
     name: str | None = None
     address: str | None = None
