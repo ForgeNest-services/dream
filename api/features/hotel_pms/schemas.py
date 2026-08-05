@@ -1,6 +1,6 @@
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, field_validator
-from datetime import datetime
+from datetime import datetime, date
 from features.hotel_pms.roles import HotelPMSRole
 
 
@@ -255,3 +255,73 @@ class UpdateBranchRequest(BaseModel):
     address: str | None = None
     city: str | None = None
     phone: str | None = None
+
+
+# -----------------------------------------------------------------------------
+# Bookings
+# -----------------------------------------------------------------------------
+
+class GuestSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    full_name: str
+    phone: str | None
+    email: str | None
+
+
+class RoomSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    room_number: str
+    floor: str | None
+
+
+class BookingData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    room_id: str
+    room: RoomSummary | None = None
+    guest_id: str
+    guest: GuestSummary | None = None
+    check_in_date: date
+    check_out_date: date
+    actual_check_in: datetime | None
+    actual_check_out: datetime | None
+    status: str
+    rate_per_night: Decimal
+    num_guests: int
+    notes: str | None
+    created_by_cred_id: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateBookingRequest(BaseModel):
+    room_id: str
+    guest_id: str
+    check_in_date: date
+    check_out_date: date
+    num_guests: int = 1
+    notes: str | None = None
+    rate_per_night: Decimal | None = None
+
+    @field_validator("num_guests")
+    @classmethod
+    def positive_guests(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("num_guests must be at least 1")
+        return v
+
+
+class UpdateBookingRequest(BaseModel):
+    room_id: str | None = None
+    check_in_date: date | None = None
+    check_out_date: date | None = None
+    num_guests: int | None = None
+    notes: str | None = None
+    rate_per_night: Decimal | None = None

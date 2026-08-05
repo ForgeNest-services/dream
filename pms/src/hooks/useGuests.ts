@@ -1,34 +1,50 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import {
   guestsApi,
   type GuestDto,
+  type GuestsQuery,
   type CreateGuestPayload,
   type UpdateGuestPayload,
 } from "@/lib/guests-api";
+import type { PageMeta } from "@/lib/api-client";
 
-export function useGuests(enabled: boolean = true) {
+interface UseGuestsOptions extends GuestsQuery {
+  enabled?: boolean;
+}
+
+export function useGuests(options: UseGuestsOptions = {}) {
+  const { enabled = true, q, page, perPage } = options;
+
+  const params = useMemo<GuestsQuery>(
+    () => ({ q, page, perPage }),
+    [q, page, perPage],
+  );
+
   const [guests, setGuests] = useState<GuestDto[]>([]);
+  const [meta, setMeta] = useState<PageMeta | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
 
   const fetch = useCallback(async () => {
     if (!enabled) {
       setGuests([]);
+      setMeta(null);
       return;
     }
     setIsLoading(true);
     try {
-      const response = await guestsApi.list();
+      const response = await guestsApi.list(params);
       setGuests(response.data ?? []);
+      setMeta(response.meta ?? null);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load guests";
       toast.error(message);
     } finally {
       setIsLoading(false);
     }
-  }, [enabled]);
+  }, [enabled, params]);
 
   useEffect(() => {
     fetch();
@@ -85,5 +101,5 @@ export function useGuests(enabled: boolean = true) {
     }
   };
 
-  return { guests, isLoading, isMutating, refetch: fetch, create, update, remove };
+  return { guests, meta, isLoading, isMutating, refetch: fetch, create, update, remove };
 }

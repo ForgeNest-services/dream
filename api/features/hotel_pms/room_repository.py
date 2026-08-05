@@ -1,6 +1,7 @@
 from decimal import Decimal
+from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
-from shared_models import PMSRoom
+from shared_models import PMSRoom, PMSRoomType
 
 _UNSET = object()
 
@@ -51,6 +52,46 @@ class RoomRepository:
             .order_by(PMSRoom.room_number)
             .all()
         )
+
+    @staticmethod
+    def list_paginated(
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        q: str | None,
+        room_type_id: str | None,
+        status: str | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[PMSRoom], int]:
+        base = db.query(PMSRoom).filter(
+            PMSRoom.tenant_id == tenant_id,
+            PMSRoom.branch_id == branch_id,
+            PMSRoom.is_active == True,
+        )
+        if room_type_id:
+            base = base.filter(PMSRoom.room_type_id == room_type_id)
+        if status:
+            base = base.filter(PMSRoom.status == status)
+        if q:
+            term = f"%{q.strip().lower()}%"
+            base = base.outerjoin(
+                PMSRoomType, PMSRoom.room_type_id == PMSRoomType.id
+            ).filter(
+                or_(
+                    func.lower(PMSRoom.room_number).like(term),
+                    func.lower(PMSRoom.floor).like(term),
+                    func.lower(PMSRoomType.name).like(term),
+                )
+            )
+        total = base.with_entities(func.count(PMSRoom.id)).scalar() or 0
+        items = (
+            base.order_by(PMSRoom.room_number)
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        return items, total
 
     @staticmethod
     def update(

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Pencil, Plus, Search, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/app-layout";
 import { TablePagination } from "@/components/table-pagination";
@@ -34,9 +34,10 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useApp, useMoney } from "@/lib/app-state";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useRoomTypes } from "@/hooks/useRoomTypes";
 import { useRooms } from "@/hooks/useRooms";
-import { normalizeTableSearch, paginate } from "@/hooks/useTableQuery";
+import { normalizeTableSearch } from "@/hooks/useTableQuery";
 import type { RoomTypeDto } from "@/lib/room-types-api";
 import type { RoomDto, RoomStatus } from "@/lib/rooms-api";
 import { cn } from "@/lib/utils";
@@ -118,14 +119,23 @@ function RoomsPage() {
     remove: removeRoomType,
   } = useRoomTypes(branchId);
 
+  const debouncedQ = useDebouncedValue(search.q, 300);
+
   const {
     rooms,
+    meta,
     isLoading: isRoomsLoading,
     isMutating: isRoomMutating,
     create: createRoom,
     update: updateRoom,
     remove: removeRoom,
-  } = useRooms(branchId);
+  } = useRooms(branchId, {
+    q: debouncedQ,
+    type: search.type,
+    status: search.status as RoomStatus | "" | undefined,
+    page: search.page,
+    perPage: search.perPage,
+  });
 
   const [typeAddOpen, setTypeAddOpen] = useState(false);
   const [typeEditing, setTypeEditing] = useState<RoomTypeDto | null>(null);
@@ -134,27 +144,12 @@ function RoomsPage() {
   const [roomEditing, setRoomEditing] = useState<RoomDto | null>(null);
   const [confirmRoomDelete, setConfirmRoomDelete] = useState<RoomDto | null>(null);
 
-  const filtered = useMemo(() => {
-    const q = search.q.trim().toLowerCase();
-    return rooms.filter((r) => {
-      if (search.type && r.room_type_id !== search.type) return false;
-      if (search.status && r.status !== search.status) return false;
-      if (q) {
-        const hay = `${r.room_number} ${r.floor ?? ""} ${r.room_type?.name ?? ""}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [rooms, search.q, search.type, search.status]);
-
-  const pageResult = paginate(filtered, search.page, search.perPage);
-
   useEffect(() => {
-    if (search.page > pageResult.totalPages) {
+    if (meta && search.page > meta.total_pages) {
       setSearch({ page: 1 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageResult.totalPages]);
+  }, [meta?.total_pages]);
 
   const headerAction =
     search.tab === "rooms" && canManage ? (
@@ -176,7 +171,7 @@ function RoomsPage() {
         title="Rooms"
         subtitle={
           branchId
-            ? `${rooms.length} rooms · ${roomTypes.length} type${roomTypes.length === 1 ? "" : "s"}`
+            ? `${meta?.total ?? rooms.length} rooms · ${roomTypes.length} type${roomTypes.length === 1 ? "" : "s"}`
             : "Select a branch to manage rooms"
         }
         action={headerAction}
@@ -253,16 +248,16 @@ function RoomsPage() {
             )}
           </div>
 
-          {isRoomsLoading ? (
+          {isRoomsLoading && rooms.length === 0 ? (
             <p className="text-sm text-muted-foreground">Loading rooms…</p>
-          ) : rooms.length === 0 ? (
+          ) : rooms.length === 0 && activeFilterCount === 0 ? (
             <div className="surface p-10 text-center">
               <p className="text-sm text-muted-foreground">
                 No rooms yet.{" "}
                 {canManage && "Click \"Add room\" to add your first."}
               </p>
             </div>
-          ) : filtered.length === 0 ? (
+          ) : rooms.length === 0 ? (
             <div className="surface p-10 text-center">
               <p className="text-sm text-muted-foreground">
                 No rooms match the current filters.
@@ -283,7 +278,7 @@ function RoomsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pageResult.items.map((r) => {
+                    {rooms.map((r) => {
                       const meta = statusMeta(r.status);
                       const typeInfo = roomTypes.find((t) => t.id === r.room_type_id);
                       return (
@@ -357,10 +352,10 @@ function RoomsPage() {
                 </Table>
               </div>
               <TablePagination
-                page={pageResult.page}
-                perPage={pageResult.perPage}
-                totalItems={pageResult.totalItems}
-                totalPages={pageResult.totalPages}
+                page={meta?.page ?? search.page}
+                perPage={meta?.per_page ?? search.perPage}
+                totalItems={meta?.total ?? rooms.length}
+                totalPages={meta?.total_pages ?? 1}
                 onPageChange={(page) => setSearch({ page })}
                 onPerPageChange={(perPage) => setSearch({ perPage, page: 1 })}
               />

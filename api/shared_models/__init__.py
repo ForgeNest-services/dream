@@ -6,6 +6,7 @@ from .hotel_pms_branch import HotelPMSBranch
 from .pms_room_type import PMSRoomType
 from .pms_room import PMSRoom
 from .pms_guest import PMSGuest
+from .pms_booking import PMSBooking
 from .app import App
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "PMSRoomType",
     "PMSRoom",
     "PMSGuest",
+    "PMSBooking",
     "App",
 ]

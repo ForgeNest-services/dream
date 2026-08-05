@@ -4,10 +4,18 @@ const API_URL =
   (import.meta.env.VITE_API_URL as string | undefined) ??
   "http://localhost:8000/api";
 
+export interface PageMeta {
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
+}
+
 export interface ApiEnvelope<T> {
   success: boolean;
   data?: T;
   message?: string;
+  meta?: PageMeta;
   error?: { code: string; message: string };
 }
 

@@ -30,6 +30,31 @@ class RoomService:
         return {"success": True, "rooms": rooms}
 
     @staticmethod
+    def list_paginated(
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        q: str | None,
+        room_type_id: str | None,
+        status: str | None,
+        offset: int,
+        limit: int,
+    ) -> dict:
+        if not RoomService._assert_branch(db, tenant_id, branch_id):
+            return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
+        items, total = RoomRepository.list_paginated(
+            db,
+            tenant_id=tenant_id,
+            branch_id=branch_id,
+            q=q,
+            room_type_id=room_type_id,
+            status=status,
+            offset=offset,
+            limit=limit,
+        )
+        return {"success": True, "rooms": items, "total": total}
+
+    @staticmethod
     def create(
         db: Session,
         tenant_id: str,

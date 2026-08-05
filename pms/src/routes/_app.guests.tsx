@@ -31,8 +31,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useApp } from "@/lib/app-state";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useGuests } from "@/hooks/useGuests";
-import { normalizeTableSearch, paginate } from "@/hooks/useTableQuery";
+import { normalizeTableSearch } from "@/hooks/useTableQuery";
 import type { GuestDto } from "@/lib/guests-api";
 
 const ALL_FILTER = "all";
@@ -104,7 +105,13 @@ function GuestsPage() {
   const setSearch = (patch: Partial<GuestsSearch>) =>
     navigate({ search: (prev) => ({ ...prev, ...patch }) });
 
-  const { guests, isLoading, isMutating, create, update, remove } = useGuests();
+  const debouncedQ = useDebouncedValue(search.q, 300);
+
+  const { guests, meta, isLoading, isMutating, create, update, remove } = useGuests({
+    q: debouncedQ,
+    page: search.page,
+    perPage: search.perPage,
+  });
 
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<GuestDto | null>(null);
@@ -117,34 +124,19 @@ function GuestsPage() {
   }, [guests]);
 
   const filtered = useMemo(() => {
-    const q = search.q.trim().toLowerCase();
     return guests.filter((g) => {
       if (search.docType && g.id_document_type !== search.docType) return false;
       if (search.nationality && g.nationality !== search.nationality) return false;
-      if (q) {
-        const hay = [
-          g.full_name,
-          g.email ?? "",
-          g.phone ?? "",
-          g.nationality ?? "",
-          g.id_document_number ?? "",
-        ]
-          .join(" ")
-          .toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
       return true;
     });
-  }, [guests, search.q, search.docType, search.nationality]);
-
-  const pageResult = paginate(filtered, search.page, search.perPage);
+  }, [guests, search.docType, search.nationality]);
 
   useEffect(() => {
-    if (search.page > pageResult.totalPages) {
+    if (meta && search.page > meta.total_pages) {
       setSearch({ page: 1 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageResult.totalPages]);
+  }, [meta?.total_pages]);
 
   const selectedGuest = useMemo(
     () => filtered.find((g) => g.id === search.selected) ?? filtered[0] ?? null,
@@ -159,9 +151,9 @@ function GuestsPage() {
       <PageHeader
         title="Guests"
         subtitle={
-          guests.length === 0
+          meta && meta.total === 0
             ? "No guests yet"
-            : `Directory of ${guests.length} guest${guests.length === 1 ? "" : "s"}`
+            : `Directory of ${meta?.total ?? guests.length} guest${(meta?.total ?? guests.length) === 1 ? "" : "s"}`
         }
         action={
           canManage && (
@@ -233,9 +225,9 @@ function GuestsPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
-        {isLoading ? (
+        {isLoading && guests.length === 0 ? (
           <p className="text-sm text-muted-foreground">Loading guests…</p>
-        ) : guests.length === 0 ? (
+        ) : guests.length === 0 && activeFilterCount === 0 ? (
           <div className="surface p-10 text-center xl:col-span-2">
             <p className="text-sm text-muted-foreground">
               No guests yet.{" "}
@@ -265,7 +257,7 @@ function GuestsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pageResult.items.map((g) => (
+                    {filtered.map((g) => (
                       <TableRow
                         key={g.id}
                         onClick={() => setSearch({ selected: g.id })}

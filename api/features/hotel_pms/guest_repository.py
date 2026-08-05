@@ -1,3 +1,4 @@
+from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 from shared_models import PMSGuest
 
@@ -51,6 +52,33 @@ class GuestRepository:
             .order_by(PMSGuest.full_name)
             .all()
         )
+
+    @staticmethod
+    def list_paginated(
+        db: Session,
+        tenant_id: str,
+        q: str | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[PMSGuest], int]:
+        base = db.query(PMSGuest).filter(
+            PMSGuest.tenant_id == tenant_id, PMSGuest.is_active == True
+        )
+        if q:
+            term = f"%{q.strip().lower()}%"
+            base = base.filter(
+                or_(
+                    func.lower(PMSGuest.full_name).like(term),
+                    func.lower(PMSGuest.phone).like(term),
+                    func.lower(PMSGuest.email).like(term),
+                    func.lower(PMSGuest.id_document_number).like(term),
+                )
+            )
+        total = base.with_entities(func.count(PMSGuest.id)).scalar() or 0
+        items = (
+            base.order_by(PMSGuest.full_name).offset(offset).limit(limit).all()
+        )
+        return items, total
 
     @staticmethod
     def update(

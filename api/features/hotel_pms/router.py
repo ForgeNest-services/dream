@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends
+from datetime import date
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_hotel_pms_staff
 from utils.helpers import success_response, error_response
+from utils.paging import parse_paging, build_meta
 from features.hotel_pms.schemas import (
     CreateCredentialRequest,
     UpdateCredentialRequest,
@@ -21,6 +23,9 @@ from features.hotel_pms.schemas import (
     CreateGuestRequest,
     UpdateGuestRequest,
     GuestData,
+    CreateBookingRequest,
+    UpdateBookingRequest,
+    BookingData,
 )
 from features.hotel_pms.service import (
     HotelPMSCredentialService,
@@ -30,6 +35,7 @@ from features.hotel_pms.branch_service import HotelPMSBranchService
 from features.hotel_pms.room_type_service import RoomTypeService
 from features.hotel_pms.room_service import RoomService
 from features.hotel_pms.guest_service import GuestService
+from features.hotel_pms.booking_service import BookingService
 
 
 router = APIRouter(prefix="/hotel-pms", tags=["hotel-pms"])
@@ -392,15 +398,31 @@ def delete_room_type(
 @router.get("/branches/{branch_id}/rooms")
 def list_rooms(
     branch_id: str,
+    q: str | None = Query(None),
+    type: str | None = Query(None),
+    status: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
 ):
     _assert_branch_scope(staff, branch_id)
-    result = RoomService.list_for_branch(db, staff["tenant_id"], branch_id)
+    paging = parse_paging(page, per_page)
+    result = RoomService.list_paginated(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        q=q,
+        room_type_id=type,
+        status=status,
+        offset=paging["offset"],
+        limit=paging["limit"],
+    )
     if not result["success"]:
         return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
     return success_response(
-        data=[RoomData.model_validate(r).model_dump(mode="json") for r in result["rooms"]]
+        data=[RoomData.model_validate(r).model_dump(mode="json") for r in result["rooms"]],
+        meta=build_meta(result["total"], paging["page"], paging["per_page"]),
     )
 
 
@@ -517,12 +539,23 @@ def delete_room(
 
 @router.get("/guests")
 def list_guests(
+    q: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
 ):
-    guests = GuestService.list_for_tenant(db, staff["tenant_id"])
+    paging = parse_paging(page, per_page)
+    result = GuestService.list_paginated(
+        db,
+        tenant_id=staff["tenant_id"],
+        q=q,
+        offset=paging["offset"],
+        limit=paging["limit"],
+    )
     return success_response(
-        data=[GuestData.model_validate(g).model_dump(mode="json") for g in guests]
+        data=[GuestData.model_validate(g).model_dump(mode="json") for g in result["guests"]],
+        meta=build_meta(result["total"], paging["page"], paging["per_page"]),
     )
 
 
@@ -598,3 +631,220 @@ def delete_guest(
     if not result["success"]:
         return error_response("GUEST_NOT_FOUND", "Guest not found.", 404)
     return success_response(data={"deleted": True}, message="Guest removed")
+
+
+# ---------------------------------------------------------------------------
+# Bookings (staff-facing, branch-scoped)
+# ---------------------------------------------------------------------------
+
+
+def _booking_error(code: str):
+    """Map booking service error codes to HTTP responses."""
+    mapping = {
+        "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+        "ROOM_NOT_FOUND": ("ROOM_NOT_FOUND", "Room not found in this branch.", 404),
+        "GUEST_NOT_FOUND": ("GUEST_NOT_FOUND", "Guest not found.", 404),
+        "BOOKING_NOT_FOUND": ("BOOKING_NOT_FOUND", "Booking not found.", 404),
+        "ROOM_UNAVAILABLE": (
+            "ROOM_UNAVAILABLE",
+            "This room already has an overlapping booking for those dates.",
+            409,
+        ),
+        "INVALID_DATES": ("INVALID_DATES", "Check-out must be after check-in.", 400),
+        "INVALID_GUEST_COUNT": ("INVALID_GUEST_COUNT", "Guest count must be at least 1.", 400),
+        "INVALID_RATE": ("INVALID_RATE", "Rate must be greater than 0.", 400),
+        "NOT_EDITABLE": (
+            "NOT_EDITABLE",
+            "Only reserved bookings can be edited. Check-in first or cancel to change.",
+            409,
+        ),
+        "INVALID_TRANSITION": (
+            "INVALID_TRANSITION",
+            "This action isn't allowed for the booking's current status.",
+            409,
+        ),
+        "CREATION_FAILED": ("CREATION_FAILED", "Failed to create booking.", 500),
+        "UPDATE_FAILED": ("UPDATE_FAILED", "Failed to update booking.", 500),
+    }
+    entry = mapping.get(code)
+    if not entry:
+        return error_response("UNKNOWN_ERROR", "Something went wrong.", 500)
+    c, m, s = entry
+    return error_response(c, m, s)
+
+
+@router.get("/branches/{branch_id}/bookings")
+def list_bookings(
+    branch_id: str,
+    q: str | None = Query(None),
+    status: str | None = Query(None),
+    room_id: str | None = Query(None),
+    date_from: date | None = Query(None, alias="from"),
+    date_to: date | None = Query(None, alias="to"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    paging = parse_paging(page, per_page)
+    result = BookingService.list_paginated(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        q=q,
+        status=status,
+        room_id=room_id,
+        date_from=date_from,
+        date_to=date_to,
+        offset=paging["offset"],
+        limit=paging["limit"],
+    )
+    if not result["success"]:
+        return _booking_error(result["error_code"])
+    return success_response(
+        data=[BookingData.model_validate(b).model_dump(mode="json") for b in result["bookings"]],
+        meta=build_meta(result["total"], paging["page"], paging["per_page"]),
+    )
+
+
+@router.get("/branches/{branch_id}/bookings/availability")
+def bookings_availability(
+    branch_id: str,
+    check_in: date = Query(..., description="YYYY-MM-DD"),
+    check_out: date = Query(..., description="YYYY-MM-DD"),
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = BookingService.available_rooms(
+        db, staff["tenant_id"], branch_id, check_in, check_out
+    )
+    if not result["success"]:
+        return _booking_error(result["error_code"])
+    return success_response(
+        data=[RoomData.model_validate(r).model_dump(mode="json") for r in result["rooms"]]
+    )
+
+
+@router.post("/branches/{branch_id}/bookings")
+def create_booking(
+    branch_id: str,
+    data: CreateBookingRequest,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = BookingService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        room_id=data.room_id,
+        guest_id=data.guest_id,
+        check_in_date=data.check_in_date,
+        check_out_date=data.check_out_date,
+        num_guests=data.num_guests,
+        notes=data.notes,
+        created_by_cred_id=staff.get("cred_id"),
+        rate_per_night=data.rate_per_night,
+    )
+    if not result["success"]:
+        return _booking_error(result["error_code"])
+    return success_response(
+        data=BookingData.model_validate(result["booking"]).model_dump(mode="json"),
+        message="Booking created",
+        status_code=201,
+    )
+
+
+@router.patch("/branches/{branch_id}/bookings/{booking_id}")
+def update_booking(
+    branch_id: str,
+    booking_id: str,
+    data: UpdateBookingRequest,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    payload = data.model_dump(exclude_unset=True)
+    result = BookingService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        booking_id=booking_id,
+        **payload,
+    )
+    if not result["success"]:
+        return _booking_error(result["error_code"])
+    return success_response(
+        data=BookingData.model_validate(result["booking"]).model_dump(mode="json"),
+        message="Booking updated",
+    )
+
+
+@router.post("/branches/{branch_id}/bookings/{booking_id}/check-in")
+def booking_check_in(
+    branch_id: str,
+    booking_id: str,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = BookingService.check_in(db, staff["tenant_id"], branch_id, booking_id)
+    if not result["success"]:
+        return _booking_error(result["error_code"])
+    return success_response(
+        data=BookingData.model_validate(result["booking"]).model_dump(mode="json"),
+        message="Guest checked in",
+    )
+
+
+@router.post("/branches/{branch_id}/bookings/{booking_id}/check-out")
+def booking_check_out(
+    branch_id: str,
+    booking_id: str,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = BookingService.check_out(db, staff["tenant_id"], branch_id, booking_id)
+    if not result["success"]:
+        return _booking_error(result["error_code"])
+    return success_response(
+        data=BookingData.model_validate(result["booking"]).model_dump(mode="json"),
+        message="Guest checked out",
+    )
+
+
+@router.post("/branches/{branch_id}/bookings/{booking_id}/cancel")
+def booking_cancel(
+    branch_id: str,
+    booking_id: str,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = BookingService.cancel(db, staff["tenant_id"], branch_id, booking_id)
+    if not result["success"]:
+        return _booking_error(result["error_code"])
+    return success_response(
+        data=BookingData.model_validate(result["booking"]).model_dump(mode="json"),
+        message="Booking cancelled",
+    )
+
+
+@router.post("/branches/{branch_id}/bookings/{booking_id}/no-show")
+def booking_no_show(
+    branch_id: str,
+    booking_id: str,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = BookingService.mark_no_show(db, staff["tenant_id"], branch_id, booking_id)
+    if not result["success"]:
+        return _booking_error(result["error_code"])
+    return success_response(
+        data=BookingData.model_validate(result["booking"]).model_dump(mode="json"),
+        message="Booking marked as no-show",
+    )

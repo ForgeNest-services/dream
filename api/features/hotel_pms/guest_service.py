@@ -9,6 +9,19 @@ class GuestService:
         return GuestRepository.list_for_tenant(db, tenant_id)
 
     @staticmethod
+    def list_paginated(
+        db: Session,
+        tenant_id: str,
+        q: str | None,
+        offset: int,
+        limit: int,
+    ) -> dict:
+        items, total = GuestRepository.list_paginated(
+            db, tenant_id=tenant_id, q=q, offset=offset, limit=limit
+        )
+        return {"success": True, "guests": items, "total": total}
+
+    @staticmethod
     def create(
         db: Session,
         tenant_id: str,

@@ -1,5 +1,20 @@
 import { apiClient } from "./api-client";
 
+export interface GuestsQuery {
+  q?: string;
+  page?: number;
+  perPage?: number;
+}
+
+function toQueryString(params: GuestsQuery): string {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.page) qs.set("page", String(params.page));
+  if (params.perPage) qs.set("per_page", String(params.perPage));
+  const s = qs.toString();
+  return s ? `?${s}` : "";
+}
+
 export interface GuestDto {
   id: string;
   tenant_id: string;
@@ -26,8 +41,8 @@ export interface CreateGuestPayload {
 export interface UpdateGuestPayload extends Partial<CreateGuestPayload> {}
 
 export const guestsApi = {
-  list() {
-    return apiClient.get<GuestDto[]>("/hotel-pms/guests");
+  list(params: GuestsQuery = {}) {
+    return apiClient.get<GuestDto[]>(`/hotel-pms/guests${toQueryString(params)}`);
   },
   create(payload: CreateGuestPayload) {
     return apiClient.post<GuestDto>("/hotel-pms/guests", payload);
