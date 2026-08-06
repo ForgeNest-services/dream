@@ -15,11 +15,11 @@ interface UseGuestsOptions extends GuestsQuery {
 }
 
 export function useGuests(options: UseGuestsOptions = {}) {
-  const { enabled = true, q, page, perPage } = options;
+  const { enabled = true, q, docType, nationality, page, perPage } = options;
 
   const params = useMemo<GuestsQuery>(
-    () => ({ q, page, perPage }),
-    [q, page, perPage],
+    () => ({ q, docType, nationality, page, perPage }),
+    [q, docType, nationality, page, perPage],
   );
 
   const [guests, setGuests] = useState<GuestDto[]>([]);

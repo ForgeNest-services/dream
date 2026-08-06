@@ -13,11 +13,19 @@ class GuestService:
         db: Session,
         tenant_id: str,
         q: str | None,
+        doc_type: str | None,
+        nationality: str | None,
         offset: int,
         limit: int,
     ) -> dict:
         items, total = GuestRepository.list_paginated(
-            db, tenant_id=tenant_id, q=q, offset=offset, limit=limit
+            db,
+            tenant_id=tenant_id,
+            q=q,
+            doc_type=doc_type,
+            nationality=nationality,
+            offset=offset,
+            limit=limit,
         )
         return {"success": True, "guests": items, "total": total}
 

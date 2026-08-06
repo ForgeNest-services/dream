@@ -109,6 +109,8 @@ function GuestsPage() {
 
   const { guests, meta, isLoading, isMutating, create, update, remove } = useGuests({
     q: debouncedQ,
+    docType: search.docType,
+    nationality: search.nationality,
     page: search.page,
     perPage: search.perPage,
   });
@@ -123,14 +125,6 @@ function GuestsPage() {
     return Array.from(set).sort();
   }, [guests]);
 
-  const filtered = useMemo(() => {
-    return guests.filter((g) => {
-      if (search.docType && g.id_document_type !== search.docType) return false;
-      if (search.nationality && g.nationality !== search.nationality) return false;
-      return true;
-    });
-  }, [guests, search.docType, search.nationality]);
-
   useEffect(() => {
     if (meta && search.page > meta.total_pages) {
       setSearch({ page: 1 });
@@ -139,8 +133,8 @@ function GuestsPage() {
   }, [meta?.total_pages]);
 
   const selectedGuest = useMemo(
-    () => filtered.find((g) => g.id === search.selected) ?? filtered[0] ?? null,
-    [filtered, search.selected],
+    () => guests.find((g) => g.id === search.selected) ?? guests[0] ?? null,
+    [guests, search.selected],
   );
 
   const activeFilterCount =
@@ -234,7 +228,7 @@ function GuestsPage() {
               {canManage && "Click \"Add guest\" to register your first."}
             </p>
           </div>
-        ) : filtered.length === 0 ? (
+        ) : guests.length === 0 ? (
           <div className="surface p-10 text-center xl:col-span-2">
             <p className="text-sm text-muted-foreground">
               No guests match the current filters.
@@ -257,7 +251,7 @@ function GuestsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.map((g) => (
+                    {guests.map((g) => (
                       <TableRow
                         key={g.id}
                         onClick={() => setSearch({ selected: g.id })}
@@ -313,10 +307,10 @@ function GuestsPage() {
                 </Table>
               </div>
               <TablePagination
-                page={pageResult.page}
-                perPage={pageResult.perPage}
-                totalItems={pageResult.totalItems}
-                totalPages={pageResult.totalPages}
+                page={meta?.page ?? search.page}
+                perPage={meta?.per_page ?? search.perPage}
+                totalItems={meta?.total ?? guests.length}
+                totalPages={meta?.total_pages ?? 1}
                 onPageChange={(page) => setSearch({ page })}
                 onPerPageChange={(perPage) => setSearch({ perPage, page: 1 })}
               />

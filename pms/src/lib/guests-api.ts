@@ -2,6 +2,8 @@ import { apiClient } from "./api-client";
 
 export interface GuestsQuery {
   q?: string;
+  docType?: string;
+  nationality?: string;
   page?: number;
   perPage?: number;
 }
@@ -9,6 +11,8 @@ export interface GuestsQuery {
 function toQueryString(params: GuestsQuery): string {
   const qs = new URLSearchParams();
   if (params.q) qs.set("q", params.q);
+  if (params.docType) qs.set("doc_type", params.docType);
+  if (params.nationality) qs.set("nationality", params.nationality);
   if (params.page) qs.set("page", String(params.page));
   if (params.perPage) qs.set("per_page", String(params.perPage));
   const s = qs.toString();

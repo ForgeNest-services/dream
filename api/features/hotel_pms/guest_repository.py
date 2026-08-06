@@ -58,12 +58,18 @@ class GuestRepository:
         db: Session,
         tenant_id: str,
         q: str | None,
+        doc_type: str | None,
+        nationality: str | None,
         offset: int,
         limit: int,
     ) -> tuple[list[PMSGuest], int]:
         base = db.query(PMSGuest).filter(
             PMSGuest.tenant_id == tenant_id, PMSGuest.is_active == True
         )
+        if doc_type:
+            base = base.filter(PMSGuest.id_document_type == doc_type)
+        if nationality:
+            base = base.filter(PMSGuest.nationality == nationality)
         if q:
             term = f"%{q.strip().lower()}%"
             base = base.filter(

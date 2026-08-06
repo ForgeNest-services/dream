@@ -46,10 +46,11 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useApp, useMoney } from "@/lib/app-state";
 import { useBookings } from "@/hooks/useBookings";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useGuests } from "@/hooks/useGuests";
 import { useRooms } from "@/hooks/useRooms";
 import { useRoomTypes } from "@/hooks/useRoomTypes";
-import { normalizeTableSearch, paginate } from "@/hooks/useTableQuery";
+import { normalizeTableSearch } from "@/hooks/useTableQuery";
 import type { BookingDto, BookingStatus, CreateBookingPayload } from "@/lib/bookings-api";
 import type { CreateGuestPayload, GuestDto } from "@/lib/guests-api";
 import type { RoomDto } from "@/lib/rooms-api";
@@ -131,8 +132,11 @@ function BookingsPage() {
     navigate({ search: (prev) => ({ ...prev, ...patch }) });
   };
 
+  const debouncedQ = useDebouncedValue(search.q, 300);
+
   const {
     bookings,
+    meta,
     isLoading,
     isMutating,
     create,
@@ -142,11 +146,21 @@ function BookingsPage() {
     cancel,
     noShow,
     fetchAvailability,
-  } = useBookings(branchId);
+  } = useBookings(branchId, {
+    q: debouncedQ,
+    status: search.status as BookingStatus | "" | undefined,
+    room_id: search.room,
+    from: search.from,
+    to: search.to,
+    page: search.page,
+    perPage: search.perPage,
+  });
 
-  const { rooms } = useRooms(branchId);
+  const { rooms } = useRooms(branchId, { perPage: 100 });
   const { roomTypes } = useRoomTypes(branchId);
-  const { guests, create: createGuest, isMutating: isGuestMutating } = useGuests(true);
+  const { guests, create: createGuest, isMutating: isGuestMutating } = useGuests({
+    perPage: 100,
+  });
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<BookingDto | null>(null);
@@ -155,37 +169,12 @@ function BookingsPage() {
     | null
   >(null);
 
-  const filtered = useMemo(() => {
-    const q = search.q.trim().toLowerCase();
-    return bookings.filter((b) => {
-      if (search.status && b.status !== search.status) return false;
-      if (search.room && b.room_id !== search.room) return false;
-      if (search.from && b.check_out_date < search.from) return false;
-      if (search.to && b.check_in_date > search.to) return false;
-      if (q) {
-        const hay = [
-          b.guest?.full_name,
-          b.guest?.phone,
-          b.room?.room_number,
-          b.id,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [bookings, search.q, search.status, search.room, search.from, search.to]);
-
-  const pageResult = paginate(filtered, search.page, search.perPage);
-
   useEffect(() => {
-    if (search.page > pageResult.totalPages) {
+    if (meta && search.page > meta.total_pages) {
       setSearch({ page: 1 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageResult.totalPages]);
+  }, [meta?.total_pages]);
 
   const activeFilterCount =
     (search.q ? 1 : 0) +
@@ -199,7 +188,9 @@ function BookingsPage() {
       <PageHeader
         title="Bookings"
         subtitle={
-          branchId ? `${bookings.length} total reservations` : "Select a branch to manage bookings"
+          branchId
+            ? `${meta?.total ?? bookings.length} total reservations`
+            : "Select a branch to manage bookings"
         }
         action={
           canManage ? (
@@ -288,15 +279,15 @@ function BookingsPage() {
         )}
       </div>
 
-      {isLoading ? (
+      {isLoading && bookings.length === 0 ? (
         <p className="text-sm text-muted-foreground">Loading bookings…</p>
-      ) : bookings.length === 0 ? (
+      ) : bookings.length === 0 && activeFilterCount === 0 ? (
         <div className="surface p-10 text-center">
           <p className="text-sm text-muted-foreground">
             No bookings yet. {canManage && `Click "New booking" to create the first reservation.`}
           </p>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : bookings.length === 0 ? (
         <div className="surface p-10 text-center">
           <p className="text-sm text-muted-foreground">No bookings match the current filters.</p>
         </div>
@@ -317,7 +308,7 @@ function BookingsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pageResult.items.map((b) => {
+                {bookings.map((b) => {
                   const nights = nightsBetween(b.check_in_date, b.check_out_date);
                   const rate = Number(b.rate_per_night);
                   const total = rate * nights;
@@ -422,10 +413,10 @@ function BookingsPage() {
             </Table>
           </div>
           <TablePagination
-            page={pageResult.page}
-            perPage={pageResult.perPage}
-            totalItems={pageResult.totalItems}
-            totalPages={pageResult.totalPages}
+            page={meta?.page ?? search.page}
+            perPage={meta?.per_page ?? search.perPage}
+            totalItems={meta?.total ?? bookings.length}
+            totalPages={meta?.total_pages ?? 1}
             onPageChange={(page) => setSearch({ page })}
             onPerPageChange={(perPage) => setSearch({ perPage, page: 1 })}
           />

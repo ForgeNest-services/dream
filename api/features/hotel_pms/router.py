@@ -540,6 +540,8 @@ def delete_room(
 @router.get("/guests")
 def list_guests(
     q: str | None = Query(None),
+    doc_type: str | None = Query(None),
+    nationality: str | None = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(25, ge=1, le=100),
     staff: dict = Depends(require_hotel_pms_staff()),
@@ -550,6 +552,8 @@ def list_guests(
         db,
         tenant_id=staff["tenant_id"],
         q=q,
+        doc_type=doc_type,
+        nationality=nationality,
         offset=paging["offset"],
         limit=paging["limit"],
     )
