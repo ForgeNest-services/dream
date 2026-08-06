@@ -4,8 +4,16 @@ import uuid
 from core.database import Base
 
 
-class HotelPMSBranch(Base):
-    __tablename__ = "hotel_pms_branches"
+class Branch(Base):
+    """Physical business location, shared across all apps for a tenant.
+
+    A tenant may run any combination of apps (Hotel PMS, Zestro Restaurant POS,
+    Gym, etc.) at each branch. Downstream app-specific tables (pms_rooms,
+    pms_bookings, future restro_tables, etc.) all FK into this table via
+    branch_id.
+    """
+
+    __tablename__ = "branches"
     __table_args__ = ({"schema": "public"},)
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -24,4 +32,4 @@ class HotelPMSBranch(Base):
     )
 
     def __repr__(self):
-        return f"<HotelPMSBranch(tenant_id={self.tenant_id}, name={self.name})>"
+        return f"<Branch(tenant_id={self.tenant_id}, name={self.name})>"

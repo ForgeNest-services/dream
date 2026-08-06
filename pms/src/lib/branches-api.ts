@@ -14,6 +14,8 @@ export interface BranchDto {
 
 export const branchesApi = {
   listMine() {
-    return apiClient.get<BranchDto[]>("/hotel-pms/branches/me");
+    // Unified /branches endpoint. Staff tokens (from any app) return either
+    // the staff's single scoped branch or all tenant branches for owner staff.
+    return apiClient.get<BranchDto[]>("/branches");
   },
 };

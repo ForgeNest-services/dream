@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from core.security import hash_password, verify_password
 from features.hotel_pms.repository import HotelPMSCredentialRepository
-from features.hotel_pms.branch_repository import HotelPMSBranchRepository
+from features.branches.repository import BranchRepository
 from features.hotel_pms.auth import issue_staff_token
 from features.hotel_pms.roles import HotelPMSRole
 from utils.logger import logger
@@ -24,7 +24,7 @@ class HotelPMSCredentialService:
         if role in BRANCH_SCOPED_ROLES:
             if not branch_id:
                 return {"success": False, "error_code": "BRANCH_REQUIRED"}
-            if not HotelPMSBranchRepository.get_by_id(db, tenant_id, branch_id):
+            if not BranchRepository.get_by_id(db, tenant_id, branch_id):
                 return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
         else:
             branch_id = None

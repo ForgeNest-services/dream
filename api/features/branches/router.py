@@ -1,0 +1,95 @@
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from core.database import get_db
+from core.deps import require_tenant_user, require_role, require_tenant_scope
+from utils.helpers import success_response, error_response
+from features.branches.schemas import (
+    BranchData,
+    CreateBranchRequest,
+    UpdateBranchRequest,
+)
+from features.branches.service import BranchService
+from features.auth.repository import TenantRepository
+
+
+router = APIRouter(prefix="/branches", tags=["branches"])
+
+
+@router.get("")
+def list_branches(
+    scope: dict = Depends(require_tenant_scope),
+    db: Session = Depends(get_db),
+):
+    """List branches for the current tenant. Works for both platform users
+    (owner/manager via admin) and app staff (via pms/restro tokens).
+    Staff locked to a single branch see only that branch."""
+    if scope["source"] == "staff":
+        branches = BranchService.list_for_staff(
+            db, scope["tenant_id"], scope.get("branch_id")
+        )
+    else:
+        tenant = TenantRepository.get_by_id(db, scope["tenant_id"])
+        branches = BranchService.list_for_tenant(db, scope["tenant_id"], tenant)
+    return success_response(
+        data=[BranchData.model_validate(b).model_dump(mode="json") for b in branches]
+    )
+
+
+@router.post("", dependencies=[Depends(require_tenant_user)])
+def create_branch(
+    data: CreateBranchRequest,
+    current_user: dict = Depends(require_role(["owner"])),
+    db: Session = Depends(get_db),
+):
+    user = current_user["user"]
+    result = BranchService.create(
+        db,
+        tenant_id=user.tenant_id,
+        name=data.name,
+        address=data.address,
+        city=data.city,
+        phone=data.phone,
+    )
+    return success_response(
+        data=BranchData.model_validate(result["branch"]).model_dump(mode="json"),
+        message="Branch created",
+        status_code=201,
+    )
+
+
+@router.patch("/{branch_id}", dependencies=[Depends(require_tenant_user)])
+def update_branch(
+    branch_id: str,
+    data: UpdateBranchRequest,
+    current_user: dict = Depends(require_role(["owner", "manager"])),
+    db: Session = Depends(get_db),
+):
+    user = current_user["user"]
+    result = BranchService.update(
+        db,
+        tenant_id=user.tenant_id,
+        branch_id=branch_id,
+        name=data.name,
+        address=data.address,
+        city=data.city,
+        phone=data.phone,
+    )
+    if not result["success"]:
+        return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
+    return success_response(
+        data=BranchData.model_validate(result["branch"]).model_dump(mode="json"),
+        message="Branch updated",
+    )
+
+
+@router.delete("/{branch_id}", dependencies=[Depends(require_tenant_user)])
+def delete_branch(
+    branch_id: str,
+    current_user: dict = Depends(require_role(["owner"])),
+    db: Session = Depends(get_db),
+):
+    user = current_user["user"]
+    result = BranchService.delete(db, tenant_id=user.tenant_id, branch_id=branch_id)
+    if not result["success"]:
+        return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
+    return success_response(data={"deleted": True}, message="Branch removed")

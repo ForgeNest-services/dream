@@ -20,7 +20,7 @@ class PMSRoom(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String(36), ForeignKey("public.tenants.id"), nullable=False, index=True)
-    branch_id = Column(String(36), ForeignKey("public.hotel_pms_branches.id"), nullable=False, index=True)
+    branch_id = Column(String(36), ForeignKey("public.branches.id"), nullable=False, index=True)
     room_type_id = Column(String(36), ForeignKey("public.pms_room_types.id"), nullable=False, index=True)
     room_number = Column(String(20), nullable=False)
     floor = Column(String(20), nullable=True)

@@ -141,10 +141,11 @@ Admin dashboard calls these with the Owner's platform JWT. Backend is unified �
 
 - **1 user = 1 tenant = 1 business** (with 1 PAN). Multi-workspace per user deferred.
 - **Business info** (name, PAN, address, phone, email) lives on `tenants` table — inherited by every app the tenant uses.
-- **Branches** (physical locations, e.g. multiple hotels in a chain) belong to individual apps. Hotel PMS will have `hotel_pms_branches` table (not yet built).
+- **Branches are tenant-level, shared across all apps.** Single `branches` table (not per-app). A physical location — e.g. "Kathmandu HQ" — is entered once and used by every app the tenant runs there (Hotel PMS + Zestro + future apps). See `api/features/branches/` for the shared slice.
   - Shared PAN from tenant. Branch-specific address, phone.
   - Auto-provision: on first `GET /branches` for a tenant, if empty → create one default branch from tenant name.
   - Multi-branch is opt-in: Owner adds more via a `+` in the branch dropdown. Owner-only.
+  - App-specific per-branch settings (e.g. VAT rate for POS) go in app-specific link tables like `restro_branch_settings (branch_id FK)` when needed; the base branch record stays shared.
 - **Downstream** (rooms, bookings, folios, invoices) all belong to a `branch_id`.
 - **Invoices** use `tenant.pan` (business) + `branch.address` (which location issued it).
 - Uniqueness on `tenants`: `pan`, `business_email`, `business_phone` all UNIQUE (nullable — multiple NULLs allowed). Enforced in DB, normalization done in repo (PAN uppercase, email lowercase, phone trimmed). Collisions return specific error codes (`PAN_ALREADY_REGISTERED`, etc.). Transfer / lost-access requests handled manually via support until a superadmin UI exists.
@@ -210,7 +211,7 @@ New shared model tables live in `shared_models/`: `PMSBranch`, `PMSRoomType`, `P
 | `users` | Platform-level users (Owner + eventual Manager) | `role`: superadmin/owner/manager |
 | `apps` | App catalog | Seeded: `hotel_pms` (add `restro` row when backend slice starts) |
 | `hotel_pms_credentials` | Per-role staff logins | UNIQUE(tenant_id, role); UNIQUE(username) global |
-| `pms_branches` | Hotel PMS branches (physical locations) | Auto-provisioned on first `GET /branches` |
+| `branches` | Physical business locations (shared across all apps) | Auto-provisioned on first `GET /branches` |
 | `pms_room_types` | Room type templates per branch | Partial unique `(branch_id, name) WHERE is_active` |
 | `pms_rooms` | Individual rooms | Optional `rate_override`; partial unique `(branch_id, room_number) WHERE is_active` |
 | `pms_guests` | Guests (tenant-scoped, not branch-scoped) | Searchable by phone/name/email/ID number |
@@ -328,11 +329,11 @@ Everything below is inside `api/features/hotel_pms/` (backend) and `pms/` (front
 
 - Backend: `features/hotel_pms/branches/`
 - Model `HotelPMSBranch`: `id`, `tenant_id`, `name`, `address`, `city`, `phone`, `is_active`, timestamps. **No `pan`** — inherited from tenant.
-- Endpoints (auth: `require_tenant_user`):
-  - `GET /hotel-pms/branches` — list for tenant. **Auto-provision:** if empty, insert one default branch using tenant's name.
-  - `POST /hotel-pms/branches` — create (Owner only via role check)
-  - `PATCH /hotel-pms/branches/{id}` — update
-  - `DELETE /hotel-pms/branches/{id}` — soft-delete via `is_active=false`
+- Endpoints (shared, `/branches`):
+  - `GET /branches` — list for tenant. Auth: `require_tenant_scope` (accepts either platform user JWT or any app-staff JWT). Auto-provisions one default branch if empty.
+  - `POST /branches` — Owner only (platform JWT + role check)
+  - `PATCH /branches/{id}` — Owner/Manager (platform JWT)
+  - `DELETE /branches/{id}` — Owner only (soft-delete via `is_active=false`)
 - Frontend (`pms/`):
   - `useBranches()` hook replaces mock `PROPERTIES`
   - Header dropdown becomes real, with `+ Add branch` (Owner only) opening a modal
@@ -507,6 +508,12 @@ api/features/auth/schemas.py                   Pydantic request/response
 api/features/apps/router.py                    GET /apps, GET /apps/{slug}
 api/features/apps/service|repository|schemas  Apps catalog logic
 api/features/apps/__init__.py
+
+api/features/branches/router.py                Shared /branches endpoints (tenant-level, all apps)
+api/features/branches/service.py               BranchService (auto-provision, CRUD)
+api/features/branches/repository.py            BranchRepository
+api/features/branches/schemas.py               BranchData, CreateBranchRequest, UpdateBranchRequest
+api/shared_models/branch.py                    Branch model — table `branches`
 
 api/features/hotel_pms/roles.py                HotelPMSRole enum: APP_OWNER, MANAGER, FRONT_DESK
 api/features/hotel_pms/router.py               Staff login + Owner credential CRUD
@@ -695,6 +702,17 @@ Ready to start Phase 1 (Branches) next.
 - Cancelled/checked-out/no-show bookings: kept as-is (no delete, no auto-hide) per user preference — records must persist for audit.
 - **Hotel PMS on pause.** Next Hotel PMS work: Phase 6 (Folios).
 - **Zestro (`restro/`) added.** Lovable-generated Restaurant POS UI cleaned up the same way as `pms/`: removed `@lovable.dev/vite-tanstack-config` (plain vite.config), deleted `.lovable/` + `AGENTS.md` + `src/lib/lovable-error-reporting.ts`, scrubbed `bunfig.toml` allowlist, rebranded `__root.tsx` head + wired Sonner Toaster. Dockerized on port 3003; docker-compose service added with source volume mounts. Backend slice not started.
+
+### 2026-08-06 (later) — Branches promoted to tenant-level, shared across apps
+- New shared feature slice `api/features/branches/` and new model `shared_models/branch.py` → table `branches` (was `hotel_pms_branches`).
+- Rationale: same physical location often runs multiple apps (Hotel PMS + Zestro at one hotel-restaurant). Per-app branches meant duplicate data entry and drift risk.
+- New unified endpoint `GET/POST/PATCH/DELETE /branches` — no `/hotel-pms/` prefix.
+- `GET /branches` gated by new `require_tenant_scope` dep that accepts either platform JWT (admin) or any app-staff JWT (pms/restro/future). Writes still require platform JWT + owner role.
+- All FKs updated: `pms_rooms.branch_id`, `pms_room_types.branch_id`, `pms_bookings.branch_id`, `hotel_pms_credentials.branch_id` now → `branches.id`.
+- Deleted `features/hotel_pms/branch_repository.py`, `branch_service.py`, and the branch routes from `hotel_pms/router.py`; deleted `shared_models/hotel_pms_branch.py`.
+- Frontend: `pms/src/lib/branches-api.ts` calls `/branches` (was `/hotel-pms/branches/me`); admin's `apps-api.ts` branches helpers hit `/branches` (appCode arg preserved but ignored).
+- Dev DB needs a rebuild: `docker-compose down -v && docker-compose up -d` — the rename is not a Postgres-level rename, it's a fresh table.
+- **This supersedes the earlier "branches belong to individual apps" line in §2.9.** CLAUDE.md updated accordingly.
 
 ### (add new dated entries below as work progresses)
 

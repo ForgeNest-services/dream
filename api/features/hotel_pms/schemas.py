@@ -63,27 +63,6 @@ class StaffLoginResponse(BaseModel):
     expires_at: datetime
 
 
-class BranchData(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    tenant_id: str
-    name: str
-    address: str | None
-    city: str | None
-    phone: str | None
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
-
-
-class CreateBranchRequest(BaseModel):
-    name: str
-    address: str | None = None
-    city: str | None = None
-    phone: str | None = None
-
-
 class RoomTypeData(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -248,13 +227,6 @@ class UpdateGuestRequest(BaseModel):
     id_document_type: str | None = None
     id_document_number: str | None = None
     nationality: str | None = None
-
-
-class UpdateBranchRequest(BaseModel):
-    name: str | None = None
-    address: str | None = None
-    city: str | None = None
-    phone: str | None = None
 
 
 # -----------------------------------------------------------------------------

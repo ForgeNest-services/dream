@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from features.hotel_pms.booking_repository import BookingRepository
 from features.hotel_pms.room_repository import RoomRepository
 from features.hotel_pms.guest_repository import GuestRepository
-from features.hotel_pms.branch_repository import HotelPMSBranchRepository
+from features.branches.repository import BranchRepository
 from utils.logger import logger
 
 
@@ -22,7 +22,7 @@ def _effective_room_rate(room) -> Decimal:
 class BookingService:
     @staticmethod
     def _assert_branch(db: Session, tenant_id: str, branch_id: str) -> bool:
-        return HotelPMSBranchRepository.get_by_id(db, tenant_id, branch_id) is not None
+        return BranchRepository.get_by_id(db, tenant_id, branch_id) is not None
 
     @staticmethod
     def list_for_branch(db: Session, tenant_id: str, branch_id: str) -> dict:

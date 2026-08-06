@@ -11,9 +11,6 @@ from features.hotel_pms.schemas import (
     CredentialData,
     StaffLoginRequest,
     StaffLoginResponse,
-    CreateBranchRequest,
-    UpdateBranchRequest,
-    BranchData,
     CreateRoomTypeRequest,
     UpdateRoomTypeRequest,
     RoomTypeData,
@@ -31,7 +28,6 @@ from features.hotel_pms.service import (
     HotelPMSCredentialService,
     HotelPMSAuthService,
 )
-from features.hotel_pms.branch_service import HotelPMSBranchService
 from features.hotel_pms.room_type_service import RoomTypeService
 from features.hotel_pms.room_service import RoomService
 from features.hotel_pms.guest_service import GuestService
@@ -178,97 +174,7 @@ def delete_credential(
     return success_response(data={"deleted": True}, message="Credential removed")
 
 
-# ---------------------------------------------------------------------------
-# Branches (Owner-facing, platform auth)
-# ---------------------------------------------------------------------------
-
-@router.get("/branches", dependencies=owner_dep)
-def list_branches(
-    current_user: dict = Depends(require_role(["owner", "manager"])),
-    db: Session = Depends(get_db),
-):
-    user = current_user["user"]
-    branches = HotelPMSBranchService.list_for_tenant(db, user.tenant_id, user.tenant)
-    return success_response(
-        data=[BranchData.model_validate(b).model_dump(mode="json") for b in branches]
-    )
-
-
-@router.get("/branches/me")
-def my_branches(
-    staff: dict = Depends(require_hotel_pms_staff()),
-    db: Session = Depends(get_db),
-):
-    branches = HotelPMSBranchService.list_for_staff(
-        db, staff["tenant_id"], staff["branch_id"]
-    )
-    return success_response(
-        data=[BranchData.model_validate(b).model_dump(mode="json") for b in branches]
-    )
-
-
-@router.post("/branches", dependencies=owner_dep)
-def create_branch(
-    data: CreateBranchRequest,
-    current_user: dict = Depends(require_role(["owner"])),
-    db: Session = Depends(get_db),
-):
-    user = current_user["user"]
-    result = HotelPMSBranchService.create(
-        db,
-        tenant_id=user.tenant_id,
-        name=data.name,
-        address=data.address,
-        city=data.city,
-        phone=data.phone,
-    )
-    return success_response(
-        data=BranchData.model_validate(result["branch"]).model_dump(mode="json"),
-        message="Branch created",
-        status_code=201,
-    )
-
-
-@router.patch("/branches/{branch_id}", dependencies=owner_dep)
-def update_branch(
-    branch_id: str,
-    data: UpdateBranchRequest,
-    current_user: dict = Depends(require_role(["owner"])),
-    db: Session = Depends(get_db),
-):
-    user = current_user["user"]
-    result = HotelPMSBranchService.update(
-        db,
-        tenant_id=user.tenant_id,
-        branch_id=branch_id,
-        name=data.name,
-        address=data.address,
-        city=data.city,
-        phone=data.phone,
-    )
-
-    if not result["success"]:
-        return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
-
-    return success_response(
-        data=BranchData.model_validate(result["branch"]).model_dump(mode="json"),
-        message="Branch updated",
-    )
-
-
-@router.delete("/branches/{branch_id}", dependencies=owner_dep)
-def delete_branch(
-    branch_id: str,
-    current_user: dict = Depends(require_role(["owner"])),
-    db: Session = Depends(get_db),
-):
-    user = current_user["user"]
-    result = HotelPMSBranchService.delete(db, tenant_id=user.tenant_id, branch_id=branch_id)
-
-    if not result["success"]:
-        return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
-
-    return success_response(data={"deleted": True}, message="Branch removed")
+# Branches moved to features/branches/ — shared across all apps.
 
 
 # ---------------------------------------------------------------------------
