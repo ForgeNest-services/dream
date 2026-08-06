@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import { MdOutlineBusinessCenter } from 'react-icons/md';
 import { BusinessRegisterForm } from '@/components/auth/forms/BusinessRegisterForm';
+import { HospitalityMark } from '@/components/shared/HospitalityMark';
 import { colors, spacing } from '@/lib/design-tokens';
 
 export function BusinessSetupDialog() {
@@ -52,20 +52,7 @@ export function BusinessSetupDialog() {
             marginBottom: spacing.lg,
           }}
         >
-          <div
-            style={{
-              width: '56px',
-              height: '56px',
-              borderRadius: '16px',
-              backgroundColor: colors.primary[50],
-              color: colors.primary[800],
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <MdOutlineBusinessCenter size={28} />
-          </div>
+          <HospitalityMark size={72} />
         </div>
 
         <p

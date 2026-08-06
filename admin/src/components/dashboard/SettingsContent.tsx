@@ -151,9 +151,11 @@ export function SettingsContent() {
           </p>
         </div>
 
-        <Button onClick={handleSave} isLoading={isLoading} disabled={!dirty} size="md">
-          Save changes
-        </Button>
+        <div style={{ width: 'fit-content' }}>
+          <Button onClick={handleSave} isLoading={isLoading} disabled={!dirty} size="md">
+            Save changes
+          </Button>
+        </div>
       </section>
     </div>
   );

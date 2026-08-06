@@ -6,7 +6,8 @@ import { appsApi } from '@/services/apps-api';
 import { Branch, CreateBranchPayload, UpdateBranchPayload } from '@/types/apps';
 import { ApiError } from '@/types/auth';
 
-export function useBranches(appCode: string) {
+// Branches are tenant-level (shared across all apps) — no appCode needed.
+export function useBranches() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
@@ -14,7 +15,7 @@ export function useBranches(appCode: string) {
   const fetch = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await appsApi.listBranches(appCode);
+      const response = await appsApi.listBranches();
       setBranches(response.data || []);
     } catch (err) {
       const apiErr = err as ApiError;
@@ -22,16 +23,16 @@ export function useBranches(appCode: string) {
     } finally {
       setIsLoading(false);
     }
-  }, [appCode]);
+  }, []);
 
   useEffect(() => {
-    if (appCode) fetch();
-  }, [appCode, fetch]);
+    fetch();
+  }, [fetch]);
 
   const create = async (payload: CreateBranchPayload): Promise<boolean> => {
     setIsMutating(true);
     try {
-      await appsApi.createBranch(appCode, payload);
+      await appsApi.createBranch(payload);
       toast.success('Branch created');
       await fetch();
       return true;
@@ -47,7 +48,7 @@ export function useBranches(appCode: string) {
   const update = async (branchId: string, payload: UpdateBranchPayload): Promise<boolean> => {
     setIsMutating(true);
     try {
-      await appsApi.updateBranch(appCode, branchId, payload);
+      await appsApi.updateBranch(branchId, payload);
       toast.success('Branch updated');
       await fetch();
       return true;
@@ -63,7 +64,7 @@ export function useBranches(appCode: string) {
   const remove = async (branchId: string): Promise<boolean> => {
     setIsMutating(true);
     try {
-      await appsApi.deleteBranch(appCode, branchId);
+      await appsApi.deleteBranch(branchId);
       toast.success('Branch removed');
       await fetch();
       return true;

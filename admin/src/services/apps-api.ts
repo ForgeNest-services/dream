@@ -113,10 +113,8 @@ export const appsApi = {
     }
   },
 
-  // Branches are tenant-level (shared across all apps). appCode is accepted
-  // for backward compatibility with the useBranches hook signature but is
-  // ignored — all calls hit the shared /branches endpoint.
-  listBranches: async (_appCode?: string): Promise<ApiResponse<Branch[]>> => {
+  // Branches are tenant-level (shared across all apps), not app-scoped.
+  listBranches: async (): Promise<ApiResponse<Branch[]>> => {
     try {
       const response = await axiosClient.get<ApiResponse<Branch[]>>("/branches");
       return response.data;
@@ -125,10 +123,7 @@ export const appsApi = {
     }
   },
 
-  createBranch: async (
-    _appCode: string | undefined,
-    payload: CreateBranchPayload,
-  ): Promise<ApiResponse<Branch>> => {
+  createBranch: async (payload: CreateBranchPayload): Promise<ApiResponse<Branch>> => {
     try {
       const response = await axiosClient.post<ApiResponse<Branch>>("/branches", payload);
       return response.data;
@@ -138,7 +133,6 @@ export const appsApi = {
   },
 
   updateBranch: async (
-    _appCode: string | undefined,
     branchId: string,
     payload: UpdateBranchPayload,
   ): Promise<ApiResponse<Branch>> => {
@@ -153,10 +147,7 @@ export const appsApi = {
     }
   },
 
-  deleteBranch: async (
-    _appCode: string | undefined,
-    branchId: string,
-  ): Promise<ApiResponse<{ deleted: boolean }>> => {
+  deleteBranch: async (branchId: string): Promise<ApiResponse<{ deleted: boolean }>> => {
     try {
       const response = await axiosClient.delete<ApiResponse<{ deleted: boolean }>>(
         `/branches/${branchId}`,
