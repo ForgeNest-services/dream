@@ -24,8 +24,14 @@ export interface BusinessRegisterRequest {
   business_name: string;
   business_address: string;
   pan?: string | null;
+  is_vat_registered?: boolean;
   business_phone?: string | null;
   business_email?: string | null;
+}
+
+export interface UpdateTaxInfoRequest {
+  pan?: string | null;
+  is_vat_registered?: boolean;
 }
 
 export interface GoogleCallbackRequest {
@@ -108,6 +114,7 @@ export interface MeResponse {
     id: string;
     name: string;
     pan?: string | null;
+    is_vat_registered: boolean;
     business_address?: string | null;
     business_phone?: string | null;
     business_email?: string | null;

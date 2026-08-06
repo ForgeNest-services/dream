@@ -80,7 +80,7 @@ export function BusinessSetupDialog() {
             marginBottom: spacing.xs,
           }}
         >
-          Step 2 of 2
+          One last thing
         </p>
 
         <h1
@@ -95,7 +95,7 @@ export function BusinessSetupDialog() {
             marginBottom: spacing.sm,
           }}
         >
-          Set up your business
+          Tell us about your business
         </h1>
 
         <p
@@ -108,7 +108,7 @@ export function BusinessSetupDialog() {
             marginBottom: spacing.xl,
           }}
         >
-          We use this to generate compliant invoices and reports for every app you use.
+          This becomes the business record behind every app you run — shared across your team and printed on every invoice you send.
         </p>
 
         <BusinessRegisterForm />

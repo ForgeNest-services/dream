@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from core.database import get_db
-from core.deps import get_current_user, require_role
+from core.deps import get_current_user, require_role, require_tenant_user
 from core.queue import job_queue
 from utils.helpers import success_response, error_response
 from features.auth.schemas import (
@@ -14,6 +14,7 @@ from features.auth.schemas import (
     VerifyOTPRequest,
     ResendOTPRequest,
     BusinessRegisterRequest,
+    UpdateTaxInfoRequest,
 )
 from features.auth.service import AuthService
 from features.auth.repository import UserRepository
@@ -85,6 +86,7 @@ def business_register(
         data.business_name,
         data.business_address,
         data.pan,
+        data.is_vat_registered,
         data.business_phone,
         data.business_email,
     )
@@ -129,6 +131,38 @@ def business_register(
         },
         message="Business registered successfully",
         status_code=201,
+    )
+
+
+@router.patch("/business-tax-info")
+def update_business_tax_info(
+    data: UpdateTaxInfoRequest,
+    current_user: dict = Depends(require_tenant_user),
+    db: Session = Depends(get_db),
+):
+    user = current_user["user"]
+    result = AuthService.update_tax_info(
+        db,
+        tenant_id=user.tenant_id,
+        pan=data.pan,
+        is_vat_registered=data.is_vat_registered,
+    )
+
+    if not result["success"]:
+        code = result["error_code"]
+        if code == "TENANT_NOT_FOUND":
+            return error_response("TENANT_NOT_FOUND", "Business not found.", 404)
+        if code == "PAN_ALREADY_REGISTERED":
+            return error_response(
+                "PAN_ALREADY_REGISTERED",
+                "This PAN is already registered under another account.",
+                409,
+            )
+        return error_response("UPDATE_FAILED", "Failed to update tax info.", 500)
+
+    return success_response(
+        data={"tenant": result["tenant"].model_dump()},
+        message="Tax info updated",
     )
 
 
@@ -280,6 +314,7 @@ def get_current_user_info(
                 "id": tenant.id,
                 "name": tenant.name,
                 "pan": tenant.pan,
+                "is_vat_registered": tenant.is_vat_registered,
                 "business_address": tenant.business_address,
                 "business_phone": tenant.business_phone,
                 "business_email": tenant.business_email,

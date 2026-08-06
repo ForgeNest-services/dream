@@ -6,6 +6,7 @@ import {
   VerifyOTPRequest,
   ResendOTPRequest,
   BusinessRegisterRequest,
+  UpdateTaxInfoRequest,
   GoogleCallbackRequest,
   GoogleCompleteRequest,
   LoginResponse,
@@ -17,7 +18,7 @@ import {
   MeResponse,
   ApiResponse,
 } from '@/types/api';
-import { ApiError } from '@/types/auth';
+import { ApiError, Tenant } from '@/types/auth';
 
 const normalizeError = (error: any, context?: string): ApiError => {
   if (error.response?.data) {
@@ -106,6 +107,20 @@ export const authApi = {
       return response.data;
     } catch (error) {
       throw normalizeError(error, 'businessRegister');
+    }
+  },
+
+  updateTaxInfo: async (
+    data: UpdateTaxInfoRequest
+  ): Promise<ApiResponse<{ tenant: Tenant }>> => {
+    try {
+      const response = await axiosClient.patch<ApiResponse<{ tenant: Tenant }>>(
+        '/auth/business-tax-info',
+        data
+      );
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'updateTaxInfo');
     }
   },
 
