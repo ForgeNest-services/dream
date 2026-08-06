@@ -21,6 +21,7 @@ class TenantRepository:
         db: Session,
         name: str,
         pan: str = None,
+        is_vat_registered: bool = False,
         business_address: str = None,
         business_phone: str = None,
         business_email: str = None,
@@ -28,6 +29,7 @@ class TenantRepository:
         tenant = Tenant(
             name=name.strip(),
             pan=_normalize(pan, "upper"),
+            is_vat_registered=bool(is_vat_registered) and bool(_normalize(pan, "upper")),
             business_address=_normalize(business_address),
             business_phone=_normalize(business_phone),
             business_email=_normalize(business_email, "lower"),
@@ -40,6 +42,23 @@ class TenantRepository:
     @staticmethod
     def get_by_id(db: Session, tenant_id: str) -> Tenant:
         return db.query(Tenant).filter(Tenant.id == tenant_id).first()
+
+    @staticmethod
+    def update_tax_info(
+        db: Session,
+        tenant: Tenant,
+        pan: str | None = None,
+        is_vat_registered: bool | None = None,
+    ) -> Tenant:
+        if pan is not None:
+            tenant.pan = _normalize(pan, "upper")
+        if is_vat_registered is not None:
+            tenant.is_vat_registered = is_vat_registered
+        if not tenant.pan:
+            tenant.is_vat_registered = False
+        db.commit()
+        db.refresh(tenant)
+        return tenant
 
 
 class UserRepository:

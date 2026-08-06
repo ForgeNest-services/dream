@@ -87,6 +87,7 @@ class AuthService:
         business_name: str,
         business_address: str,
         pan: str = None,
+        is_vat_registered: bool = False,
         business_phone: str = None,
         business_email: str = None,
     ) -> dict:
@@ -108,6 +109,7 @@ class AuthService:
                 db,
                 name=business_name,
                 pan=pan,
+                is_vat_registered=is_vat_registered,
                 business_address=business_address,
                 business_phone=business_phone,
                 business_email=business_email,
@@ -146,6 +148,35 @@ class AuthService:
             db.rollback()
             logger.error(f"Business registration failed: {str(e)}")
             return {"success": False, "error_code": "BUSINESS_REGISTRATION_FAILED"}
+
+    @staticmethod
+    def update_tax_info(
+        db: Session,
+        tenant_id: str,
+        pan: str = None,
+        is_vat_registered: bool = None,
+    ) -> dict:
+        tenant = TenantRepository.get_by_id(db, tenant_id)
+        if not tenant:
+            return {"success": False, "error_code": "TENANT_NOT_FOUND"}
+
+        try:
+            updated = TenantRepository.update_tax_info(
+                db, tenant, pan=pan, is_vat_registered=is_vat_registered
+            )
+            logger.info(f"Tenant tax info updated: {tenant_id}")
+            return {"success": True, "tenant": TenantData.model_validate(updated)}
+        except IntegrityError as e:
+            db.rollback()
+            msg = str(e.orig).lower() if e.orig else str(e).lower()
+            logger.warning(f"Tax info update integrity conflict: {msg}")
+            if "pan" in msg:
+                return {"success": False, "error_code": "PAN_ALREADY_REGISTERED"}
+            return {"success": False, "error_code": "UPDATE_FAILED"}
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Tax info update failed: {str(e)}")
+            return {"success": False, "error_code": "UPDATE_FAILED"}
 
     @staticmethod
     def login(db: Session, data: LoginRequest) -> dict:

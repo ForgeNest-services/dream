@@ -18,7 +18,6 @@ import { APP_CODE_TO_ROLES } from '@/types/apps';
 import { colors, spacing } from '@/lib/design-tokens';
 import { Spinner } from '@/components/shared/Spinner';
 import { CredentialsSection } from '@/components/dashboard/CredentialsSection';
-import { BranchesSection } from '@/components/dashboard/BranchesSection';
 
 const ICON_MAP: Record<string, IconType> = {
   Hotel: MdOutlineHotel,
@@ -30,12 +29,7 @@ const ICON_MAP: Record<string, IconType> = {
 
 export function AppDetailContent({ slug }: { slug: string }) {
   const { app, isLoading, error } = useAppDetail(slug);
-  const {
-    branches,
-    isLoading: branchesLoading,
-    isMutating: branchesMutating,
-    create: createBranch,
-  } = useBranches(app?.code ?? '');
+  const { branches, isLoading: branchesLoading } = useBranches();
 
   if (isLoading) {
     return (
@@ -187,40 +181,6 @@ export function AppDetailContent({ slug }: { slug: string }) {
         </a>
       </div>
 
-      {/* Branches section */}
-      {credentialsSupported && (
-        <section>
-          <h2
-            style={{
-              fontSize: '13px',
-              fontWeight: '600',
-              color: colors.neutral[500],
-              textTransform: 'uppercase',
-              letterSpacing: '0.8px',
-              marginBottom: spacing.md,
-            }}
-          >
-            Branches
-          </h2>
-          <p
-            style={{
-              fontSize: '14px',
-              color: colors.neutral[600],
-              marginBottom: spacing.lg,
-              lineHeight: '1.6',
-            }}
-          >
-            Your main location is added automatically. Add more if you run multiple branches.
-          </p>
-          <BranchesSection
-            branches={branches}
-            isLoading={branchesLoading}
-            isMutating={branchesMutating}
-            create={createBranch}
-          />
-        </section>
-      )}
-
       {/* Credentials section */}
       <section>
         <h2
@@ -243,7 +203,11 @@ export function AppDetailContent({ slug }: { slug: string }) {
             lineHeight: '1.6',
           }}
         >
-          Create one credential per role. Everyone in that role signs in with the same login and can work simultaneously.
+          Create one credential per role and branch. Everyone in that role signs in with the same login and can work simultaneously. Manage locations under{' '}
+          <Link href="/dashboard/branches" style={{ color: colors.primary[700], fontWeight: '600' }}>
+            Branches
+          </Link>
+          .
         </p>
         {credentialsSupported ? (
           <CredentialsSection appCode={app.code} branches={branches} branchesLoading={branchesLoading} />

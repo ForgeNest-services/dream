@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, Boolean, DateTime
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import uuid
@@ -12,6 +12,7 @@ class Tenant(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False)
     pan = Column(String(255), nullable=True, unique=True)
+    is_vat_registered = Column(Boolean, default=False, nullable=False)
     business_address = Column(String(500), nullable=True)
     business_phone = Column(String(20), nullable=True, unique=True)
     business_email = Column(String(255), nullable=True, unique=True)

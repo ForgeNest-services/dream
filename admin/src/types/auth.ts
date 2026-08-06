@@ -14,6 +14,7 @@ export interface Tenant {
   id: string;
   name: string;
   pan?: string | null;
+  is_vat_registered: boolean;
   business_address?: string | null;
   business_phone?: string | null;
   business_email?: string | null;

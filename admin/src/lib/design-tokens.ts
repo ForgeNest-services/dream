@@ -35,12 +35,21 @@ export const colors = {
     success: '#10b981',
     info: '#0A2947',
   },
+
+  // Warm accent — hospitality warmth against the navy scale, used sparingly
+  // for signature graphics and small highlights, never for primary actions.
+  accent: {
+    50: '#FDF3EC',
+    200: '#F3CEA9',
+    500: '#DB8A3E',
+    700: '#B5601C',
+  },
 };
 
 export const typography = {
   font: {
-    primary: '"Playfair Display", serif',
-    secondary: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    primary: 'var(--font-playfair), "Playfair Display", serif',
+    secondary: 'var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
   },
 
   sizes: {
@@ -70,4 +79,10 @@ export const radius = {
   md: '12px',
   lg: '16px',
   full: '9999px',
+};
+
+export const layout = {
+  sidebarWidth: '260px',
+  sidebarCollapsedWidth: '76px',
+  topbarHeight: '64px',
 };

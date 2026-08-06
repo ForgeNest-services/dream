@@ -11,8 +11,14 @@ class BusinessRegisterRequest(BaseModel):
     business_name: str
     business_address: str
     pan: str = None
+    is_vat_registered: bool = False
     business_phone: str = None
     business_email: EmailStr = None
+
+
+class UpdateTaxInfoRequest(BaseModel):
+    pan: str = None
+    is_vat_registered: bool = None
 
 
 class LoginRequest(BaseModel):
@@ -37,6 +43,11 @@ class TenantData(BaseModel):
 
     id: str
     name: str
+    pan: str | None = None
+    is_vat_registered: bool = False
+    business_address: str | None = None
+    business_phone: str | None = None
+    business_email: str | None = None
 
 
 class TokenData(BaseModel):
