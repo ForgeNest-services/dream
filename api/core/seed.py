@@ -31,6 +31,31 @@ def _app_catalog() -> list[dict]:
             "is_active": True,
             "is_public": True,
         },
+        {
+            "code": "restro",
+            "slug": "restro",
+            "name": "Zestro",
+            "tagline": "The floor-friendly restaurant POS.",
+            "description": (
+                "Restaurant point-of-sale built for fast service: floor tables, "
+                "menu & variants, kitchen display, manual inventory, and sales "
+                "reports — with Bikram Sambat dates and multi-branch support."
+            ),
+            "icon": "Restaurant",
+            "url": "http://localhost:3003",
+            "screenshots": [],
+            "features": [
+                "Floor & table management with reservations",
+                "Menu with variants, images and sold-out toggle",
+                "Kitchen display board (New → Cooking → Ready → Served)",
+                "Waiter order-taking on tablets",
+                "Manual inventory with stock movement history",
+                "Sales, category and staff performance reports",
+            ],
+            "display_order": 2,
+            "is_active": True,
+            "is_public": True,
+        },
     ]
 
 
