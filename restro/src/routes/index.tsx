@@ -1,6 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { PosApp } from "@/components/pos/PosApp";
-import { PosProvider } from "@/lib/pos/store";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { LoginScreen } from "@/components/pos/Login";
+import { usePos } from "@/lib/pos/store";
+import { landingRouteForRole } from "@/lib/pos/nav";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -27,9 +29,14 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
-  return (
-    <PosProvider>
-      <PosApp />
-    </PosProvider>
-  );
+  const { session, isBootstrapping } = usePos();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isBootstrapping || !session) return;
+    router.navigate({ to: landingRouteForRole(session.role) });
+  }, [session, isBootstrapping, router]);
+
+  if (isBootstrapping || session) return null;
+  return <LoginScreen />;
 }

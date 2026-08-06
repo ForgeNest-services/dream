@@ -7,10 +7,14 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
+import { PosProvider } from "@/lib/pos/store";
+// Side-effect: attaches the beforeinstallprompt listener at page-load time,
+// before any component (including InstallAppButton) mounts.
+import "@/lib/install-prompt";
 
 function NotFoundComponent() {
   return (
@@ -74,7 +78,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { name: "theme-color", content: "#181832" },
+      { name: "theme-color", content: "#17181A" },
       { title: "Zestro — Restaurant POS" },
       {
         name: "description",
@@ -135,11 +139,20 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker
+      .register("/sw.js", { scope: "/" })
+      .catch((err) => console.warn("SW registration failed:", err));
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
-      <Toaster position="top-right" richColors closeButton />
+      <PosProvider>
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <Outlet />
+        <Toaster position="top-right" richColors closeButton />
+      </PosProvider>
     </QueryClientProvider>
   );
 }

@@ -1,10 +1,13 @@
 import {
   createContext,
+  useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
+import { authStorage } from "./auth-storage";
 import {
   BRANCHES,
   CATEGORIES,
@@ -38,6 +41,7 @@ type Session = { username: string; role: Role } | null;
 
 type Ctx = {
   session: Session;
+  isBootstrapping: boolean;
   login: (username: string) => void;
   logout: () => void;
   setRole: (role: Role) => void;
@@ -179,8 +183,33 @@ const seedDelivery = (): Order[] => [
 ];
 
 export function PosProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session>(null);
-  const [branchId, setBranchId] = useState(BRANCHES[0]!.id);
+  const [session, setSessionState] = useState<Session>(null);
+  const [branchId, setBranchIdState] = useState(BRANCHES[0]!.id);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+
+  useEffect(() => {
+    const stored = authStorage.readSession();
+    if (stored) setSessionState(stored);
+    const storedBranch = authStorage.readBranchId();
+    if (storedBranch && BRANCHES.some((b) => b.id === storedBranch)) {
+      setBranchIdState(storedBranch);
+    }
+    setIsBootstrapping(false);
+  }, []);
+
+  const setSession = useCallback((next: Session | ((prev: Session) => Session)) => {
+    setSessionState((prev) => {
+      const resolved = typeof next === "function" ? next(prev) : next;
+      authStorage.writeSession(resolved);
+      return resolved;
+    });
+  }, []);
+
+  const setBranchId = useCallback((id: string) => {
+    setBranchIdState(id);
+    authStorage.writeBranchId(id);
+  }, []);
+
   const [settingsMap, setSettingsMap] = useState<Record<string, Settings>>({
     b1: defaultSettings(0),
     b2: defaultSettings(1),
@@ -228,6 +257,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
 
   const value: Ctx = {
     session,
+    isBootstrapping,
     login: (username) => setSession({ username, role: "owner" }),
     logout: () => setSession(null),
     setRole: (role) => setSession((s) => (s ? { ...s, role } : s)),
