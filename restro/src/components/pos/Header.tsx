@@ -1,4 +1,4 @@
-import { Building2, ChevronDown, LogOut, UtensilsCrossed } from "lucide-react";
+import { Building2, ChevronDown, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallAppButton } from "./InstallAppButton";
 import {
@@ -24,9 +24,11 @@ export function PosHeader() {
     <header className="sticky top-0 z-40 border-b border-navy-soft/40 bg-navy text-navy-foreground">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
-            <UtensilsCrossed className="size-5" />
-          </div>
+          <img
+            src="/logo.png"
+            alt="Zestro"
+            className="h-10 w-auto shrink-0 sm:h-11"
+          />
           <div className="min-w-0">
             <p className="truncate font-display text-lg leading-none">{settings.restaurantName}</p>
             <p className="mt-1 truncate text-xs text-navy-foreground/60">{branch.name}</p>
@@ -37,7 +39,7 @@ export function PosHeader() {
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
-                  className="ml-2 hidden h-11 gap-2 rounded-xl bg-navy-soft/60 px-3 text-navy-foreground hover:bg-navy-soft md:inline-flex"
+                  className="ml-2 hidden h-11 gap-2 rounded-xl bg-navy-soft/60 px-3 text-navy-foreground hover:bg-navy-soft hover:text-navy-foreground md:inline-flex"
                 >
                   <Building2 className="size-4" />
                   <span className="max-w-[10rem] truncate text-sm font-semibold">{branch.name}</span>
@@ -71,7 +73,7 @@ export function PosHeader() {
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                className="h-11 gap-2 rounded-xl bg-navy-soft/60 px-3 text-navy-foreground hover:bg-navy-soft"
+                className="h-11 gap-2 rounded-xl bg-navy-soft/60 px-3 text-navy-foreground hover:bg-navy-soft hover:text-navy-foreground"
               >
                 <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
                   {session.username.slice(0, 2).toUpperCase()}

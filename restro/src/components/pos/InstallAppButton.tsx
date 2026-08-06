@@ -34,7 +34,7 @@ export function InstallAppButton() {
   return (
     <Button
       variant="ghost"
-      className="h-11 gap-2 rounded-xl bg-primary px-3 text-primary-foreground hover:bg-primary/90"
+      className="h-11 gap-2 rounded-xl bg-primary px-3 text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
       onClick={async () => {
         await deferred.prompt();
         await deferred.userChoice;

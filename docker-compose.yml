@@ -109,6 +109,22 @@ services:
       - app-network
     restart: unless-stopped
 
+  restro:
+    build:
+      context: ./restro
+      dockerfile: Dockerfile
+    container_name: restro
+    ports:
+      - "3003:3003"
+    volumes:
+      - ./restro/src:/app/src
+      - ./restro/public:/app/public
+      - ./restro/vite.config.ts:/app/vite.config.ts
+      - ./restro/tsconfig.json:/app/tsconfig.json
+    networks:
+      - app-network
+    restart: unless-stopped
+
 volumes:
   redis_data:
   postgres_data:

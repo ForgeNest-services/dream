@@ -5,20 +5,22 @@ import { PosProvider } from "@/lib/pos/store";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Restro POS — Restaurant Point of Sale Dashboard" },
+      { title: "Zestro — Restaurant POS" },
       {
         name: "description",
         content:
-          "Multi-branch restaurant POS: floor tables, menu & variants, manual inventory, kitchen display and sales reports with Bikram Sambat dates.",
+          "Zestro: multi-branch restaurant POS with floor tables, menu & variants, manual inventory, kitchen display and sales reports with Bikram Sambat dates.",
       },
-      { property: "og:title", content: "Restro POS — Restaurant Point of Sale Dashboard" },
+      { property: "og:title", content: "Zestro — Restaurant POS" },
       {
         property: "og:description",
         content:
-          "Multi-branch restaurant POS: floor tables, menu & variants, manual inventory, kitchen display and sales reports with Bikram Sambat dates.",
+          "Multi-branch restaurant POS with floor tables, menu & variants, manual inventory, kitchen display and sales reports.",
       },
+      { property: "og:image", content: "/logo.png" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:image", content: "/logo.png" },
     ],
   }),
   component: Index,

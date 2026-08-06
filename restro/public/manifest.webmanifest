@@ -1,10 +1,10 @@
 {
-  "name": "Restro POS — Restaurant Point of Sale",
-  "short_name": "Restro POS",
+  "name": "Zestro — Restaurant POS",
+  "short_name": "Zestro",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0e2b2a",
+  "background_color": "#17181A",
   "theme_color": "#1DAFA1",
   "icons": [
     { "src": "/pwa-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },

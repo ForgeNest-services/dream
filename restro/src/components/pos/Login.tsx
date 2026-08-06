@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LogIn, UtensilsCrossed } from "lucide-react";
+import { LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,17 +14,18 @@ export function LoginScreen() {
     <div className="flex min-h-screen items-center justify-center bg-navy px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-4 grid size-16 place-items-center rounded-2xl bg-primary text-primary-foreground">
-            <UtensilsCrossed className="size-8" />
-          </div>
-          <h1 className="font-display text-3xl text-navy-foreground">Restro POS</h1>
-          <p className="mt-1 text-sm font-medium tracking-wide text-navy-foreground/60">
+          <img
+            src="/logo.png"
+            alt="Zestro"
+            className="mb-4 h-24 w-auto sm:h-28"
+          />
+          <p className="text-sm font-medium tracking-wide text-navy-foreground/60">
             Restaurant Point of Sale
           </p>
         </div>
 
         <form
-          className="rounded-2xl bg-card p-6 shadow-[var(--shadow-pop)] sm:p-8"
+          className="rounded-2xl bg-card p-6 shadow-(--shadow-pop) sm:p-8"
           onSubmit={(e) => {
             e.preventDefault();
             login(username.trim() || "staff");
@@ -61,9 +62,6 @@ export function LoginScreen() {
               Sign in
             </Button>
           </div>
-          <p className="mt-5 text-center text-xs text-muted-foreground">
-            Demo build — any credentials work. Switch roles from the header after sign in.
-          </p>
         </form>
       </div>
     </div>

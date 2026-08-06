@@ -47,8 +47,8 @@ Forgenest is building a **multi-app hospitality SaaS platform**. The core produc
 
 ```
 admin/  → app.dream.com    (Owner/Manager/Superadmin dashboard)     ✓ built (Next.js)
-pms/    → pms.dream.com    (Hotel PMS)                              ✓ built (Vite + TanStack, mock-data UI)
-restro/ → restro.dream.com (Restaurant POS)                         not built
+pms/    → pms.dream.com    (Hotel PMS)                              ✓ backend-wired through Phase 5
+restro/ → restro.dream.com (Zestro — Restaurant POS)                ✓ UI scaffolded (Lovable cleaned), backend not built
 gym/    → gym.dream.com    (Gym Management)                         not built
 ```
 
@@ -188,7 +188,14 @@ Admin dashboard calls these with the Owner's platform JWT. Backend is unified �
   - `require_tenant_user` — above + has tenant_id
   - `require_hotel_pms_staff(role?)` — decodes app JWT, optionally restricts to a specific role
 
-**Hotel PMS features (bookings, rooms, folios, etc.) — NOT built.** All planned in §5.
+**Hotel PMS operational slices — BUILT through Phase 5** (branches / room types / rooms / guests / bookings; see §5 for the phase table).
+- Backend: repo/service/router/schemas per entity, all under `api/features/hotel_pms/`, all endpoints filter by `tenant_id` from JWT, use `require_hotel_pms_staff` for staff endpoints (branch-scoped via `_assert_branch_scope`).
+- Booking snapshots `rate_per_night` at create (never live-lookup). Overlap check on `(room_id, active_statuses)`. Transitions (`check_in`/`check_out`/`cancel`/`no_show`) enforce state-machine + room-status side effects.
+- List endpoints are **paginated on the backend**: accept `q`, entity-specific filters, `page`, `per_page`; return `data` + `meta` via `success_response(data=..., meta=build_meta(...))` from `utils/paging.py`.
+
+**Hotel PMS Phase 6+ (folios / invoices / payments / audit / reports / owner monitoring) — NOT built.** All planned in §5.
+
+New shared model tables live in `shared_models/`: `PMSBranch`, `PMSRoomType`, `PMSRoom` (partial unique index on `(branch_id, room_number) WHERE is_active`), `PMSGuest`, `PMSBooking` (CHECK `check_out_date > check_in_date`, indexes on `(room_id, dates)` + `(tenant_id, status)`).
 
 **Seeding (`core/seed.py` + `main.py` lifespan)**
 - `seed_superadmin()` — from `SUPERADMIN_EMAIL/PASSWORD` env
@@ -201,8 +208,13 @@ Admin dashboard calls these with the Owner's platform JWT. Backend is unified �
 | `platform_admins` | Superadmin accounts | Seeded from env |
 | `tenants` | Business/hotel entities | `pan`/`business_email`/`business_phone` UNIQUE (nullable) |
 | `users` | Platform-level users (Owner + eventual Manager) | `role`: superadmin/owner/manager |
-| `apps` | App catalog | Seeded: `hotel_pms` |
+| `apps` | App catalog | Seeded: `hotel_pms` (add `restro` row when backend slice starts) |
 | `hotel_pms_credentials` | Per-role staff logins | UNIQUE(tenant_id, role); UNIQUE(username) global |
+| `pms_branches` | Hotel PMS branches (physical locations) | Auto-provisioned on first `GET /branches` |
+| `pms_room_types` | Room type templates per branch | Partial unique `(branch_id, name) WHERE is_active` |
+| `pms_rooms` | Individual rooms | Optional `rate_override`; partial unique `(branch_id, room_number) WHERE is_active` |
+| `pms_guests` | Guests (tenant-scoped, not branch-scoped) | Searchable by phone/name/email/ID number |
+| `pms_bookings` | Reservations | `rate_per_night` snapshot; CHECK dates; overlap-guarded |
 
 Deleted (never used): `modules`, `module_subscriptions` — subscription is a separate future system.
 
@@ -239,11 +251,22 @@ Built with Lovable, then cleaned up (Lovable tracking removed, config rewritten)
 - **Role-based navigation** in sidebar — filtered by role (App Owner sees all, Manager sees ops+finance, Front Desk sees ops)
 - **"View as" preview dropdown** — only visible for `app_owner`. Preview banner at top when previewing another role: "Previewing as Manager — you still have Owner permissions." Backend authorization always uses real role from JWT — preview is UI-only.
 - **Real username + role badge** in header
-- **Property switcher + currency switcher** — still mock data (marked `TODO(branches)`, will wire when branches slice is built)
-- **All operational pages** (dashboard, bookings, rooms, housekeeping, guests, folio, invoices, payments, staff, settings) — **UI scaffolding only, mock data.** Real backend wiring is the main upcoming work.
-- `_app.staff.tsx` still exists with a legacy shim (will be deleted since staff management lives in admin, not pms).
-- Toaster wired in `__root.tsx` (top-right, richColors, closeButton)
-- API base URL: `VITE_API_URL` env var, falls back to `http://localhost:8000/api`
+- **Property switcher** is real — driven by `useBranches()` / `branchesApi.listMine()`. `+ Add branch` opens a modal (Owner only). Currency switcher still local-only.
+- **Backend-wired pages**: `/rooms` (rooms + room types tabs), `/guests`, `/bookings` — all use the paginated pattern (URL-synced `q`/filters/`page`/`perPage` + `useDebouncedValue(300ms)` + server `meta` fed into `TablePagination`). Bookings dialog has guest picker with inline quick-add and availability-filtered room picker.
+- **Still mock-only** (Phase 6+): dashboard widgets, folio, invoices, payments, housekeeping.
+- `_app.staff.tsx` legacy shim still present (delete when touched).
+- Toaster wired in `__root.tsx` (top-right, richColors, closeButton).
+- API base URL: `VITE_API_URL` env var, falls back to `http://localhost:8000/api`.
+
+### 3.4b Frontend (`restro/`) — Zestro (Vite + TanStack Start)
+
+Restaurant POS UI scaffolded by Lovable, cleaned up in the same way as `pms/`:
+- Removed `@lovable.dev/vite-tanstack-config` from `package.json`; `vite.config.ts` uses the plain plugin composition (port 3003).
+- Deleted `.lovable/`, `AGENTS.md`, `src/lib/lovable-error-reporting.ts`; scrubbed `bunfig.toml` allowlist.
+- `__root.tsx` no longer imports `reportLovableError`; head meta and OG tags switched to Zestro branding; Sonner Toaster wired at root.
+- Dockerized at `restro/Dockerfile` (Bun + `bun run dev`), added `restro` service to `docker-compose.yml` on port **3003** with source volume mounts for hot reload.
+- Stack matches `pms/` (Vite + TanStack Start + React 19 + Tailwind v4 + shadcn/ui + Bun + Sonner + TanStack Query).
+- All operational pages are **UI scaffolding only, mock data.** Backend slice (`api/features/restro/`) is not built yet — will follow the same slice pattern as `hotel_pms/`.
 
 ### 3.5 Environment
 
@@ -267,6 +290,7 @@ Docker services (`docker-compose.yml`):
 - `api` (8000) — has `/etc/localtime:/etc/localtime:ro` mount to prevent Google-OAuth clock skew
 - `admin` (3001) — Next.js production build with `NEXT_PUBLIC_*` build args
 - `pms` (3002) — Bun + Vite dev server with hot-reload (via source volume mounts)
+- `restro` (3003) — Bun + Vite dev server (Zestro POS), same hot-reload volume pattern as pms
 - `postgres` (5432), `redis` (6379), `worker`, `ui` (3000)
 
 ---
@@ -436,23 +460,24 @@ Everything below is inside `api/features/hotel_pms/` (backend) and `pms/` (front
 
 ### Recommended order + rough sizing
 
-| # | Phase | Size | Why |
+| # | Phase | Status | Notes |
 |---|---|---|---|
-| 1 | Branches | 0.5d | Foundation |
-| 2 | Room Types | 0.5d | Rooms need types |
-| 3 | Rooms | 0.5d | Bookings need rooms |
-| 4 | Guests | 0.5d | Bookings need guests |
-| 5 | **Bookings + Check-in/out** | 2–3d | Product core |
-| 6 | Folios | 1–2d | Bills roll off bookings |
-| 7 | Invoices | 2d | Legal requirement |
-| 8 | Payments (manual) | 1d | MVP-viable |
-| 9 | Audit Log | 1d | Plumbing during 5–8 |
-| 10 | Reports | 1–2d | Needs data |
-| 11 | Owner monitoring | 0.5d | Ties admin to pms |
-| — | Automated payments | later | Nepal gateway integrations |
+| 1 | Branches | ✅ done | Foundation |
+| 2 | Room Types | ✅ done | Partial unique on `(branch_id, name) WHERE is_active` |
+| 3 | Rooms | ✅ done | Per-room `rate_override` supported; partial unique on room_number |
+| 4 | Guests | ✅ done | Search covers name/phone/email/ID |
+| 5 | **Bookings + Check-in/out** | ✅ done | Rate snapshot, overlap check, state machine, availability endpoint; frontend has picker with inline guest quick-add |
+| — | Backend pagination (bookings / rooms / guests) | ✅ done | `utils/paging.py`, `success_response(data, meta)`, URL-synced client-side |
+| 6 | Folios | 🟡 next | Bills roll off bookings |
+| 7 | Invoices | ⏳ | Bikram Sambat + append-only DB grants |
+| 8 | Payments (manual) | ⏳ | Ship manual first; automated later |
+| 9 | Audit Log | ⏳ | Plumbing during 6–8 |
+| 10 | Reports | ⏳ | Needs data |
+| 11 | Owner monitoring | ⏳ | Ties admin to pms via `/hotel-pms/live-summary` |
+| — | Automated payments | later | FonePay/eSewa/Khalti integrations |
 | — | Subscription/billing | later | Separate independent system |
 | — | Housekeeper role + task board | later | Needs person-specific model |
-| — | Restaurant POS | later | Full new slice (staff auth + entities) |
+| — | Restaurant POS (Zestro) backend | later | Frontend scaffolded (`restro/`, port 3003); backend slice `api/features/restro/` not started |
 
 ---
 
@@ -576,16 +601,45 @@ pms/src/lib/api-client.ts                      Fetch wrapper (attaches Bearer to
 pms/src/lib/auth-api.ts                        authApi.login(username, password)
 pms/src/lib/roles.ts                           RoleCode = 'app_owner'|'manager'|'front_desk' + labels
 pms/src/lib/mock-data.ts                       Mock rooms/bookings/guests/etc — replace as backend arrives
+pms/src/lib/branches-api.ts                    Branches API client
+pms/src/lib/room-types-api.ts                  Room types API client
+pms/src/lib/rooms-api.ts                       Rooms API client (paginated `list(branchId, params)`)
+pms/src/lib/guests-api.ts                      Guests API client (paginated)
+pms/src/lib/bookings-api.ts                    Bookings API client (paginated + availability)
+pms/src/hooks/useBranches.ts                   Branches hook
+pms/src/hooks/useRoomTypes.ts                  Room types hook
+pms/src/hooks/useRooms.ts                      Rooms hook (accepts query params, returns `meta`)
+pms/src/hooks/useGuests.ts                     Guests hook (accepts query params)
+pms/src/hooks/useBookings.ts                   Bookings hook (accepts query params + transitions)
+pms/src/hooks/useTableQuery.ts                 `normalizeTableSearch` + PER_PAGE_OPTIONS
+pms/src/hooks/useDebouncedValue.ts             300ms debounce for search inputs
+pms/src/components/table-pagination.tsx        Shared paginator fed from server meta
+```
+
+### Frontend restro / Zestro (Vite + TanStack Start)
+```
+restro/vite.config.ts                          Plain TanStack Start + tsconfig-paths + Tailwind v4 (no Lovable)
+restro/Dockerfile                              oven/bun:1-alpine + `bun run dev` on port 3003
+restro/src/router.tsx                          Router entry
+restro/src/routes/__root.tsx                   Root shell + Toaster (Lovable error hook removed)
+restro/src/routes/index.tsx                    Login screen (mock, single username+password)
+restro/src/routes/menu.$branchId.tsx           Menu management (mock)
+restro/src/components/pos/*                    POS-specific UI blocks
+restro/src/components/ui/*                     shadcn/ui components
+restro/src/lib/pos/*                           Mock POS data + helpers
+restro/src/lib/error-capture.ts                h3 SSR error capture (kept)
+restro/src/lib/error-page.ts                   HTML error page (kept)
 ```
 
 ### Config
 ```
-docker-compose.yml       All services (api, admin, pms, postgres, redis, worker, ui)
+docker-compose.yml       All services (api, admin, pms, restro, postgres, redis, worker, ui)
                           — api has /etc/localtime mount to prevent OAuth clock skew
-                          — pms is dev-mode with source volumes for hot reload
+                          — pms (3002) and restro (3003) are dev-mode with source volumes for hot reload
 .env                     Root secrets (DATABASE_URL, JWT_SECRET, Google OAuth, Brevo, NEXT_PUBLIC_*)
 admin/Dockerfile         Multi-stage Next.js production build
 pms/Dockerfile           oven/bun:1-alpine + `bun run dev` (dev-mode)
+restro/Dockerfile        oven/bun:1-alpine + `bun run dev` (dev-mode)
 api/Dockerfile           FastAPI + uvicorn
 ```
 
@@ -634,6 +688,14 @@ Wired PMS frontend login end-to-end. Added: apps catalog, hotel_pms credentials,
 
 Ready to start Phase 1 (Branches) next.
 
+### 2026-08-06 — Hotel PMS Phases 1–5 shipped; Zestro (restro) scaffolded
+- Backend: `pms_branches` (auto-provisioned), `pms_room_types`, `pms_rooms` (with `rate_override` + partial unique on `is_active`), `pms_guests`, `pms_bookings` (rate snapshot, overlap check, state machine with room-status side effects, availability endpoint). All under `api/features/hotel_pms/` following the standard slice pattern.
+- Backend pagination unified: added `api/utils/paging.py` (`parse_paging` + `build_meta`). Bookings, rooms, and guests list endpoints all accept `q` + entity-specific filters + `page`/`per_page` and return `data` + `meta`.
+- Frontend (`pms/`): `/rooms`, `/guests`, `/bookings` all backend-wired with URL-synced search / filters / pagination driven by `useDebouncedValue(300ms)` + server `meta`. Booking creation modal has guest picker with inline quick-add and availability-filtered room picker (rate auto-fills from room, overrideable). Property switcher now real (branches). CLAUDE.md convention updated to require backend-driven paging.
+- Cancelled/checked-out/no-show bookings: kept as-is (no delete, no auto-hide) per user preference — records must persist for audit.
+- **Hotel PMS on pause.** Next Hotel PMS work: Phase 6 (Folios).
+- **Zestro (`restro/`) added.** Lovable-generated Restaurant POS UI cleaned up the same way as `pms/`: removed `@lovable.dev/vite-tanstack-config` (plain vite.config), deleted `.lovable/` + `AGENTS.md` + `src/lib/lovable-error-reporting.ts`, scrubbed `bunfig.toml` allowlist, rebranded `__root.tsx` head + wired Sonner Toaster. Dockerized on port 3003; docker-compose service added with source volume mounts. Backend slice not started.
+
 ### (add new dated entries below as work progresses)
 
 ---
@@ -642,9 +704,10 @@ Ready to start Phase 1 (Branches) next.
 
 ```bash
 # Rebuild single service after changes
-docker-compose build admin && docker-compose up -d admin
-docker-compose build api   && docker-compose up -d api
-docker-compose build pms   && docker-compose up -d pms
+docker-compose build admin  && docker-compose up -d admin
+docker-compose build api    && docker-compose up -d api
+docker-compose build pms    && docker-compose up -d pms
+docker-compose build restro && docker-compose up -d restro
 
 # Full stack
 docker-compose up -d
@@ -656,6 +719,7 @@ docker-compose ps
 docker-compose logs -f api
 docker-compose logs -f admin
 docker-compose logs -f pms
+docker-compose logs -f restro
 
 # Postgres shell
 docker exec -it postgres psql -U postgres -d dream_app
