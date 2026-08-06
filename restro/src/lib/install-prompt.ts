@@ -7,8 +7,9 @@ export type InstallPrompt = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
+const KEY_INSTALLED = "zestro_pwa_installed_v1";
+
 let deferred: InstallPrompt | null = null;
-let runningStandalone = false;
 const listeners = new Set<() => void>();
 
 function notify() {
@@ -16,17 +17,20 @@ function notify() {
 }
 
 if (typeof window !== "undefined") {
-  if (window.matchMedia("(display-mode: standalone)").matches) {
-    runningStandalone = true;
-  }
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
     deferred = event as InstallPrompt;
     notify();
   });
   window.addEventListener("appinstalled", () => {
-    // Note: appinstalled means the user *installed* the PWA from THIS tab.
-    // It does NOT mean this tab is now the standalone window.
+    // Remember across sessions that this device has installed the PWA — the
+    // browser never re-fires beforeinstallprompt once installed, so this flag
+    // is how we know to show "Open app" instead of "Get app" next time.
+    try {
+      localStorage.setItem(KEY_INSTALLED, "1");
+    } catch {
+      /* private-mode etc. */
+    }
     deferred = null;
     notify();
   });
@@ -36,8 +40,39 @@ export function getInstallPrompt(): InstallPrompt | null {
   return deferred;
 }
 
+// True whenever the page is running as the installed PWA (any PWA display
+// mode, including iOS Safari's navigator.standalone). Fresh check each call.
 export function isRunningStandalone(): boolean {
-  return runningStandalone;
+  if (typeof window === "undefined") return false;
+  const mq = window.matchMedia;
+  if (
+    mq("(display-mode: standalone)").matches ||
+    mq("(display-mode: fullscreen)").matches ||
+    mq("(display-mode: minimal-ui)").matches ||
+    mq("(display-mode: window-controls-overlay)").matches
+  ) {
+    return true;
+  }
+  const nav = window.navigator as Navigator & { standalone?: boolean };
+  return nav.standalone === true;
+}
+
+// Best-effort: has the user ever installed the PWA on THIS browser profile?
+export function isLikelyInstalled(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(KEY_INSTALLED) === "1";
+  } catch {
+    return false;
+  }
+}
+
+// Attempt to open the URL in the installed PWA window rather than a browser
+// tab. Chrome routes new-tab opens into an installed PWA *only* when the user
+// has enabled "Open supported links in the app" for that PWA. If they haven't,
+// this just opens a new browser tab.
+export function openInPwa(url: string = window.location.href): void {
+  window.open(url, "_blank", "noopener");
 }
 
 export function subscribe(cb: () => void): () => void {
