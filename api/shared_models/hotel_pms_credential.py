@@ -16,7 +16,7 @@ class HotelPMSCredential(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String(36), ForeignKey("public.tenants.id"), nullable=False, index=True)
     branch_id = Column(
-        String(36), ForeignKey("public.hotel_pms_branches.id"), nullable=True, index=True
+        String(36), ForeignKey("public.branches.id"), nullable=True, index=True
     )
     role = Column(String(50), nullable=False)
     username = Column(String(100), nullable=False, unique=True)

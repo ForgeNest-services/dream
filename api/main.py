@@ -12,6 +12,7 @@ import shared_models
 from features.auth import router as auth_router
 from features.hotel_pms import router as hotel_pms_router
 from features.apps import router as apps_router
+from features.branches.router import router as branches_router
 
 
 @asynccontextmanager
@@ -63,6 +64,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(branches_router)
 app.include_router(hotel_pms_router)
 app.include_router(apps_router)
 

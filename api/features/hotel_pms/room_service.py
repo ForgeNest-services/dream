@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from features.hotel_pms.room_repository import RoomRepository, _UNSET
 from features.hotel_pms.room_type_repository import RoomTypeRepository
-from features.hotel_pms.branch_repository import HotelPMSBranchRepository
+from features.branches.repository import BranchRepository
 from utils.logger import logger
 
 
@@ -13,7 +13,7 @@ ROOM_STATUSES = {"available", "occupied", "cleaning", "maintenance"}
 class RoomService:
     @staticmethod
     def _assert_branch(db: Session, tenant_id: str, branch_id: str) -> bool:
-        return HotelPMSBranchRepository.get_by_id(db, tenant_id, branch_id) is not None
+        return BranchRepository.get_by_id(db, tenant_id, branch_id) is not None
 
     @staticmethod
     def _assert_room_type_in_branch(

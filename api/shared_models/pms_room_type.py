@@ -19,7 +19,7 @@ class PMSRoomType(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String(36), ForeignKey("public.tenants.id"), nullable=False, index=True)
-    branch_id = Column(String(36), ForeignKey("public.hotel_pms_branches.id"), nullable=False, index=True)
+    branch_id = Column(String(36), ForeignKey("public.branches.id"), nullable=False, index=True)
     name = Column(String(100), nullable=False)
     base_rate = Column(Numeric(10, 2), nullable=False)
     capacity = Column(Integer, nullable=False, default=2)

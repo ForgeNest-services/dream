@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
-from shared_models import HotelPMSBranch
+from shared_models import Branch
 
 
-class HotelPMSBranchRepository:
+class BranchRepository:
     @staticmethod
     def create(
         db: Session,
@@ -11,8 +11,8 @@ class HotelPMSBranchRepository:
         address: str | None = None,
         city: str | None = None,
         phone: str | None = None,
-    ) -> HotelPMSBranch:
-        branch = HotelPMSBranch(
+    ) -> Branch:
+        branch = Branch(
             tenant_id=tenant_id,
             name=name,
             address=address,
@@ -25,35 +25,35 @@ class HotelPMSBranchRepository:
         return branch
 
     @staticmethod
-    def get_by_id(db: Session, tenant_id: str, branch_id: str) -> HotelPMSBranch | None:
+    def get_by_id(db: Session, tenant_id: str, branch_id: str) -> Branch | None:
         return (
-            db.query(HotelPMSBranch)
+            db.query(Branch)
             .filter(
-                HotelPMSBranch.id == branch_id,
-                HotelPMSBranch.tenant_id == tenant_id,
+                Branch.id == branch_id,
+                Branch.tenant_id == tenant_id,
             )
             .first()
         )
 
     @staticmethod
-    def list_for_tenant(db: Session, tenant_id: str) -> list[HotelPMSBranch]:
+    def list_for_tenant(db: Session, tenant_id: str) -> list[Branch]:
         return (
-            db.query(HotelPMSBranch)
-            .filter(HotelPMSBranch.tenant_id == tenant_id)
-            .order_by(HotelPMSBranch.created_at)
+            db.query(Branch)
+            .filter(Branch.tenant_id == tenant_id)
+            .order_by(Branch.created_at)
             .all()
         )
 
     @staticmethod
     def update(
         db: Session,
-        branch: HotelPMSBranch,
+        branch: Branch,
         name: str | None = None,
         address: str | None = None,
         city: str | None = None,
         phone: str | None = None,
         is_active: bool | None = None,
-    ) -> HotelPMSBranch:
+    ) -> Branch:
         if name is not None:
             branch.name = name
         if address is not None:

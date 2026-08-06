@@ -101,3 +101,44 @@ def require_hotel_pms_staff(role: str | None = None):
         }
 
     return _dep
+
+
+def require_tenant_scope(
+    token: str = Depends(get_token_from_header),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Accepts EITHER a platform user JWT (owner/manager with tenant) OR any
+    app-staff JWT (hotel_pms, restro, ...). Returns a normalized dict with
+    `tenant_id`, `source` ("platform"|"staff"), and optionally `branch_id` for
+    branch-scoped staff. Use this on endpoints that any authenticated tenant
+    user should see (e.g. shared /branches list).
+    """
+    if not token:
+        raise HTTPException(401, "Unauthorized")
+
+    payload = decode_token(token)
+    if not payload:
+        raise HTTPException(401, "Invalid or expired token")
+
+    # Platform user path: has user_id and (via lookup) a tenant_id
+    if "user_id" in payload:
+        user = UserRepository.get_by_id(db, payload.get("user_id"))
+        if not user or not user.tenant_id:
+            raise HTTPException(403, "Tenant required")
+        return {
+            "tenant_id": user.tenant_id,
+            "role": user.role,
+            "source": "platform",
+        }
+
+    # App-staff path: has cred_id, module, tenant_id embedded
+    if payload.get("cred_id") and payload.get("tenant_id"):
+        return {
+            "tenant_id": payload["tenant_id"],
+            "role": payload.get("role"),
+            "branch_id": payload.get("branch_id"),
+            "module": payload.get("module"),
+            "source": "staff",
+        }
+
+    raise HTTPException(401, "Unknown token type")

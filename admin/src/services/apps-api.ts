@@ -113,11 +113,12 @@ export const appsApi = {
     }
   },
 
-  listBranches: async (appCode: string): Promise<ApiResponse<Branch[]>> => {
+  // Branches are tenant-level (shared across all apps). appCode is accepted
+  // for backward compatibility with the useBranches hook signature but is
+  // ignored — all calls hit the shared /branches endpoint.
+  listBranches: async (_appCode?: string): Promise<ApiResponse<Branch[]>> => {
     try {
-      const response = await axiosClient.get<ApiResponse<Branch[]>>(
-        `${credentialsPrefix(appCode)}/branches`,
-      );
+      const response = await axiosClient.get<ApiResponse<Branch[]>>("/branches");
       return response.data;
     } catch (error) {
       throw normalizeError(error, 'listBranches');
@@ -125,14 +126,11 @@ export const appsApi = {
   },
 
   createBranch: async (
-    appCode: string,
+    _appCode: string | undefined,
     payload: CreateBranchPayload,
   ): Promise<ApiResponse<Branch>> => {
     try {
-      const response = await axiosClient.post<ApiResponse<Branch>>(
-        `${credentialsPrefix(appCode)}/branches`,
-        payload,
-      );
+      const response = await axiosClient.post<ApiResponse<Branch>>("/branches", payload);
       return response.data;
     } catch (error) {
       throw normalizeError(error, 'createBranch');
@@ -140,13 +138,13 @@ export const appsApi = {
   },
 
   updateBranch: async (
-    appCode: string,
+    _appCode: string | undefined,
     branchId: string,
     payload: UpdateBranchPayload,
   ): Promise<ApiResponse<Branch>> => {
     try {
       const response = await axiosClient.patch<ApiResponse<Branch>>(
-        `${credentialsPrefix(appCode)}/branches/${branchId}`,
+        `/branches/${branchId}`,
         payload,
       );
       return response.data;
@@ -156,12 +154,12 @@ export const appsApi = {
   },
 
   deleteBranch: async (
-    appCode: string,
+    _appCode: string | undefined,
     branchId: string,
   ): Promise<ApiResponse<{ deleted: boolean }>> => {
     try {
       const response = await axiosClient.delete<ApiResponse<{ deleted: boolean }>>(
-        `${credentialsPrefix(appCode)}/branches/${branchId}`,
+        `/branches/${branchId}`,
       );
       return response.data;
     } catch (error) {
