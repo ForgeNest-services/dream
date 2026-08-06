@@ -618,6 +618,7 @@ docs/auth.md        Original auth plan (partially superseded — user_module_acc
 - **Backend errors use specific error codes** (`INVALID_CREDENTIALS`, `PAN_ALREADY_REGISTERED`, `MODULE_NOT_ACCESSIBLE`, etc.) with matching HTTP status. Frontend switches on code to show the right toast.
 - **Owner endpoints use `require_tenant_user` + role check.** Staff endpoints use `require_hotel_pms_staff`.
 - **New apps register by**: adding a row to `_app_catalog()` in `core/seed.py` + one line in `APP_CODE_TO_API_PREFIX` (frontend) + one entry in `APP_CODE_TO_ROLES` (frontend). Superadmin CRUD UI is future work.
+- **Every list table in `pms/` MUST have**: URL-synced search, filters, and pagination **driven by the backend** from day one. Route uses `validateSearch` + `normalizeTableSearch`. Hook accepts a `params` object (`q`, filters, `page`, `perPage`) and calls the paginated endpoint. Debounce search input with `useDebouncedValue(300ms)` before passing it in. Backend endpoint accepts the same params, returns `data` + `meta: {total, page, per_page, total_pages}` via `success_response(data=..., meta=build_meta(...))` from `utils/paging.py`. Render the returned items directly — never filter/paginate client-side, that breaks pagination correctness. Use the shared `TablePagination` component fed from `meta`. Pagination: min 10 / max 100 rows per page (options 10/25/50/100).
 
 ---
 

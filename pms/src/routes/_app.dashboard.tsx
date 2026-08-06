@@ -7,11 +7,13 @@ import { useApp, useMoney } from "@/lib/app-state";
 import {
   bookings,
   bookingStatusClass,
-  rooms,
   roomStatusClass,
   roomStatusLabel,
   type RoomStatus,
 } from "@/lib/mock-data";
+
+// TODO(phase-3): replace with real rooms from GET /hotel-pms/branches/{id}/rooms
+const rooms: { id: string; number: string; status: RoomStatus }[] = [];
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({
@@ -62,7 +64,7 @@ function Dashboard() {
   const money = useMoney();
   const { property } = useApp();
   const occupied = rooms.filter((r) => r.status === "occupied").length;
-  const occupancy = Math.round((occupied / rooms.length) * 100);
+  const occupancy = rooms.length === 0 ? 0 : Math.round((occupied / rooms.length) * 100);
 
   return (
     <>
