@@ -85,7 +85,7 @@ export function SettingsContent() {
         />
 
         {hasPan && (
-          <div style={{ marginBottom: spacing.lg, marginTop: `calc(${spacing.lg} * -1)` }}>
+          <div style={{ marginBottom: spacing.lg }}>
             <div
               role="radiogroup"
               aria-label="Tax registration type"

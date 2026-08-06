@@ -98,7 +98,7 @@ export function BusinessRegisterForm() {
         />
 
         {hasPan && (
-          <div style={{ marginBottom: spacing.lg, marginTop: `calc(${spacing.lg} * -1)` }}>
+          <div style={{ marginBottom: spacing.lg }}>
             <Controller
               name="is_vat_registered"
               control={control}
