@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from core.database import get_db
-from core.deps import require_tenant_user, require_role
+from core.deps import require_tenant_user, require_role, require_restro_staff
 from utils.helpers import success_response, error_response
 from features.restro.schemas import (
     CreateCredentialRequest,
@@ -9,11 +9,23 @@ from features.restro.schemas import (
     CredentialData,
     StaffLoginRequest,
     StaffLoginResponse,
+    CreateCategoryRequest,
+    UpdateCategoryRequest,
+    CategoryData,
 )
 from features.restro.service import RestroCredentialService, RestroAuthService
+from features.restro.category_service import CategoryService
 
 
 router = APIRouter(prefix="/restro", tags=["restro"])
+
+
+def _assert_branch_scope(staff: dict, branch_id: str) -> None:
+    """Managers/waiters/chefs can only touch their own branch. Owner spans all."""
+    if staff["role"] == "owner":
+        return
+    if staff.get("branch_id") != branch_id:
+        raise HTTPException(403, "Not allowed for this branch")
 
 
 # ---------------------------------------------------------------------------
@@ -147,3 +159,107 @@ def delete_credential(
         return error_response("CREDENTIAL_NOT_FOUND", "Credential not found.", 404)
 
     return success_response(data={"deleted": True}, message="Credential removed")
+
+
+# ---------------------------------------------------------------------------
+# Categories (staff-facing — managed from Zestro)
+# ---------------------------------------------------------------------------
+
+@router.get("/branches/{branch_id}/categories")
+def list_categories(
+    branch_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = CategoryService.list_for_branch(db, staff["tenant_id"], branch_id)
+    if not result["success"]:
+        return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
+    return success_response(
+        data=[CategoryData.model_validate(c).model_dump(mode="json") for c in result["categories"]]
+    )
+
+
+@router.post("/branches/{branch_id}/categories")
+def create_category(
+    branch_id: str,
+    data: CreateCategoryRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can create categories")
+    _assert_branch_scope(staff, branch_id)
+
+    result = CategoryService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        name=data.name,
+        display_order=data.display_order,
+    )
+
+    if not result["success"]:
+        code = result["error_code"]
+        if code == "BRANCH_NOT_FOUND":
+            return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
+        if code == "NAME_TAKEN":
+            return error_response("NAME_TAKEN", "A category with this name already exists.", 409)
+        return error_response("CREATION_FAILED", "Failed to create category.", 500)
+
+    return success_response(
+        data=CategoryData.model_validate(result["category"]).model_dump(mode="json"),
+        message="Category created",
+        status_code=201,
+    )
+
+
+@router.patch("/branches/{branch_id}/categories/{category_id}")
+def update_category(
+    branch_id: str,
+    category_id: str,
+    data: UpdateCategoryRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can edit categories")
+    _assert_branch_scope(staff, branch_id)
+
+    result = CategoryService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        category_id=category_id,
+        name=data.name,
+        display_order=data.display_order,
+    )
+
+    if not result["success"]:
+        code = result["error_code"]
+        if code == "CATEGORY_NOT_FOUND":
+            return error_response("CATEGORY_NOT_FOUND", "Category not found.", 404)
+        if code == "NAME_TAKEN":
+            return error_response("NAME_TAKEN", "A category with this name already exists.", 409)
+        return error_response("UPDATE_FAILED", "Failed to update category.", 500)
+
+    return success_response(
+        data=CategoryData.model_validate(result["category"]).model_dump(mode="json"),
+        message="Category updated",
+    )
+
+
+@router.delete("/branches/{branch_id}/categories/{category_id}")
+def delete_category(
+    branch_id: str,
+    category_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can delete categories")
+    _assert_branch_scope(staff, branch_id)
+
+    result = CategoryService.delete(db, tenant_id=staff["tenant_id"], category_id=category_id)
+    if not result["success"]:
+        return error_response("CATEGORY_NOT_FOUND", "Category not found.", 404)
+    return success_response(data={"deleted": True}, message="Category removed")

@@ -60,3 +60,40 @@ class StaffLoginResponse(BaseModel):
     tenant_id: str
     branch_id: str | None
     expires_at: datetime
+
+
+class CategoryData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    name: str
+    display_order: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateCategoryRequest(BaseModel):
+    name: str
+    display_order: int = 0
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Category name is required")
+        return v
+
+
+class UpdateCategoryRequest(BaseModel):
+    name: str | None = None
+    display_order: int | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str | None) -> str | None:
+        if v is not None and not v.strip():
+            raise ValueError("Category name is required")
+        return v

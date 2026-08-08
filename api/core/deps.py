@@ -30,7 +30,14 @@ def get_current_user(
             return None
         return {"type": "superadmin", "admin": admin}
 
-    user = UserRepository.get_by_id(db, payload.get("user_id"))
+    user_id = payload.get("user_id")
+    if not user_id:
+        return None
+
+    user = UserRepository.get_by_id(db, user_id)
+    if not user:
+        return None
+
     return {"type": "user", "user": user}
 
 
