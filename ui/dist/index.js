@@ -10,6 +10,7 @@
     initNavShadow();
     initFaqAccordion();
     initNewsletterForm();
+    initContactForm();
 
     if (window.gsap) {
       initHeroFlow();
@@ -151,6 +152,35 @@
         button.disabled = false;
         input.disabled = false;
         input.value = "";
+      }, 2600);
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Contact form — front-end only feedback for now
+  // ---------------------------------------------------------------------
+  function initContactForm() {
+    var form = document.getElementById("contact-form");
+    if (!form) return;
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
+
+      var button = form.querySelector("button[type=submit]");
+      if (!button) return;
+
+      var originalHTML = button.innerHTML;
+      button.textContent = "Message sent";
+      button.disabled = true;
+
+      setTimeout(function () {
+        button.innerHTML = originalHTML;
+        button.disabled = false;
+        form.reset();
       }, 2600);
     });
   }
