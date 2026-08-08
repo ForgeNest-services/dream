@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pencil, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import placeholder from "@/assets/menu-placeholder.jpg";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,9 @@ import {
 } from "@/components/ui/select";
 import { NPR, type MenuItem, type Variant } from "@/lib/pos/data";
 import { usePos } from "@/lib/pos/store";
+import { uploadsApi } from "@/lib/uploads-api";
+import { ApiError } from "@/lib/api-client";
+import { toast } from "sonner";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -197,9 +200,14 @@ export function MenuView() {
       <MenuItemDialog
         draft={draft}
         onClose={() => setDraft(null)}
-        onSave={(item) => {
-          saveMenuItem(item);
-          setDraft(null);
+        onSave={async (item) => {
+          try {
+            await saveMenuItem(item);
+            setDraft(null);
+          } catch (err) {
+            const message = err instanceof ApiError ? err.message : "Failed to save item";
+            toast.error(message);
+          }
         }}
       />
     </div>
@@ -213,17 +221,36 @@ function MenuItemDialog({
 }: {
   draft: MenuItem | null;
   onClose: () => void;
-  onSave: (item: MenuItem) => void;
+  onSave: (item: MenuItem) => Promise<void>;
 }) {
-  const { categories } = usePos();
+  const { categories, branchId } = usePos();
   const [item, setItem] = useState<MenuItem | null>(draft);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   if (draft && (!item || item.id !== draft.id)) setItem(draft);
   if (!draft || !item) return null;
 
-  const patch = (p: Partial<MenuItem>) => setItem({ ...item, ...p });
+  const patch = (p: Partial<MenuItem>) => setItem((prev) => (prev ? { ...prev, ...p } : prev));
   const setVariant = (id: string, p: Partial<Variant>) =>
-    patch({ variants: item.variants.map((v) => (v.id === id ? { ...v, ...p } : v)) });
+    setItem((prev) =>
+      prev ? { ...prev, variants: prev.variants.map((v) => (v.id === id ? { ...v, ...p } : v)) } : prev,
+    );
+
+  const handleImageChange = async (file: File) => {
+    if (!branchId) return;
+    const localPreview = URL.createObjectURL(file);
+    patch({ image: localPreview });
+    setIsUploadingImage(true);
+    try {
+      const response = await uploadsApi.uploadMenuItemImage(branchId, file);
+      if (response.data?.url) patch({ image: response.data.url });
+    } catch {
+      toast.error("Image upload failed. Try again.");
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -259,20 +286,28 @@ function MenuItemDialog({
           <div className="space-y-2">
             <Label>Image</Label>
             <div className="flex items-center gap-3">
-              <img
-                src={item.image || placeholder}
-                alt=""
-                width={64}
-                height={64}
-                className="size-16 rounded-xl object-cover"
-              />
+              <div className="relative">
+                <img
+                  src={item.image || placeholder}
+                  alt=""
+                  width={64}
+                  height={64}
+                  className="size-16 rounded-xl object-cover"
+                />
+                {isUploadingImage && (
+                  <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/40">
+                    <Loader2 className="size-5 animate-spin text-white" />
+                  </div>
+                )}
+              </div>
               <Input
                 type="file"
                 accept="image/*"
                 className="h-12"
+                disabled={isUploadingImage}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) patch({ image: URL.createObjectURL(file) });
+                  if (file) void handleImageChange(file);
                 }}
               />
             </div>
@@ -358,11 +393,22 @@ function MenuItemDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" className="h-12" onClick={onClose}>
+          <Button variant="outline" className="h-12" onClick={onClose} disabled={isSaving}>
             Cancel
           </Button>
-          <Button className="h-12" disabled={!item.name} onClick={() => onSave(item)}>
-            Save item
+          <Button
+            className="h-12"
+            disabled={!item.name || isUploadingImage || isSaving}
+            onClick={async () => {
+              setIsSaving(true);
+              try {
+                await onSave(item);
+              } finally {
+                setIsSaving(false);
+              }
+            }}
+          >
+            {isUploadingImage ? "Uploading image…" : isSaving ? "Saving…" : "Save item"}
           </Button>
         </DialogFooter>
       </DialogContent>

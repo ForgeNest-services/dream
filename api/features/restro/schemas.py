@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import datetime
+from decimal import Decimal
 from features.restro.roles import RestroRole
 
 
@@ -97,3 +98,99 @@ class UpdateCategoryRequest(BaseModel):
         if v is not None and not v.strip():
             raise ValueError("Category name is required")
         return v
+
+
+class VariantData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    price: Decimal
+
+
+class VariantInput(BaseModel):
+    name: str
+    price: Decimal
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Variant name is required")
+        return v
+
+    @field_validator("price")
+    @classmethod
+    def price_non_negative(cls, v: Decimal) -> Decimal:
+        if v < 0:
+            raise ValueError("Price cannot be negative")
+        return v
+
+
+class MenuItemData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    category_id: str
+    name: str
+    image_url: str | None
+    has_variants: bool
+    price: Decimal | None
+    sold_out: bool
+    is_active: bool
+    variants: list[VariantData]
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateMenuItemRequest(BaseModel):
+    category_id: str
+    name: str
+    has_variants: bool = False
+    price: Decimal | None = None
+    image_url: str | None = None
+    variants: list[VariantInput] = []
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Item name is required")
+        return v
+
+    @field_validator("price")
+    @classmethod
+    def price_non_negative(cls, v: Decimal | None) -> Decimal | None:
+        if v is not None and v < 0:
+            raise ValueError("Price cannot be negative")
+        return v
+
+
+class UpdateMenuItemRequest(BaseModel):
+    category_id: str | None = None
+    name: str | None = None
+    has_variants: bool | None = None
+    price: Decimal | None = None
+    clear_price: bool = False
+    image_url: str | None = None
+    variants: list[VariantInput] | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str | None) -> str | None:
+        if v is not None and not v.strip():
+            raise ValueError("Item name is required")
+        return v
+
+    @field_validator("price")
+    @classmethod
+    def price_non_negative(cls, v: Decimal | None) -> Decimal | None:
+        if v is not None and v < 0:
+            raise ValueError("Price cannot be negative")
+        return v
+
+
+class SetSoldOutRequest(BaseModel):
+    sold_out: bool

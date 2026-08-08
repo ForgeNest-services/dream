@@ -12,9 +12,14 @@ from features.restro.schemas import (
     CreateCategoryRequest,
     UpdateCategoryRequest,
     CategoryData,
+    CreateMenuItemRequest,
+    UpdateMenuItemRequest,
+    SetSoldOutRequest,
+    MenuItemData,
 )
 from features.restro.service import RestroCredentialService, RestroAuthService
 from features.restro.category_service import CategoryService
+from features.restro.menu_item_service import MenuItemService
 
 
 router = APIRouter(prefix="/restro", tags=["restro"])
@@ -263,3 +268,158 @@ def delete_category(
     if not result["success"]:
         return error_response("CATEGORY_NOT_FOUND", "Category not found.", 404)
     return success_response(data={"deleted": True}, message="Category removed")
+
+
+# ---------------------------------------------------------------------------
+# Menu items (staff-facing — managed from Zestro)
+# ---------------------------------------------------------------------------
+
+_MENU_ITEM_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "CATEGORY_NOT_FOUND": ("CATEGORY_NOT_FOUND", "Category not found for this branch.", 404),
+    "ITEM_NOT_FOUND": ("ITEM_NOT_FOUND", "Menu item not found.", 404),
+    "NAME_TAKEN": ("NAME_TAKEN", "A menu item with this name already exists.", 409),
+    "PRICE_REQUIRED": ("PRICE_REQUIRED", "Price is required when the item has no variants.", 422),
+    "PRICE_NOT_ALLOWED_WITH_VARIANTS": (
+        "PRICE_NOT_ALLOWED_WITH_VARIANTS",
+        "Remove the flat price — items with variants price each variant instead.",
+        422,
+    ),
+    "VARIANTS_REQUIRED": ("VARIANTS_REQUIRED", "Add at least one variant.", 422),
+    "VARIANTS_NOT_ALLOWED": (
+        "VARIANTS_NOT_ALLOWED",
+        "Remove variants or enable 'Has Variants' first.",
+        422,
+    ),
+    "VARIANT_NAME_REQUIRED": ("VARIANT_NAME_REQUIRED", "Every variant needs a name.", 422),
+}
+
+
+def _menu_item_error(code: str):
+    mapped = _MENU_ITEM_ERROR_MAP.get(code, ("CREATION_FAILED", "Failed to save menu item.", 500))
+    return error_response(*mapped)
+
+
+@router.get("/branches/{branch_id}/menu-items")
+def list_menu_items(
+    branch_id: str,
+    category_id: str | None = None,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = MenuItemService.list_for_branch(db, staff["tenant_id"], branch_id, category_id)
+    if not result["success"]:
+        return _menu_item_error(result["error_code"])
+    return success_response(
+        data=[MenuItemData.model_validate(i).model_dump(mode="json") for i in result["items"]]
+    )
+
+
+@router.post("/branches/{branch_id}/menu-items")
+def create_menu_item(
+    branch_id: str,
+    data: CreateMenuItemRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can create menu items")
+    _assert_branch_scope(staff, branch_id)
+
+    result = MenuItemService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        category_id=data.category_id,
+        name=data.name,
+        has_variants=data.has_variants,
+        price=data.price,
+        image_url=data.image_url,
+        variants=[v.model_dump() for v in data.variants],
+    )
+
+    if not result["success"]:
+        return _menu_item_error(result["error_code"])
+
+    return success_response(
+        data=MenuItemData.model_validate(result["item"]).model_dump(mode="json"),
+        message="Menu item created",
+        status_code=201,
+    )
+
+
+@router.patch("/branches/{branch_id}/menu-items/{item_id}")
+def update_menu_item(
+    branch_id: str,
+    item_id: str,
+    data: UpdateMenuItemRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can edit menu items")
+    _assert_branch_scope(staff, branch_id)
+
+    result = MenuItemService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        item_id=item_id,
+        category_id=data.category_id,
+        name=data.name,
+        has_variants=data.has_variants,
+        price=data.price,
+        price_explicitly_null=data.clear_price,
+        image_url=data.image_url,
+        variants=[v.model_dump() for v in data.variants] if data.variants is not None else None,
+    )
+
+    if not result["success"]:
+        return _menu_item_error(result["error_code"])
+
+    return success_response(
+        data=MenuItemData.model_validate(result["item"]).model_dump(mode="json"),
+        message="Menu item updated",
+    )
+
+
+@router.patch("/branches/{branch_id}/menu-items/{item_id}/sold-out")
+def set_menu_item_sold_out(
+    branch_id: str,
+    item_id: str,
+    data: SetSoldOutRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    # Any staff role can flip sold-out — it's an operational floor decision,
+    # not a menu-editing one.
+    _assert_branch_scope(staff, branch_id)
+
+    result = MenuItemService.set_sold_out(
+        db, tenant_id=staff["tenant_id"], branch_id=branch_id, item_id=item_id, sold_out=data.sold_out
+    )
+    if not result["success"]:
+        return _menu_item_error(result["error_code"])
+
+    return success_response(
+        data=MenuItemData.model_validate(result["item"]).model_dump(mode="json"),
+        message="Sold-out status updated",
+    )
+
+
+@router.delete("/branches/{branch_id}/menu-items/{item_id}")
+def delete_menu_item(
+    branch_id: str,
+    item_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can delete menu items")
+    _assert_branch_scope(staff, branch_id)
+
+    result = MenuItemService.delete(db, tenant_id=staff["tenant_id"], branch_id=branch_id, item_id=item_id)
+    if not result["success"]:
+        return _menu_item_error(result["error_code"])
+    return success_response(data={"deleted": True}, message="Menu item removed")
