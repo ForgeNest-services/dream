@@ -1,50 +1,61 @@
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Edu+VIC+WA+NT+Hand+Pre:wght@400..700&family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap");
 
-@font-face {
-  font-family: "Unbounded";
-  src: url("../fonts/Unbounded-ExtraLight.ttf") format("woff2");
-  font-weight: 200;
-  font-style: normal;
+/*
+  Montserrat carries body copy AND titles/headings (font-display now points
+  here too, so existing font-display classes don't need touching). Edu VIC is
+  a deliberately quirky accent face, used sparingly for quote-like callouts
+  and short standalone lines, never for body copy or headings.
+*/
+@theme {
+  --font-display: "Montserrat", sans-serif;
+  --font-sans: "Montserrat", sans-serif;
+  --font-accent: "Edu VIC WA NT Hand Pre", cursive;
+
+  --color-ink: #0f172a;
+  --color-ocean: #2563eb;
+  --color-ocean-dark: #1d4ed8;
+  --color-mist: #f8fafc;
+  --color-slate: #64748b;
+  --color-teal: #14b8a6;
+  --color-amber: #f59e0b;
+  --color-indigo: #7c3aed;
 }
 
-@font-face {
-  font-family: "Unbounded";
-  src: url("../fonts/ClashDisplay-Light.ttf") format("woff2");
-  font-weight: 300;
-  font-style: normal;
+@utility font-accent {
+  font-family: var(--font-accent);
 }
 
-@font-face {
-  font-family: "Unbounded";
-  src: url("../fonts/Unbounded-Regular.ttf") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-}
-
-@font-face {
-  font-family: "Unbounded";
-  src: url("../fonts/Unbounded-Medium.ttf") format("woff2");
-  font-weight: 500;
-  font-style: normal;
-}
-
-@font-face {
-  font-family: "Unbounded";
-  src: url("../fonts/Unbounded-Semibold.ttf") format("woff2");
-  font-weight: 600;
-  font-style: normal;
-}
-
-@font-face {
-  font-family: "Unbounded";
-  src: url("../fonts/Unbounded-Bold.ttf") format("woff2");
-  font-weight: 700;
-  font-style: normal;
-}
-
-/* Apply globally */
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
-    font-family: "Unbounded", sans-serif;
+    font-family: var(--font-sans);
+    background-color: var(--color-mist);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: var(--color-ocean);
+    color: white;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-ocean);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
