@@ -7,6 +7,10 @@ from .pms_room_type import PMSRoomType
 from .pms_room import PMSRoom
 from .pms_guest import PMSGuest
 from .pms_booking import PMSBooking
+from .restro_credential import RestroCredential
+from .restro_category import RestroCategory
+from .restro_menu_item import RestroMenuItem
+from .restro_menu_item_variant import RestroMenuItemVariant
 from .app import App
 
 __all__ = [
@@ -19,5 +23,9 @@ __all__ = [
     "PMSRoom",
     "PMSGuest",
     "PMSBooking",
+    "RestroCredential",
+    "RestroCategory",
+    "RestroMenuItem",
+    "RestroMenuItemVariant",
     "App",
 ]

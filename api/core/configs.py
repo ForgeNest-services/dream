@@ -22,4 +22,14 @@ class Settings:
     BREVO_FROM_EMAIL: str = os.getenv("BREVO_FROM_EMAIL", "")
     BREVO_FROM_NAME: str = os.getenv("BREVO_FROM_NAME", "Dream")
 
+    # Object storage — S3-API-compatible (MinIO in dev/self-hosted, real AWS
+    # S3 later). S3_ENDPOINT is used server-side (container network);
+    # S3_PUBLIC_URL is embedded in URLs returned to the browser.
+    S3_ENDPOINT: str = os.getenv("S3_ENDPOINT", "http://minio:9000")
+    S3_PUBLIC_URL: str = os.getenv("S3_PUBLIC_URL", "http://localhost:9000")
+    S3_ACCESS_KEY: str = os.getenv("S3_ACCESS_KEY", "")
+    S3_SECRET_KEY: str = os.getenv("S3_SECRET_KEY", "")
+    S3_BUCKET: str = os.getenv("S3_BUCKET", "dream-uploads")
+    S3_REGION: str = os.getenv("S3_REGION", "us-east-1")
+
 settings = Settings()

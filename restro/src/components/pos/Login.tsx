@@ -7,8 +7,19 @@ import { usePos } from "@/lib/pos/store";
 
 export function LoginScreen() {
   const { login } = usePos();
-  const [username, setUsername] = useState("suman");
-  const [password, setPassword] = useState("demo1234");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+    const result = await login(username.trim(), password);
+    setIsSubmitting(false);
+    if (!result.ok) setError(result.message);
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-navy px-4 py-10">
@@ -26,10 +37,7 @@ export function LoginScreen() {
 
         <form
           className="rounded-2xl bg-card p-6 shadow-(--shadow-pop) sm:p-8"
-          onSubmit={(e) => {
-            e.preventDefault();
-            login(username.trim() || "staff");
-          }}
+          onSubmit={handleSubmit}
         >
           <div className="space-y-5">
             <div className="space-y-2">
@@ -42,6 +50,7 @@ export function LoginScreen() {
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
                 className="h-14 text-base"
+                disabled={isSubmitting}
               />
             </div>
             <div className="space-y-2">
@@ -55,11 +64,18 @@ export function LoginScreen() {
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
                 className="h-14 text-base"
+                disabled={isSubmitting}
               />
             </div>
-            <Button type="submit" size="lg" className="h-14 w-full text-base font-medium">
+            {error && <p className="text-sm font-medium text-danger">{error}</p>}
+            <Button
+              type="submit"
+              size="lg"
+              className="h-14 w-full text-base font-medium"
+              disabled={isSubmitting || !username.trim() || !password}
+            >
               <LogIn className="size-5" />
-              Sign in
+              {isSubmitting ? "Signing in…" : "Sign in"}
             </Button>
           </div>
         </form>

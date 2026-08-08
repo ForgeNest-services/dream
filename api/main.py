@@ -8,11 +8,14 @@ from utils.helpers import success_response, error_response, format_validation_er
 from utils.logger import logger
 from core.database import Base, engine
 from core.seed import seed_superadmin, seed_apps
+from core.storage import ensure_bucket
 import shared_models
 from features.auth import router as auth_router
 from features.hotel_pms import router as hotel_pms_router
+from features.restro import router as restro_router
 from features.apps import router as apps_router
 from features.branches.router import router as branches_router
+from features.uploads import router as uploads_router
 
 
 @asynccontextmanager
@@ -41,6 +44,14 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to seed apps: {type(e).__name__}: {str(e)}")
         raise
 
+    try:
+        logger.info("Ensuring storage bucket...")
+        ensure_bucket()
+        logger.info("Storage bucket ready")
+    except Exception as e:
+        logger.error(f"Failed to set up storage bucket: {type(e).__name__}: {str(e)}")
+        raise
+
     yield
 
 
@@ -66,7 +77,9 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(branches_router)
 app.include_router(hotel_pms_router)
+app.include_router(restro_router)
 app.include_router(apps_router)
+app.include_router(uploads_router)
 
 
 @app.exception_handler(StarletteHTTPException)

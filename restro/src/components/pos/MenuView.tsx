@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pencil, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import placeholder from "@/assets/menu-placeholder.jpg";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -22,6 +32,9 @@ import {
 } from "@/components/ui/select";
 import { NPR, type MenuItem, type Variant } from "@/lib/pos/data";
 import { usePos } from "@/lib/pos/store";
+import { uploadsApi } from "@/lib/uploads-api";
+import { ApiError } from "@/lib/api-client";
+import { toast } from "sonner";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -35,6 +48,45 @@ function emptyItem(categoryId: string): MenuItem {
     variants: [],
     soldOut: false,
   };
+}
+
+function lowestVariantPrice(variants: Variant[]): number {
+  if (variants.length === 0) return 0;
+  return Math.min(...variants.map((v) => v.price));
+}
+
+function ConfirmDeleteDialog({
+  open,
+  title,
+  description,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-danger text-danger-foreground hover:bg-danger/90"
+            onClick={onConfirm}
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 }
 
 export function MenuView() {
@@ -51,6 +103,8 @@ export function MenuView() {
   const [activeCat, setActiveCat] = useState(categories[0]?.id ?? "");
   const [newCat, setNewCat] = useState("");
   const [draft, setDraft] = useState<MenuItem | null>(null);
+  const [catToDelete, setCatToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<MenuItem | null>(null);
 
   const items = menu.filter((m) => m.categoryId === activeCat);
 
@@ -88,7 +142,7 @@ export function MenuView() {
                 size="icon"
                 aria-label="Delete category"
                 className="size-9 shrink-0 text-danger"
-                onClick={() => deleteCategory(c.id)}
+                onClick={() => setCatToDelete({ id: c.id, name: c.name })}
               >
                 <Trash2 className="size-4" />
               </Button>
@@ -127,7 +181,7 @@ export function MenuView() {
           </Button>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {items.map((item) => (
             <article key={item.id} className="pos-card overflow-hidden">
               <img
@@ -136,50 +190,43 @@ export function MenuView() {
                 loading="lazy"
                 width={512}
                 height={512}
-                className="h-36 w-full object-cover"
+                className="h-24 w-full object-cover"
               />
-              <div className="space-y-3 p-4">
-                <div className="flex items-start justify-between gap-2">
+              <div className="space-y-2 p-2.5">
+                <div className="flex items-start justify-between gap-1.5">
                   <div className="min-w-0">
-                    <h3 className="truncate font-display text-lg leading-none">{item.name}</h3>
-                    <p className="mt-1 text-sm font-semibold text-primary">
+                    <h3 className="truncate font-display text-sm leading-tight">{item.name}</h3>
+                    <p className="mt-0.5 text-xs font-semibold text-primary">
                       {item.hasVariants
-                        ? `${item.variants.length} variants · from ${NPR(
-                            Math.min(...item.variants.map((v) => v.price), 0) || 0,
-                          )}`
+                        ? `${item.variants.length} variants · from ${NPR(lowestVariantPrice(item.variants))}`
                         : NPR(item.price ?? 0)}
                     </p>
                   </div>
-                  {item.soldOut && <Badge className="shrink-0 bg-danger text-danger-foreground">Sold Out</Badge>}
+                  {item.soldOut && (
+                    <Badge className="shrink-0 bg-danger px-1.5 py-0 text-[10px] text-danger-foreground">
+                      Sold Out
+                    </Badge>
+                  )}
                 </div>
 
-                {item.hasVariants && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {item.variants.map((v) => (
-                      <span key={v.id} className="rounded-md bg-secondary px-2 py-1 text-xs font-semibold">
-                        {v.name} · {NPR(v.price)}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-                  <label className="flex items-center gap-2 text-xs font-medium">
-                    <Switch checked={item.soldOut} onCheckedChange={() => toggleSoldOut(item.id)} />
-                    Sold Out
-                  </label>
+                <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+                  <Switch
+                    checked={item.soldOut}
+                    onCheckedChange={() => toggleSoldOut(item.id)}
+                    aria-label="Toggle sold out"
+                  />
                   <div className="flex gap-1">
-                    <Button variant="outline" size="icon" className="size-10" aria-label="Edit item" onClick={() => setDraft(item)}>
-                      <Pencil className="size-4" />
+                    <Button variant="outline" size="icon" className="size-8" aria-label="Edit item" onClick={() => setDraft(item)}>
+                      <Pencil className="size-3.5" />
                     </Button>
                     <Button
                       variant="outline"
                       size="icon"
-                      className="size-10 text-danger"
+                      className="size-8 text-danger"
                       aria-label="Delete item"
-                      onClick={() => deleteMenuItem(item.id)}
+                      onClick={() => setItemToDelete(item)}
                     >
-                      <Trash2 className="size-4" />
+                      <Trash2 className="size-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -187,19 +234,46 @@ export function MenuView() {
             </article>
           ))}
           {items.length === 0 && (
-            <p className="pos-card p-8 text-sm text-muted-foreground sm:col-span-2 xl:col-span-3">
+            <p className="pos-card col-span-full p-8 text-sm text-muted-foreground">
               No items in this category yet.
             </p>
           )}
         </div>
       </section>
 
+      <ConfirmDeleteDialog
+        open={catToDelete !== null}
+        title={`Delete "${catToDelete?.name}"?`}
+        description="This removes the category. Items already in it will need a new category."
+        onOpenChange={(open) => !open && setCatToDelete(null)}
+        onConfirm={() => {
+          if (catToDelete) deleteCategory(catToDelete.id);
+          setCatToDelete(null);
+        }}
+      />
+
+      <ConfirmDeleteDialog
+        open={itemToDelete !== null}
+        title={`Delete "${itemToDelete?.name}"?`}
+        description="This removes the item from your menu. This can't be undone."
+        onOpenChange={(open) => !open && setItemToDelete(null)}
+        onConfirm={() => {
+          if (itemToDelete) deleteMenuItem(itemToDelete.id);
+          setItemToDelete(null);
+        }}
+      />
+
       <MenuItemDialog
         draft={draft}
         onClose={() => setDraft(null)}
-        onSave={(item) => {
-          saveMenuItem(item);
-          setDraft(null);
+        onSave={async (item) => {
+          try {
+            await saveMenuItem(item);
+            setDraft(null);
+          } catch (err) {
+            const message = err instanceof ApiError ? err.message : "Failed to save item";
+            toast.error(message);
+          }
         }}
       />
     </div>
@@ -213,17 +287,36 @@ function MenuItemDialog({
 }: {
   draft: MenuItem | null;
   onClose: () => void;
-  onSave: (item: MenuItem) => void;
+  onSave: (item: MenuItem) => Promise<void>;
 }) {
-  const { categories } = usePos();
+  const { categories, branchId } = usePos();
   const [item, setItem] = useState<MenuItem | null>(draft);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   if (draft && (!item || item.id !== draft.id)) setItem(draft);
   if (!draft || !item) return null;
 
-  const patch = (p: Partial<MenuItem>) => setItem({ ...item, ...p });
+  const patch = (p: Partial<MenuItem>) => setItem((prev) => (prev ? { ...prev, ...p } : prev));
   const setVariant = (id: string, p: Partial<Variant>) =>
-    patch({ variants: item.variants.map((v) => (v.id === id ? { ...v, ...p } : v)) });
+    setItem((prev) =>
+      prev ? { ...prev, variants: prev.variants.map((v) => (v.id === id ? { ...v, ...p } : v)) } : prev,
+    );
+
+  const handleImageChange = async (file: File) => {
+    if (!branchId) return;
+    const localPreview = URL.createObjectURL(file);
+    patch({ image: localPreview });
+    setIsUploadingImage(true);
+    try {
+      const response = await uploadsApi.uploadMenuItemImage(branchId, file);
+      if (response.data?.url) patch({ image: response.data.url });
+    } catch {
+      toast.error("Image upload failed. Try again.");
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -259,20 +352,28 @@ function MenuItemDialog({
           <div className="space-y-2">
             <Label>Image</Label>
             <div className="flex items-center gap-3">
-              <img
-                src={item.image || placeholder}
-                alt=""
-                width={64}
-                height={64}
-                className="size-16 rounded-xl object-cover"
-              />
+              <div className="relative">
+                <img
+                  src={item.image || placeholder}
+                  alt=""
+                  width={64}
+                  height={64}
+                  className="size-16 rounded-xl object-cover"
+                />
+                {isUploadingImage && (
+                  <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/40">
+                    <Loader2 className="size-5 animate-spin text-white" />
+                  </div>
+                )}
+              </div>
               <Input
                 type="file"
                 accept="image/*"
                 className="h-12"
+                disabled={isUploadingImage}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) patch({ image: URL.createObjectURL(file) });
+                  if (file) void handleImageChange(file);
                 }}
               />
             </div>
@@ -358,11 +459,22 @@ function MenuItemDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" className="h-12" onClick={onClose}>
+          <Button variant="outline" className="h-12" onClick={onClose} disabled={isSaving}>
             Cancel
           </Button>
-          <Button className="h-12" disabled={!item.name} onClick={() => onSave(item)}>
-            Save item
+          <Button
+            className="h-12"
+            disabled={!item.name || isUploadingImage || isSaving}
+            onClick={async () => {
+              setIsSaving(true);
+              try {
+                await onSave(item);
+              } finally {
+                setIsSaving(false);
+              }
+            }}
+          >
+            {isUploadingImage ? "Uploading image…" : isSaving ? "Saving…" : "Save item"}
           </Button>
         </DialogFooter>
       </DialogContent>

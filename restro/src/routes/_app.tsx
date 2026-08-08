@@ -10,7 +10,7 @@ export const Route = createFileRoute("/_app")({
 });
 
 function AppLayout() {
-  const { session, isBootstrapping } = usePos();
+  const { session, effectiveRole, isBootstrapping } = usePos();
   const router = useRouter();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
@@ -20,20 +20,20 @@ function AppLayout() {
       router.navigate({ to: "/" });
       return;
     }
-    // Chef/waiter are locked to their role's view. If they somehow land on a
-    // different authed route, redirect them back to their landing view.
-    if (!roleShowsNav(session.role)) {
-      const landing = landingRouteForRole(session.role);
+    // Chef/waiter (or an owner previewing as one) are locked to their role's
+    // view. If they land on a different route, redirect to their landing view.
+    if (effectiveRole && !roleShowsNav(effectiveRole)) {
+      const landing = landingRouteForRole(effectiveRole);
       if (pathname !== landing) router.navigate({ to: landing });
     }
-  }, [isBootstrapping, session, pathname, router]);
+  }, [isBootstrapping, session, effectiveRole, pathname, router]);
 
   if (isBootstrapping || !session) return null;
 
   return (
     <div className="min-h-screen bg-background">
       <PosHeader />
-      {roleShowsNav(session.role) && <PosNav />}
+      {effectiveRole && roleShowsNav(effectiveRole) && <PosNav />}
       <main className="p-3 sm:p-5">
         <Outlet />
       </main>

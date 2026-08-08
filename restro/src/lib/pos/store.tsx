@@ -7,15 +7,16 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { authStorage } from "./auth-storage";
+import { authStorage, type StoredSession } from "./auth-storage";
+import { authApi } from "../auth-api";
+import { branchesApi, type BranchDto } from "../branches-api";
+import { categoriesApi } from "../categories-api";
+import { menuItemsApi, type MenuItemDto } from "../menu-items-api";
 import {
-  BRANCHES,
-  CATEGORIES,
   EMPLOYEES,
   DEFAULT_ZONES,
   EXPENSES,
   INVENTORY,
-  MENU_ITEMS,
   makeTables,
   type Category,
   type DeliveryInfo,
@@ -37,31 +38,63 @@ import {
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-type Session = { username: string; role: Role } | null;
+export type Branch = { id: string; name: string; address: string; phone: string };
+
+function toBranch(b: BranchDto): Branch {
+  return { id: b.id, name: b.name, address: [b.address, b.city].filter(Boolean).join(", "), phone: b.phone ?? "" };
+}
+
+function toCategory(c: { id: string; name: string }): Category {
+  return { id: c.id, name: c.name };
+}
+
+function toMenuItem(m: MenuItemDto): MenuItem {
+  return {
+    id: m.id,
+    name: m.name,
+    categoryId: m.category_id,
+    ...(m.image_url ? { image: m.image_url } : {}),
+    hasVariants: m.has_variants,
+    ...(m.price !== null ? { price: m.price } : {}),
+    variants: m.variants.map((v) => ({ id: v.id, name: v.name, price: v.price })),
+    soldOut: m.sold_out,
+  };
+}
+
+type LoginResult = { ok: true } | { ok: false; message: string };
 
 type Ctx = {
-  session: Session;
+  session: StoredSession | null;
   isBootstrapping: boolean;
-  login: (username: string) => void;
+  login: (username: string, password: string) => Promise<LoginResult>;
   logout: () => void;
-  setRole: (role: Role) => void;
 
+  actualRole: Role | null;
+  viewAsRole: Role | null;
+  effectiveRole: Role | null;
+  setViewAsRole: (role: Role | null) => void;
+
+  branches: Branch[];
+  branchesLoading: boolean;
+  canSwitchBranch: boolean;
   branchId: string;
   setBranchId: (id: string) => void;
-  branch: (typeof BRANCHES)[number];
+  branch: Branch | null;
 
   settings: Settings;
   updateSettings: (patch: Partial<Settings>) => void;
 
   categories: Category[];
-  addCategory: (name: string) => void;
-  renameCategory: (id: string, name: string) => void;
-  deleteCategory: (id: string) => void;
+  categoriesLoading: boolean;
+  addCategory: (name: string) => Promise<void>;
+  renameCategory: (id: string, name: string) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
 
   menu: MenuItem[];
-  saveMenuItem: (item: MenuItem) => void;
-  deleteMenuItem: (id: string) => void;
-  toggleSoldOut: (id: string) => void;
+  menuLoading: boolean;
+  saveMenuItem: (item: MenuItem) => Promise<void>;
+  deleteMenuItem: (id: string) => Promise<void>;
+  toggleSoldOut: (id: string) => Promise<void>;
 
   zones: Zone[];
   addZone: (name: string) => void;
@@ -109,10 +142,10 @@ type Ctx = {
 
 const PosContext = createContext<Ctx | null>(null);
 
-const defaultSettings = (i: number): Settings => ({
+const defaultSettings = (branch: Branch | null): Settings => ({
   restaurantName: "Restro POS",
-  branchAddress: BRANCHES[i]?.address ?? "",
-  branchPhone: BRANCHES[i]?.phone ?? "",
+  branchAddress: branch?.address ?? "",
+  branchPhone: branch?.phone ?? "",
   vatEnabled: true,
   vatRate: 13,
 });
@@ -183,40 +216,144 @@ const seedDelivery = (): Order[] => [
 ];
 
 export function PosProvider({ children }: { children: ReactNode }) {
-  const [session, setSessionState] = useState<Session>(null);
-  const [branchId, setBranchIdState] = useState(BRANCHES[0]!.id);
+  const [session, setSessionState] = useState<StoredSession | null>(null);
+  const [viewAsRole, setViewAsRoleState] = useState<Role | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
+
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [branchId, setBranchIdState] = useState("");
+
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+
+  const [menu, setMenu] = useState<MenuItem[]>([]);
+  const [menuLoading, setMenuLoading] = useState(false);
 
   useEffect(() => {
     const stored = authStorage.readSession();
     if (stored) setSessionState(stored);
-    const storedBranch = authStorage.readBranchId();
-    if (storedBranch && BRANCHES.some((b) => b.id === storedBranch)) {
-      setBranchIdState(storedBranch);
-    }
     setIsBootstrapping(false);
   }, []);
 
-  const setSession = useCallback((next: Session | ((prev: Session) => Session)) => {
-    setSessionState((prev) => {
-      const resolved = typeof next === "function" ? next(prev) : next;
-      authStorage.writeSession(resolved);
-      return resolved;
-    });
-  }, []);
+  // Load branches once authenticated. Owner (branchId=null on the token)
+  // gets every branch and can switch; staff are locked to their own.
+  useEffect(() => {
+    if (!session) {
+      setBranches([]);
+      setBranchIdState("");
+      return;
+    }
+    let cancelled = false;
+    setBranchesLoading(true);
+    branchesApi
+      .listMine()
+      .then((response) => {
+        if (cancelled) return;
+        const list = (response.data ?? []).map(toBranch);
+        setBranches(list);
+        setBranchIdState((current) => {
+          if (current && list.some((b) => b.id === current)) return current;
+          const stored = authStorage.readBranchId();
+          if (stored && list.some((b) => b.id === stored)) return stored;
+          return session.branchId ?? list[0]?.id ?? "";
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setBranchesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   const setBranchId = useCallback((id: string) => {
     setBranchIdState(id);
     authStorage.writeBranchId(id);
   }, []);
 
-  const [settingsMap, setSettingsMap] = useState<Record<string, Settings>>({
-    b1: defaultSettings(0),
-    b2: defaultSettings(1),
-    b3: defaultSettings(2),
-  });
-  const [categories, setCategories] = useState<Category[]>(CATEGORIES);
-  const [menu, setMenu] = useState<MenuItem[]>(MENU_ITEMS);
+  // Load categories for the active branch. Auto-provisioning of sensible
+  // defaults happens server-side on first access for a branch.
+  useEffect(() => {
+    if (!session || !branchId) {
+      setCategories([]);
+      return;
+    }
+    let cancelled = false;
+    setCategoriesLoading(true);
+    categoriesApi
+      .list(branchId)
+      .then((response) => {
+        if (cancelled) return;
+        setCategories((response.data ?? []).map(toCategory));
+      })
+      .finally(() => {
+        if (!cancelled) setCategoriesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, branchId]);
+
+  // Load menu items for the active branch.
+  useEffect(() => {
+    if (!session || !branchId) {
+      setMenu([]);
+      return;
+    }
+    let cancelled = false;
+    setMenuLoading(true);
+    menuItemsApi
+      .list(branchId)
+      .then((response) => {
+        if (cancelled) return;
+        setMenu((response.data ?? []).map(toMenuItem));
+      })
+      .finally(() => {
+        if (!cancelled) setMenuLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, branchId]);
+
+  const login = useCallback(async (username: string, password: string): Promise<LoginResult> => {
+    try {
+      const response = await authApi.login(username, password);
+      const data = response.data;
+      if (!data) return { ok: false, message: "Empty response from server" };
+      const stored: StoredSession = {
+        token: data.token,
+        role: data.role as Role,
+        tenantId: data.tenant_id,
+        branchId: data.branch_id,
+        username,
+        expiresAt: data.expires_at,
+      };
+      authStorage.writeSession(stored);
+      setSessionState(stored);
+      setViewAsRoleState(null);
+      return { ok: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Login failed";
+      return { ok: false, message };
+    }
+  }, []);
+
+  const logout = useCallback(() => {
+    authStorage.writeSession(null);
+    setSessionState(null);
+    setViewAsRoleState(null);
+  }, []);
+
+  const setViewAsRole = useCallback((role: Role | null) => setViewAsRoleState(role), []);
+
+  const actualRole = session?.role ?? null;
+  const effectiveRole = actualRole === "owner" && viewAsRole ? viewAsRole : actualRole;
+  const canSwitchBranch = actualRole === "owner";
+  const branch = branches.find((b) => b.id === branchId) ?? branches[0] ?? null;
+
+  const [settingsMap, setSettingsMap] = useState<Record<string, Settings>>({});
   const [zones, setZones] = useState<Zone[]>(DEFAULT_ZONES);
   const [tables, setTables] = useState<RestaurantTable[]>(makeTables());
   const [orders, setOrders] = useState<Order[]>(seedDelivery());
@@ -225,7 +362,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
   const [employees, setEmployees] = useState<Employee[]>(EMPLOYEES);
   const [expenses, setExpenses] = useState<Expense[]>(EXPENSES);
 
-  const settings = settingsMap[branchId] ?? defaultSettings(0);
+  const settings = settingsMap[branchId] ?? defaultSettings(branch);
   const actor = session?.username ?? "system";
 
   const setTableStatus = (tableId: string, status: RestaurantTable["status"]) =>
@@ -258,33 +395,95 @@ export function PosProvider({ children }: { children: ReactNode }) {
   const value: Ctx = {
     session,
     isBootstrapping,
-    login: (username) => setSession({ username, role: "owner" }),
-    logout: () => setSession(null),
-    setRole: (role) => setSession((s) => (s ? { ...s, role } : s)),
+    login,
+    logout,
 
+    actualRole,
+    viewAsRole,
+    effectiveRole,
+    setViewAsRole,
+
+    branches,
+    branchesLoading,
+    canSwitchBranch,
     branchId,
     setBranchId,
-    branch: BRANCHES.find((b) => b.id === branchId) ?? BRANCHES[0]!,
+    branch,
 
     settings,
     updateSettings: (patch) =>
       setSettingsMap((prev) => ({ ...prev, [branchId]: { ...settings, ...patch } })),
 
     categories,
-    addCategory: (name) => setCategories((p) => [...p, { id: uid(), name }]),
-    renameCategory: (id, name) =>
-      setCategories((p) => p.map((c) => (c.id === id ? { ...c, name } : c))),
-    deleteCategory: (id) => {
+    categoriesLoading,
+    addCategory: async (name) => {
+      if (!branchId) return;
+      const response = await categoriesApi.create(branchId, { name });
+      if (response.data) setCategories((p) => [...p, toCategory(response.data!)]);
+    },
+    renameCategory: async (id, name) => {
+      if (!branchId) return;
+      const response = await categoriesApi.update(branchId, id, { name });
+      if (response.data) {
+        const updated = response.data;
+        setCategories((p) => p.map((c) => (c.id === id ? toCategory(updated) : c)));
+      }
+    },
+    deleteCategory: async (id) => {
+      if (!branchId) return;
+      await categoriesApi.remove(branchId, id);
       setCategories((p) => p.filter((c) => c.id !== id));
       setMenu((p) => p.filter((m) => m.categoryId !== id));
     },
 
     menu,
-    saveMenuItem: (item) =>
-      setMenu((p) => (p.some((m) => m.id === item.id) ? p.map((m) => (m.id === item.id ? item : m)) : [...p, item])),
-    deleteMenuItem: (id) => setMenu((p) => p.filter((m) => m.id !== id)),
-    toggleSoldOut: (id) =>
-      setMenu((p) => p.map((m) => (m.id === id ? { ...m, soldOut: !m.soldOut } : m))),
+    menuLoading,
+    saveMenuItem: async (item) => {
+      if (!branchId) return;
+      const variantPayload = item.variants.map((v) => ({ name: v.name, price: v.price }));
+      const priceField = item.hasVariants || item.price === undefined ? {} : { price: item.price };
+      const existing = menu.some((m) => m.id === item.id);
+      if (existing) {
+        const response = await menuItemsApi.update(branchId, item.id, {
+          category_id: item.categoryId,
+          name: item.name,
+          has_variants: item.hasVariants,
+          ...priceField,
+          clear_price: item.hasVariants,
+          image_url: item.image ?? null,
+          variants: item.hasVariants ? variantPayload : [],
+        });
+        if (response.data) {
+          const updated = toMenuItem(response.data);
+          setMenu((p) => p.map((m) => (m.id === item.id ? updated : m)));
+        }
+      } else {
+        const response = await menuItemsApi.create(branchId, {
+          category_id: item.categoryId,
+          name: item.name,
+          has_variants: item.hasVariants,
+          ...priceField,
+          image_url: item.image ?? null,
+          variants: item.hasVariants ? variantPayload : [],
+        });
+        if (response.data) setMenu((p) => [...p, toMenuItem(response.data!)]);
+      }
+    },
+    deleteMenuItem: async (id) => {
+      if (!branchId) return;
+      await menuItemsApi.remove(branchId, id);
+      setMenu((p) => p.filter((m) => m.id !== id));
+    },
+    toggleSoldOut: async (id) => {
+      if (!branchId) return;
+      const current = menu.find((m) => m.id === id);
+      if (!current) return;
+      const response = await menuItemsApi.setSoldOut(branchId, id, !current.soldOut);
+      if (response.data) {
+        const updated = toMenuItem(response.data);
+        setMenu((p) => p.map((m) => (m.id === id ? updated : m)));
+      }
+    },
 
     zones,
     addZone: (name) => setZones((p) => [...p, { id: `z${uid()}`, name: name.trim() || `Zone ${p.length + 1}` }]),
