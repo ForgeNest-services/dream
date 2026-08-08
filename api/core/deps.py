@@ -78,29 +78,48 @@ def get_staff_token(
     return authorization[7:]
 
 
+def _make_staff_dep(decode_fn):
+    """Builds a require_<app>_staff dependency factory around an app's own
+    decode_staff_token. Each app calls this with its own decode function so
+    the module boundary stays a real, independent trust check (not just a
+    shared string comparison) — if one app's staff auth needs to diverge
+    later, only that app's wrapper changes."""
+
+    def require_staff(role: str | None = None):
+        def _dep(token: str = Depends(get_staff_token)) -> dict:
+            if not token:
+                raise HTTPException(401, "Unauthorized")
+
+            payload = decode_fn(token)
+            if not payload:
+                raise HTTPException(401, "Invalid or expired token")
+
+            staff_role = payload["role"]
+            if role and staff_role != role:
+                raise HTTPException(403, "Insufficient role")
+
+            return {
+                "tenant_id": payload["tenant_id"],
+                "role": staff_role,
+                "cred_id": payload.get("cred_id"),
+                "branch_id": payload.get("branch_id"),
+            }
+
+        return _dep
+
+    return require_staff
+
+
 def require_hotel_pms_staff(role: str | None = None):
     from features.hotel_pms.auth import decode_staff_token
 
-    def _dep(token: str = Depends(get_staff_token)) -> dict:
-        if not token:
-            raise HTTPException(401, "Unauthorized")
+    return _make_staff_dep(decode_staff_token)(role)
 
-        payload = decode_staff_token(token)
-        if not payload:
-            raise HTTPException(401, "Invalid or expired token")
 
-        staff_role = payload["role"]
-        if role and staff_role != role:
-            raise HTTPException(403, "Insufficient role")
+def require_restro_staff(role: str | None = None):
+    from features.restro.auth import decode_staff_token
 
-        return {
-            "tenant_id": payload["tenant_id"],
-            "role": staff_role,
-            "cred_id": payload.get("cred_id"),
-            "branch_id": payload.get("branch_id"),
-        }
-
-    return _dep
+    return _make_staff_dep(decode_staff_token)(role)
 
 
 def require_tenant_scope(

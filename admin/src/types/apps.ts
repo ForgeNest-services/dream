@@ -58,7 +58,7 @@ export interface UpdateBranchPayload {
   phone?: string | null;
 }
 
-export const BRANCH_SCOPED_ROLES = new Set(['manager', 'front_desk']);
+export const BRANCH_SCOPED_ROLES = new Set(['manager', 'front_desk', 'waiter', 'chef']);
 
 export const HOTEL_PMS_ROLES = [
   { code: 'app_owner', label: 'App Owner' },
@@ -66,10 +66,19 @@ export const HOTEL_PMS_ROLES = [
   { code: 'front_desk', label: 'Front Desk' },
 ] as const;
 
+export const RESTRO_ROLES = [
+  { code: 'owner', label: 'Owner' },
+  { code: 'manager', label: 'Manager' },
+  { code: 'waiter', label: 'Waiter' },
+  { code: 'chef', label: 'Chef' },
+] as const;
+
 export const APP_CODE_TO_API_PREFIX: Record<string, string> = {
   hotel_pms: '/hotel-pms',
+  restro: '/restro',
 };
 
 export const APP_CODE_TO_ROLES: Record<string, ReadonlyArray<{ code: string; label: string }>> = {
   hotel_pms: HOTEL_PMS_ROLES,
+  restro: RESTRO_ROLES,
 };
