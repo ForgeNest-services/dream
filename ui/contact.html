@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Contact Srota</title>
+    <meta
+      name="description"
+      content="Get in touch with Srota. Ask about a plan, request a demo, or start your 30-day free trial on any one app."
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="./public/favicons/favicon.svg"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="96x96"
+      href="./public/favicons/favicon-96x96.png"
+    />
+    <link rel="shortcut icon" href="./public/favicons/favicon.ico" />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="./public/favicons/apple-touch-icon.png"
+    />
+    <link rel="manifest" href="./public/favicons/site.webmanifest" />
+    <meta name="theme-color" content="#2563eb" />
+    <link rel="stylesheet" href="./dist/output.css" />
+  </head>
+  <body class="overflow-x-hidden bg-mist text-ink">
+    <!-- ============================= NAV ============================= -->
+    <header class="fixed inset-x-0 top-0 z-50">
+      <div class="mx-auto max-w-7xl px-6 lg:px-10">
+        <nav
+          id="site-nav"
+          class="mt-4 flex items-center justify-between rounded-2xl border border-ink/10 bg-white/80 px-4 py-0.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-md transition-shadow sm:px-6"
+        >
+          <a
+            href="/"
+            class="flex shrink-0 items-center"
+            aria-label="Srota home"
+          >
+            <img
+              src="./public/primary-logo.png"
+              alt="Srota, Source of Solutions"
+              class="h-12 w-auto sm:h-20"
+            />
+          </a>
+
+          <div class="hidden items-center gap-1 lg:flex">
+            <div class="group relative">
+              <button
+                class="flex items-center gap-1 rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:bg-ink/[0.04] hover:text-ink"
+              >
+                Solutions
+                <svg
+                  class="size-3.5 opacity-50 transition-transform group-hover:rotate-180"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                >
+                  <path
+                    d="M2.5 4.5L6 8l3.5-3.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div
+                class="invisible absolute left-1/2 top-full w-52 -translate-x-1/2 translate-y-2 rounded-xl border border-ink/10 bg-white p-1.5 opacity-0 shadow-lg shadow-ink/[0.08] transition-all duration-150 group-hover:visible group-hover:translate-y-3 group-hover:opacity-100"
+              >
+                <a
+                  href="/solutions#pms"
+                  class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink"
+                  >Srota PMS</a
+                >
+                <a
+                  href="/solutions#rms"
+                  class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink"
+                  >Srota RMS</a
+                >
+                <a
+                  href="/solutions#ims"
+                  class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink"
+                  >Srota IMS</a
+                >
+                <a
+                  href="/solutions#hrms"
+                  class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink"
+                  >Srota HRMS</a
+                >
+                <div class="my-1 border-t border-ink/5"></div>
+                <a
+                  href="/solutions"
+                  class="block rounded-lg px-3 py-2 text-sm font-medium text-ocean hover:bg-mist"
+                  >All products</a
+                >
+              </div>
+            </div>
+            <a
+              href="/pricing"
+              class="rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:bg-ink/[0.04] hover:text-ink"
+              >Pricing</a
+            >
+            <div class="group relative">
+              <button
+                class="flex items-center gap-1 rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:bg-ink/[0.04] hover:text-ink"
+              >
+                Resources
+                <svg
+                  class="size-3.5 opacity-50 transition-transform group-hover:rotate-180"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                >
+                  <path
+                    d="M2.5 4.5L6 8l3.5-3.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div
+                class="invisible absolute left-1/2 top-full w-48 -translate-x-1/2 translate-y-2 rounded-xl border border-ink/10 bg-white p-1.5 opacity-0 shadow-lg shadow-ink/[0.08] transition-all duration-150 group-hover:visible group-hover:translate-y-3 group-hover:opacity-100"
+              >
+                <a
+                  href="/resources#guides"
+                  class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink"
+                  >Guides</a
+                >
+                <a
+                  href="/resources#tutorials"
+                  class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink"
+                  >Tutorials</a
+                >
+                <a
+                  href="/blog"
+                  class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink"
+                  >Blog</a
+                >
+              </div>
+            </div>
+            <a
+              href="/about"
+              class="rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:bg-ink/[0.04] hover:text-ink"
+              >About</a
+            >
+            <a
+              href="/contact"
+              class="rounded-full bg-ink/[0.04] px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-ink/[0.06]"
+              >Contact</a
+            >
+          </div>
+
+          <div class="flex items-center gap-2">
+            <a
+              href="http://localhost:3001"
+              target="_blank"
+              rel="noopener"
+              class="hidden rounded-full px-4 py-2.5 text-sm font-semibold text-ink/70 transition-colors hover:text-ink sm:inline-block"
+              >Sign in</a
+            >
+            <a
+              href="http://localhost:3001"
+              target="_blank"
+              rel="noopener"
+              class="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-ocean sm:px-5"
+            >
+              Start Free
+            </a>
+            <button
+              id="menu-toggle"
+              class="ml-1 grid size-10 place-items-center rounded-full text-ink transition-colors hover:bg-ink/[0.04] lg:hidden"
+              aria-label="Open menu"
+              aria-expanded="false"
+            >
+              <svg class="size-5" viewBox="0 0 20 20" fill="none">
+                <path
+                  d="M3 5.5h14M3 10h14M3 14.5h14"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </nav>
+
+        <!-- Mobile menu -->
+        <div
+          id="mobile-menu"
+          class="mt-2 hidden overflow-hidden rounded-2xl border border-ink/10 bg-white shadow-lg shadow-ink/[0.08] lg:hidden"
+        >
+          <div class="flex flex-col p-2">
+            <div class="mobile-accordion-item">
+              <button
+                class="mobile-accordion-trigger flex w-full items-center justify-between gap-2 rounded-xl px-4 py-3 text-left text-sm font-medium text-ink/80 hover:bg-mist"
+              >
+                Solutions
+                <svg
+                  class="mobile-accordion-icon size-3.5 shrink-0 text-slate transition-transform duration-200"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                >
+                  <path
+                    d="M2.5 4.5L6 8l3.5-3.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div
+                class="mobile-accordion-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-out"
+              >
+                <div class="overflow-hidden">
+                  <a
+                    href="/solutions#pms"
+                    class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist"
+                    >Srota PMS</a
+                  >
+                  <a
+                    href="/solutions#rms"
+                    class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist"
+                    >Srota RMS</a
+                  >
+                  <a
+                    href="/solutions#ims"
+                    class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist"
+                    >Srota IMS</a
+                  >
+                  <a
+                    href="/solutions#hrms"
+                    class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist"
+                    >Srota HRMS</a
+                  >
+                  <a
+                    href="/solutions"
+                    class="block rounded-xl px-6 py-2.5 text-sm font-medium text-ocean hover:bg-mist"
+                    >All products</a
+                  >
+                </div>
+              </div>
+            </div>
+
+            <a
+              href="/pricing"
+              class="rounded-xl px-4 py-3 text-sm font-medium text-ink/80 hover:bg-mist"
+              >Pricing</a
+            >
+
+            <div class="mobile-accordion-item">
+              <button
+                class="mobile-accordion-trigger flex w-full items-center justify-between gap-2 rounded-xl px-4 py-3 text-left text-sm font-medium text-ink/80 hover:bg-mist"
+              >
+                Resources
+                <svg
+                  class="mobile-accordion-icon size-3.5 shrink-0 text-slate transition-transform duration-200"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                >
+                  <path
+                    d="M2.5 4.5L6 8l3.5-3.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div
+                class="mobile-accordion-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-out"
+              >
+                <div class="overflow-hidden">
+                  <a
+                    href="/resources#guides"
+                    class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist"
+                    >Guides</a
+                  >
+                  <a
+                    href="/resources#tutorials"
+                    class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist"
+                    >Tutorials</a
+                  >
+                  <a
+                    href="/blog"
+                    class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist"
+                    >Blog</a
+                  >
+                </div>
+              </div>
+            </div>
+
+            <a
+              href="/about"
+              class="rounded-xl px-4 py-3 text-sm font-medium text-ink/80 hover:bg-mist"
+              >About</a
+            >
+            <a
+              href="/contact"
+              class="rounded-xl px-4 py-3 text-sm font-medium text-ink/80 hover:bg-mist"
+              >Contact</a
+            >
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <!-- ============================= PAGE HEADER ============================= -->
+      <section class="relative overflow-hidden px-6 pb-16 pt-40 sm:pt-48 lg:px-10">
+        <div
+          class="pointer-events-none absolute -left-32 top-0 -z-10 size-[26rem] rounded-full bg-ocean/15 blur-3xl"
+          aria-hidden="true"
+        ></div>
+        <div class="mx-auto max-w-4xl text-center">
+          <p
+            data-reveal
+            class="text-sm font-semibold uppercase tracking-[0.14em] text-ocean"
+          >
+            Contact us
+          </p>
+          <h1
+            data-reveal
+            class="mt-3 font-display text-4xl font-semibold leading-tight tracking-tight text-ink sm:text-6xl"
+          >
+            Let's talk about your business
+          </h1>
+          <p
+            data-reveal
+            class="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-slate"
+          >
+            Questions about a plan, want a walkthrough before you commit, or
+            ready to start your free trial? Send us a message and we'll get
+            back to you within a day.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============================= CONTACT GRID ============================= -->
+      <section class="px-6 pb-24 sm:pb-28 lg:px-10">
+        <div class="mx-auto grid max-w-6xl gap-6 lg:grid-cols-5">
+          <!-- Info column -->
+          <div class="lg:col-span-2" data-reveal>
+            <div
+              class="flex h-full flex-col justify-between rounded-[1.75rem] bg-ink p-8 text-white sm:p-10"
+            >
+              <div>
+                <h2 class="font-display text-2xl font-semibold tracking-tight">
+                  Reach us directly
+                </h2>
+                <p class="mt-3 text-white/60">
+                  Prefer email, phone, or dropping by? Here's how to find us.
+                </p>
+
+                <div class="mt-8 space-y-6">
+                  <div class="flex items-start gap-4">
+                    <div
+                      class="grid size-10 shrink-0 place-items-center rounded-xl bg-white/10 text-teal"
+                    >
+                      <svg class="size-5" viewBox="0 0 24 24" fill="none">
+                        <path
+                          d="M3.5 6.5h17v11a1.5 1.5 0 0 1-1.5 1.5h-14A1.5 1.5 0 0 1 3.5 17.5v-11Z"
+                          stroke="currentColor"
+                          stroke-width="1.6"
+                          stroke-linejoin="round"
+                        />
+                        <path
+                          d="M4 7l8 6 8-6"
+                          stroke="currentColor"
+                          stroke-width="1.6"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        />
+                      </svg>
+                    </div>
+                    <div>
+                      <p class="text-sm font-semibold text-white">Email</p>
+                      <a
+                        href="mailto:hello@srotaapps.com"
+                        class="text-sm text-white/60 hover:text-teal"
+                        >hello@srotaapps.com</a
+                      >
+                    </div>
+                  </div>
+
+                  <div class="flex items-start gap-4">
+                    <div
+                      class="grid size-10 shrink-0 place-items-center rounded-xl bg-white/10 text-teal"
+                    >
+                      <svg class="size-5" viewBox="0 0 24 24" fill="none">
+                        <path
+                          d="M5 4.5h3.5l1.5 4-2 1.5a11 11 0 0 0 5 5l1.5-2 4 1.5V18a1.5 1.5 0 0 1-1.5 1.5C10.5 19.5 4.5 13.5 4.5 6.5A1.5 1.5 0 0 1 5 4.5Z"
+                          stroke="currentColor"
+                          stroke-width="1.6"
+                          stroke-linejoin="round"
+                        />
+                      </svg>
+                    </div>
+                    <div>
+                      <p class="text-sm font-semibold text-white">Phone</p>
+                      <a
+                        href="tel:+9779868211546"
+                        class="text-sm text-white/60 hover:text-teal"
+                        >+977 98-6821-1546</a
+                      >
+                    </div>
+                  </div>
+
+                  <div class="flex items-start gap-4">
+                    <div
+                      class="grid size-10 shrink-0 place-items-center rounded-xl bg-white/10 text-teal"
+                    >
+                      <svg class="size-5" viewBox="0 0 24 24" fill="none">
+                        <path
+                          d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21Z"
+                          stroke="currentColor"
+                          stroke-width="1.6"
+                          stroke-linejoin="round"
+                        />
+                        <circle
+                          cx="12"
+                          cy="9.5"
+                          r="2.5"
+                          stroke="currentColor"
+                          stroke-width="1.6"
+                        />
+                      </svg>
+                    </div>
+                    <div>
+                      <p class="text-sm font-semibold text-white">Office</p>
+                      <p class="text-sm text-white/60">
+                        Kathmandu, Nepal
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-10 border-t border-white/10 pt-6">
+                <p class="text-sm font-semibold text-white">
+                  Rather explore first?
+                </p>
+                <a
+                  href="http://localhost:3001"
+                  target="_blank"
+                  rel="noopener"
+                  class="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-teal hover:text-teal/80"
+                >
+                  Start your 30-day free trial
+                  <svg class="size-3.5" viewBox="0 0 16 16" fill="none">
+                    <path
+                      d="M3.5 8h9M8.5 4l4 4-4 4"
+                      stroke="currentColor"
+                      stroke-width="1.6"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Form column -->
+          <div class="lg:col-span-3" data-reveal>
+            <div
+              class="rounded-[1.75rem] border border-ink/10 bg-white p-8 sm:p-10"
+            >
+              <form id="contact-form" class="space-y-5" novalidate>
+                <div class="grid gap-5 sm:grid-cols-2">
+                  <div>
+                    <label
+                      for="contact-name"
+                      class="text-sm font-medium text-ink"
+                      >Full name</label
+                    >
+                    <input
+                      id="contact-name"
+                      name="name"
+                      type="text"
+                      required
+                      placeholder="Enter your name"
+                      class="mt-2 w-full rounded-xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink placeholder:text-slate/50 focus:border-ocean focus:outline-none focus:ring-2 focus:ring-ocean/20"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      for="contact-business"
+                      class="text-sm font-medium text-ink"
+                      >Business name</label
+                    >
+                    <input
+                      id="contact-business"
+                      name="business"
+                      type="text"
+                      placeholder="Enter your business name"
+                      class="mt-2 w-full rounded-xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink placeholder:text-slate/50 focus:border-ocean focus:outline-none focus:ring-2 focus:ring-ocean/20"
+                    />
+                  </div>
+                </div>
+
+                <div class="grid gap-5 sm:grid-cols-2">
+                  <div>
+                    <label
+                      for="contact-email"
+                      class="text-sm font-medium text-ink"
+                      >Email</label
+                    >
+                    <input
+                      id="contact-email"
+                      name="email"
+                      type="email"
+                      required
+                      placeholder="Enter your email"
+                      class="mt-2 w-full rounded-xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink placeholder:text-slate/50 focus:border-ocean focus:outline-none focus:ring-2 focus:ring-ocean/20"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      for="contact-phone"
+                      class="text-sm font-medium text-ink"
+                      >Phone</label
+                    >
+                    <input
+                      id="contact-phone"
+                      name="phone"
+                      type="tel"
+                      placeholder="Enter your phone number"
+                      class="mt-2 w-full rounded-xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink placeholder:text-slate/50 focus:border-ocean focus:outline-none focus:ring-2 focus:ring-ocean/20"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label
+                    for="contact-app"
+                    class="text-sm font-medium text-ink"
+                    >Which app are you interested in?</label
+                  >
+                  <select
+                    id="contact-app"
+                    name="app"
+                    class="mt-2 w-full rounded-xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink focus:border-ocean focus:outline-none focus:ring-2 focus:ring-ocean/20"
+                  >
+                    <option value="">Not sure yet</option>
+                    <option value="pms">Srota PMS</option>
+                    <option value="rms">Srota RMS</option>
+                    <option value="zestro">Zestro</option>
+                    <option value="ims">Srota IMS</option>
+                    <option value="hrms">Srota HRMS</option>
+                    <option value="bundle">The full bundle</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    for="contact-message"
+                    class="text-sm font-medium text-ink"
+                    >Message</label
+                  >
+                  <textarea
+                    id="contact-message"
+                    name="message"
+                    rows="4"
+                    required
+                    placeholder="Enter your message"
+                    class="mt-2 w-full resize-none rounded-xl border border-ink/15 bg-white px-4 py-3 text-sm text-ink placeholder:text-slate/50 focus:border-ocean focus:outline-none focus:ring-2 focus:ring-ocean/20"
+                  ></textarea>
+                </div>
+
+                <button
+                  type="submit"
+                  class="inline-flex w-full items-center justify-center gap-2 rounded-full bg-ocean px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-ocean/25 transition-all hover:-translate-y-0.5 hover:bg-ocean-dark hover:shadow-xl hover:shadow-ocean/30 sm:w-auto"
+                >
+                  Send message
+                  <svg class="size-4" viewBox="0 0 16 16" fill="none">
+                    <path
+                      d="M3.5 8h9M8.5 4l4 4-4 4"
+                      stroke="currentColor"
+                      stroke-width="1.6"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ============================= FOOTER ============================= -->
+    <footer class="bg-ink px-6 pb-10 pt-16 lg:px-10">
+      <div class="mx-auto max-w-7xl">
+        <div class="grid gap-12 sm:grid-cols-2 lg:grid-cols-5">
+          <div class="lg:col-span-2">
+            <img
+              src="./public/primary-logo.png"
+              alt="Srota, Source of Solutions"
+              class="h-16 w-auto brightness-0 invert"
+            />
+            <p class="mt-5 max-w-xs text-sm leading-relaxed text-white/55">
+              Business software built for Nepal: one platform, every tool your
+              business needs to run without paper.
+            </p>
+          </div>
+
+          <div>
+            <p class="text-sm font-semibold text-white">Solutions</p>
+            <ul class="mt-4 space-y-3 text-sm text-white/55">
+              <li>
+                <a href="/solutions#pms" class="hover:text-teal"
+                  >Srota PMS</a
+                >
+              </li>
+              <li>
+                <a href="/solutions#rms" class="hover:text-teal"
+                  >Srota RMS</a
+                >
+              </li>
+              <li>
+                <a href="/solutions#ims" class="hover:text-teal"
+                  >Srota IMS</a
+                >
+              </li>
+              <li>
+                <a href="/solutions#hrms" class="hover:text-teal"
+                  >Srota HRMS</a
+                >
+              </li>
+              <li>
+                <a href="/solutions" class="hover:text-teal"
+                  >All products</a
+                >
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <p class="text-sm font-semibold text-white">Resources</p>
+            <ul class="mt-4 space-y-3 text-sm text-white/55">
+              <li>
+                <a href="/resources#guides" class="hover:text-teal"
+                  >Guides</a
+                >
+              </li>
+              <li>
+                <a href="/resources#tutorials" class="hover:text-teal"
+                  >Tutorials</a
+                >
+              </li>
+              <li><a href="/blog" class="hover:text-teal">Blog</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <p class="text-sm font-semibold text-white">Company</p>
+            <ul class="mt-4 space-y-3 text-sm text-white/55">
+              <li>
+                <a href="/about" class="hover:text-teal">About us</a>
+              </li>
+              <li>
+                <a href="/pricing" class="hover:text-teal">Pricing</a>
+              </li>
+              <li>
+                <a href="/contact" class="hover:text-teal">Contact</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div
+          class="mt-14 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-8 sm:flex-row"
+        >
+          <p class="text-xs text-white/45">
+            &copy; <span id="footer-year">2026</span> Srota. All rights
+            reserved.
+          </p>
+          <p class="text-xs text-white/45">Made in Nepal, for Nepal.</p>
+        </div>
+      </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js"></script>
+    <script src="./dist/index.js"></script>
+  </body>
+</html>
