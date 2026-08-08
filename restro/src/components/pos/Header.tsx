@@ -1,4 +1,4 @@
-import { Building2, ChevronDown, LogOut } from "lucide-react";
+import { Building2, ChevronDown, Eye, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallAppButton } from "./InstallAppButton";
 import {
@@ -9,19 +9,47 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { BRANCHES, ROLE_LABELS, type Role } from "@/lib/pos/data";
+import { ROLE_LABELS, type Role } from "@/lib/pos/data";
 import { usePos } from "@/lib/pos/store";
 import { formatBikramSambat, formatGregorian } from "@/lib/pos/nepali-date";
 
 const ROLES: Role[] = ["owner", "manager", "waiter", "chef"];
 
 export function PosHeader() {
-  const { session, logout, setRole, branch, setBranchId, settings } = usePos();
+  const {
+    session,
+    logout,
+    actualRole,
+    viewAsRole,
+    effectiveRole,
+    setViewAsRole,
+    branches,
+    branch,
+    canSwitchBranch,
+    setBranchId,
+    settings,
+  } = usePos();
   if (!session) return null;
   const today = new Date();
+  const isPreviewing = actualRole === "owner" && viewAsRole !== null && viewAsRole !== "owner";
 
   return (
-    <header className="sticky top-0 z-40 border-b border-navy-soft/40 bg-navy text-navy-foreground">
+    <>
+      {isPreviewing && (
+        <div className="flex items-center justify-between gap-3 bg-amber px-4 py-2 text-sm font-medium text-navy">
+          <span className="flex items-center gap-2">
+            <Eye className="size-4" />
+            Previewing as {ROLE_LABELS[viewAsRole!]} — you still have Owner permissions.
+          </span>
+          <button
+            onClick={() => setViewAsRole(null)}
+            className="rounded-md px-2 py-1 text-xs font-semibold uppercase tracking-wide hover:bg-navy/10"
+          >
+            Exit preview
+          </button>
+        </div>
+      )}
+      <header className="sticky top-0 z-40 border-b border-navy-soft/40 bg-navy text-navy-foreground">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <img
@@ -31,10 +59,10 @@ export function PosHeader() {
           />
           <div className="min-w-0">
             <p className="truncate font-display text-lg leading-none">{settings.restaurantName}</p>
-            <p className="mt-1 truncate text-xs text-navy-foreground/60">{branch.name}</p>
+            <p className="mt-1 truncate text-xs text-navy-foreground/60">{branch?.name ?? "—"}</p>
           </div>
 
-          {session.role === "owner" && (
+          {canSwitchBranch && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -42,14 +70,14 @@ export function PosHeader() {
                   className="ml-2 hidden h-11 gap-2 rounded-xl bg-navy-soft/60 px-3 text-navy-foreground hover:bg-navy-soft hover:text-navy-foreground md:inline-flex"
                 >
                   <Building2 className="size-4" />
-                  <span className="max-w-[10rem] truncate text-sm font-semibold">{branch.name}</span>
+                  <span className="max-w-[10rem] truncate text-sm font-semibold">{branch?.name ?? "Select branch"}</span>
                   <ChevronDown className="size-4 opacity-70" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-60">
                 <DropdownMenuLabel>Switch branch</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {BRANCHES.map((b) => (
+                {branches.map((b) => (
                   <DropdownMenuItem key={b.id} className="py-3" onClick={() => setBranchId(b.id)}>
                     <div>
                       <p className="font-semibold">{b.name}</p>
@@ -81,26 +109,37 @@ export function PosHeader() {
                 <span className="hidden text-left sm:block">
                   <span className="block text-sm font-semibold leading-none">{session.username}</span>
                   <span className="block text-[11px] uppercase tracking-wider text-amber">
-                    {ROLE_LABELS[session.role]}
+                    {ROLE_LABELS[effectiveRole ?? actualRole ?? "waiter"]}
                   </span>
                 </span>
                 <ChevronDown className="size-4 opacity-70" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Demo role switcher</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {ROLES.map((r) => (
-                <DropdownMenuItem
-                  key={r}
-                  className="py-3 font-semibold"
-                  onClick={() => setRole(r)}
-                >
-                  {ROLE_LABELS[r]}
-                  {session.role === r && <span className="ml-auto text-xs text-primary">active</span>}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
+              {actualRole === "owner" ? (
+                <>
+                  <DropdownMenuLabel>Preview as role</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {ROLES.map((r) => (
+                    <DropdownMenuItem
+                      key={r}
+                      className="py-3 font-semibold"
+                      onClick={() => setViewAsRole(r === "owner" ? null : r)}
+                    >
+                      {ROLE_LABELS[r]}
+                      {(viewAsRole ?? "owner") === r && (
+                        <span className="ml-auto text-xs text-primary">active</span>
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                </>
+              ) : (
+                <>
+                  <DropdownMenuLabel>{ROLE_LABELS[actualRole ?? "waiter"]}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <div className="px-2 py-2 lg:hidden">
                 <p className="text-xs font-medium text-foreground">{formatBikramSambat(today)}</p>
                 <p className="text-xs text-muted-foreground">{formatGregorian(today)}</p>
@@ -119,6 +158,7 @@ export function PosHeader() {
           </Button>
         </div>
       </div>
-    </header>
+      </header>
+    </>
   );
 }

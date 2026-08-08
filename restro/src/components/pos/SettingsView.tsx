@@ -13,7 +13,7 @@ export function SettingsView() {
     <div className="grid gap-4 xl:grid-cols-2">
       <div className="pos-card p-5">
         <h2 className="font-display text-xl">Restaurant & branch</h2>
-        <p className="text-sm text-muted-foreground">Editing settings for {branch.name}</p>
+        <p className="text-sm text-muted-foreground">Editing settings for {branch?.name ?? "—"}</p>
         <div className="mt-4 space-y-4">
           <div className="space-y-2">
             <Label>Restaurant name</Label>
@@ -105,12 +105,12 @@ export function SettingsView() {
         <div className="pos-card p-5">
           <h2 className="font-display text-xl">Menu QR (per branch)</h2>
           <p className="text-sm text-muted-foreground">
-            Printable QR. Scanning opens a read-only public menu page for {branch.name}.
+            Printable QR. Scanning opens a read-only public menu page for {branch?.name ?? "this branch"}.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-4">
             <img
               src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(menuUrl)}`}
-              alt={`Menu QR for ${branch.name}`}
+              alt={`Menu QR for ${branch?.name ?? "branch"}`}
               width={128}
               height={128}
               className="size-32 shrink-0 rounded-xl border border-border bg-white p-2"
