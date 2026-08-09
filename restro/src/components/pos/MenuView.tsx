@@ -209,52 +209,51 @@ export function MenuView() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-2.5 md:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
           {items.map((item) => (
-            <article key={item.id} className="pos-card overflow-hidden">
-              <img
-                src={item.image || placeholder}
-                alt={item.name}
-                loading="lazy"
-                width={512}
-                height={512}
-                className="h-24 w-full object-cover"
-              />
-              <div className="space-y-2 p-2.5">
-                <div className="flex items-start justify-between gap-1.5">
-                  <div className="min-w-0">
-                    <h3 className="truncate font-display text-sm leading-tight">{item.name}</h3>
-                    <p className="mt-0.5 text-xs font-semibold text-primary">
-                      {item.hasVariants
-                        ? `${item.variants.length} variants · from ${NPR(lowestVariantPrice(item.variants))}`
-                        : NPR(item.price ?? 0)}
-                    </p>
-                  </div>
-                  {item.soldOut && (
-                    <Badge className="shrink-0 bg-danger px-1.5 py-0 text-[10px] text-danger-foreground">
-                      Sold Out
-                    </Badge>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+            <article key={item.id} className="pos-card flex flex-col overflow-hidden">
+              <div className="relative flex h-32 w-full items-center justify-center bg-secondary sm:h-36 md:h-40">
+                <img
+                  src={item.image || placeholder}
+                  alt={item.name}
+                  loading="lazy"
+                  width={512}
+                  height={512}
+                  className="h-full w-full object-contain"
+                />
+                {item.soldOut && (
+                  <Badge className="absolute right-1.5 top-1.5 bg-danger px-1.5 py-0 text-[10px] text-danger-foreground">
+                    Sold Out
+                  </Badge>
+                )}
+              </div>
+              <div className="flex flex-1 flex-col gap-1.5 p-2">
+                <h3 className="line-clamp-2 font-display text-xs leading-tight sm:text-sm">
+                  {item.name}
+                </h3>
+                <p className="text-xs font-semibold text-primary sm:text-sm">
+                  {item.hasVariants
+                    ? `from ${NPR(lowestVariantPrice(item.variants))}`
+                    : NPR(item.price ?? 0)}
+                </p>
+                <div className="mt-auto flex items-center justify-between gap-1 border-t border-border pt-1.5">
                   <Switch
                     checked={item.soldOut}
                     onCheckedChange={() => toggleSoldOut(item.id)}
                     aria-label="Toggle sold out"
                   />
                   <div className="flex gap-1">
-                    <Button variant="outline" size="icon" className="size-8" aria-label="Edit item" onClick={() => setDraft(item)}>
-                      <Pencil className="size-3.5" />
+                    <Button variant="outline" size="icon" className="size-7" aria-label="Edit item" onClick={() => setDraft(item)}>
+                      <Pencil className="size-3" />
                     </Button>
                     <Button
                       variant="outline"
                       size="icon"
-                      className="size-8 text-danger"
+                      className="size-7 text-danger"
                       aria-label="Delete item"
                       onClick={() => setItemToDelete(item)}
                     >
-                      <Trash2 className="size-3.5" />
+                      <Trash2 className="size-3" />
                     </Button>
                   </div>
                 </div>
