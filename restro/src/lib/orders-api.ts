@@ -1,4 +1,5 @@
 import { apiClient } from "./api-client";
+import type { ApiEnvelope } from "./api-client";
 
 export type OrderType = "dine-in" | "delivery";
 export type OrderStatus = "draft" | "paid" | "cancelled";
@@ -70,6 +71,32 @@ function toQuery(params: OrdersListQuery): string {
   return s ? `?${s}` : "";
 }
 
+// Paginated bills-history query — superset of OrdersListQuery. `bs_from`
+// and `bs_to` accept BS dates in "YYYY-MM-DD" format (backend does a lexical
+// comparison against the persisted `placed_at_bs` column).
+export interface OrdersPaginatedQuery extends Omit<OrdersListQuery, "limit"> {
+  q?: string;
+  bs_from?: string;
+  bs_to?: string;
+  page?: number;
+  per_page?: number;
+}
+
+function toPaginatedQuery(params: OrdersPaginatedQuery): string {
+  const qs = new URLSearchParams();
+  if (params.status) qs.set("status", params.status);
+  if (params.type) qs.set("type", params.type);
+  if (params.kitchen_status) qs.set("kitchen_status", params.kitchen_status);
+  if (params.table_id) qs.set("table_id", params.table_id);
+  if (params.q) qs.set("q", params.q);
+  if (params.bs_from) qs.set("bs_from", params.bs_from);
+  if (params.bs_to) qs.set("bs_to", params.bs_to);
+  if (params.page) qs.set("page", String(params.page));
+  if (params.per_page) qs.set("per_page", String(params.per_page));
+  const s = qs.toString();
+  return s ? `?${s}` : "";
+}
+
 export interface CreateOrderPayload {
   type: OrderType;
   table_id?: string;
@@ -96,6 +123,14 @@ export const ordersApi = {
   list(branchId: string, params: OrdersListQuery = {}) {
     return apiClient.get<OrderDto[]>(
       `/restro/branches/${branchId}/orders${toQuery(params)}`,
+    );
+  },
+  paginated(
+    branchId: string,
+    params: OrdersPaginatedQuery = {},
+  ): Promise<ApiEnvelope<OrderDto[]>> {
+    return apiClient.get<OrderDto[]>(
+      `/restro/branches/${branchId}/orders/paginated${toPaginatedQuery(params)}`,
     );
   },
   get(branchId: string, orderId: string) {

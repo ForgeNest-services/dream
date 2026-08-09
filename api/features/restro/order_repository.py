@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from decimal import Decimal
-from sqlalchemy import and_
+from sqlalchemy import and_, or_, func
 from sqlalchemy.orm import Session
 from shared_models import RestroOrder, RestroOrderLine, RestroTable
 from utils.bikram_sambat import to_bs_iso
@@ -67,6 +67,57 @@ class OrderRepository:
         )
 
     @staticmethod
+    def _apply_order_filters(
+        query,
+        *,
+        tenant_id: str,
+        branch_id: str,
+        status: str | None = None,
+        type: str | None = None,
+        kitchen_status: str | None = None,
+        table_id: str | None = None,
+        bs_from: str | None = None,
+        bs_to: str | None = None,
+        search: str | None = None,
+    ):
+        """Shared filter clause used by both list_for_branch and
+        list_paginated so the two never drift."""
+        query = query.filter(
+            RestroOrder.tenant_id == tenant_id,
+            RestroOrder.branch_id == branch_id,
+        )
+        if status:
+            query = query.filter(RestroOrder.status == status)
+        if type:
+            query = query.filter(RestroOrder.type == type)
+        if kitchen_status:
+            query = query.filter(RestroOrder.kitchen_status == kitchen_status)
+        if table_id:
+            query = query.filter(RestroOrder.table_id == table_id)
+        # BS date range hits the (branch_id, placed_at_bs) composite index.
+        # placed_at_bs is stored as "YYYY-MM-DD" so lexical comparison is
+        # equivalent to date comparison.
+        if bs_from:
+            query = query.filter(RestroOrder.placed_at_bs >= bs_from)
+        if bs_to:
+            query = query.filter(RestroOrder.placed_at_bs <= bs_to)
+        # Search across waiter, delivery customer/phone, table label, and
+        # short id slice. Only outer-joins when actually searching so the
+        # store's plain "give me last N" fetch stays cheap.
+        if search:
+            term = f"%{search.lower()}%"
+            query = query.outerjoin(RestroTable, RestroOrder.table_id == RestroTable.id).filter(
+                or_(
+                    func.lower(RestroOrder.waiter_name).like(term),
+                    func.lower(RestroOrder.delivery_customer_name).like(term),
+                    func.lower(RestroOrder.delivery_phone).like(term),
+                    func.lower(RestroTable.label).like(term),
+                    func.lower(RestroOrder.id).like(term),
+                )
+            )
+        return query
+
+    @staticmethod
     def list_for_branch(
         db: Session,
         tenant_id: str,
@@ -77,22 +128,55 @@ class OrderRepository:
         table_id: str | None = None,
         limit: int | None = None,
     ) -> list[RestroOrder]:
-        q = db.query(RestroOrder).filter(
-            RestroOrder.tenant_id == tenant_id,
-            RestroOrder.branch_id == branch_id,
+        q = OrderRepository._apply_order_filters(
+            db.query(RestroOrder),
+            tenant_id=tenant_id,
+            branch_id=branch_id,
+            status=status,
+            type=type,
+            kitchen_status=kitchen_status,
+            table_id=table_id,
         )
-        if status:
-            q = q.filter(RestroOrder.status == status)
-        if type:
-            q = q.filter(RestroOrder.type == type)
-        if kitchen_status:
-            q = q.filter(RestroOrder.kitchen_status == kitchen_status)
-        if table_id:
-            q = q.filter(RestroOrder.table_id == table_id)
         q = q.order_by(RestroOrder.placed_at.desc())
         if limit:
             q = q.limit(limit)
         return q.all()
+
+    @staticmethod
+    def list_paginated(
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        status: str | None = None,
+        type: str | None = None,
+        kitchen_status: str | None = None,
+        table_id: str | None = None,
+        bs_from: str | None = None,
+        bs_to: str | None = None,
+        search: str | None = None,
+        offset: int = 0,
+        limit: int = 25,
+    ) -> tuple[list[RestroOrder], int]:
+        base = OrderRepository._apply_order_filters(
+            db.query(RestroOrder),
+            tenant_id=tenant_id,
+            branch_id=branch_id,
+            status=status,
+            type=type,
+            kitchen_status=kitchen_status,
+            table_id=table_id,
+            bs_from=bs_from,
+            bs_to=bs_to,
+            search=search,
+        )
+        # Count using a subquery-friendly aggregate — .with_entities lets us
+        # reuse `base` (which may include an outer join for search) without
+        # re-running the join logic separately.
+        total = base.with_entities(func.count(RestroOrder.id.distinct())).scalar() or 0
+        items = (
+            base.order_by(RestroOrder.placed_at.desc()).offset(offset).limit(limit).all()
+        )
+        return items, total
 
     @staticmethod
     def get_draft_for_tables(

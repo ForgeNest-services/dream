@@ -1,11 +1,14 @@
 // Bikram Sambat conversion. Anchor: 2075-01-01 BS === 2018-04-14 AD.
-const BS_CALENDAR: Record<number, number[]> = {
+// Exported so BsDatePicker can look up days-per-month directly. Keep in sync
+// with api/utils/bikram_sambat.py — when extending past 2090 BS on either
+// side, update both files together.
+export const BS_CALENDAR: Record<number, number[]> = {
   2075: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-  2076: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
+  2076: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30],
   2077: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
-  2078: [31, 31, 31, 32, 31, 31, 30, 30, 29, 30, 29, 31],
+  2078: [31, 31, 31, 32, 31, 31, 30, 30, 29, 30, 29, 30],
   2079: [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 29, 31],
-  2080: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31],
+  2080: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30],
   2081: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
   2082: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
   2083: [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 29, 31],
@@ -112,6 +115,23 @@ export function formatDateOnlyWithBs(input: string | Date): string {
   });
   const bs = formatBikramSambatShort(d);
   return bs ? `${g} · ${bs} BS` : g;
+}
+
+// Gregorian Date -> BS ISO string ("YYYY-MM-DD") suitable for sending as a
+// bs_from / bs_to query param. Returns null if out of calendar range.
+export function toBsIso(g: Date): string | null {
+  const bs = toBikramSambat(g);
+  if (!bs) return null;
+  return `${bs.year.toString().padStart(4, "0")}-${bs.month.toString().padStart(2, "0")}-${bs.day.toString().padStart(2, "0")}`;
+}
+
+// Convert a BS ISO string to a human-readable label ("Bhadra 27, 2083 BS").
+// Used to show the BS equivalent under Gregorian date pickers.
+export function bsIsoToPretty(bsIso: string | null | undefined): string {
+  if (!bsIso) return "";
+  const [y, m, d] = bsIso.split("-");
+  const month = NEPALI_MONTHS[Number(m) - 1] ?? m;
+  return `${month} ${Number(d)}, ${Number(y)} BS`;
 }
 
 // Prefer this over formatDateWithBs when the record already carries a

@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_restro_staff
 from utils.helpers import success_response, error_response
+from utils.paging import parse_paging, build_meta
 from features.restro.schemas import (
     CreateCredentialRequest,
     UpdateCredentialRequest,
@@ -876,6 +877,9 @@ def list_orders(
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
+    """Simple non-paginated fetch — used by the store to keep a live cache
+    of recent orders (kitchen board, delivery view, dashboard). For the
+    historical bills list use /orders/paginated instead."""
     _assert_branch_scope(staff, branch_id)
     result = OrderService.list_for_branch(
         db,
@@ -890,6 +894,47 @@ def list_orders(
     if not result["success"]:
         return _order_error(result["error_code"])
     return success_response(data=[_order_payload(o) for o in result["orders"]])
+
+
+@router.get("/branches/{branch_id}/orders/paginated")
+def list_orders_paginated(
+    branch_id: str,
+    status: str | None = None,
+    type: str | None = None,
+    kitchen_status: str | None = None,
+    table_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    q: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Paginated bills-history endpoint. `bs_from` / `bs_to` accept BS dates
+    as "YYYY-MM-DD" strings and hit the (branch_id, placed_at_bs) index."""
+    _assert_branch_scope(staff, branch_id)
+    paging = parse_paging(page, per_page)
+    result = OrderService.list_paginated(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        status=status,
+        type=type,
+        kitchen_status=kitchen_status,
+        table_id=table_id,
+        bs_from=bs_from,
+        bs_to=bs_to,
+        search=q,
+        offset=paging["offset"],
+        limit=paging["limit"],
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    return success_response(
+        data=[_order_payload(o) for o in result["orders"]],
+        meta=build_meta(result["total"], paging["page"], paging["per_page"]),
+    )
 
 
 @router.get("/branches/{branch_id}/orders/by-table/{table_id}")

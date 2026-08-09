@@ -52,6 +52,39 @@ class OrderService:
         return {"success": True, "orders": orders}
 
     @staticmethod
+    def list_paginated(
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        status: str | None = None,
+        type: str | None = None,
+        kitchen_status: str | None = None,
+        table_id: str | None = None,
+        bs_from: str | None = None,
+        bs_to: str | None = None,
+        search: str | None = None,
+        offset: int = 0,
+        limit: int = 25,
+    ) -> dict:
+        if not OrderService._assert_branch(db, tenant_id, branch_id):
+            return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
+        items, total = OrderRepository.list_paginated(
+            db,
+            tenant_id=tenant_id,
+            branch_id=branch_id,
+            status=status,
+            type=type,
+            kitchen_status=kitchen_status,
+            table_id=table_id,
+            bs_from=bs_from,
+            bs_to=bs_to,
+            search=search,
+            offset=offset,
+            limit=limit,
+        )
+        return {"success": True, "orders": items, "total": total}
+
+    @staticmethod
     def get(db: Session, tenant_id: str, branch_id: str, order_id: str) -> dict:
         order = OrderRepository.get_by_id(db, tenant_id, order_id)
         if not order or order.branch_id != branch_id:
