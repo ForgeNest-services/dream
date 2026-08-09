@@ -16,10 +16,20 @@ from features.restro.schemas import (
     UpdateMenuItemRequest,
     SetSoldOutRequest,
     MenuItemData,
+    ZoneData,
+    CreateZoneRequest,
+    UpdateZoneRequest,
+    TableData,
+    CreateTableRequest,
+    UpdateTableRequest,
+    ReserveTableRequest,
+    MergeTablesRequest,
 )
 from features.restro.service import RestroCredentialService, RestroAuthService
 from features.restro.category_service import CategoryService
 from features.restro.menu_item_service import MenuItemService
+from features.restro.zone_service import ZoneService
+from features.restro.table_service import TableService
 
 
 router = APIRouter(prefix="/restro", tags=["restro"])
@@ -423,3 +433,322 @@ def delete_menu_item(
     if not result["success"]:
         return _menu_item_error(result["error_code"])
     return success_response(data={"deleted": True}, message="Menu item removed")
+
+
+# ---------------------------------------------------------------------------
+# Zones (floors / sections) — staff-facing, edit gated to owner/manager
+# ---------------------------------------------------------------------------
+
+_ZONE_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "ZONE_NOT_FOUND": ("ZONE_NOT_FOUND", "Zone not found.", 404),
+    "NAME_TAKEN": ("NAME_TAKEN", "A zone with this name already exists.", 409),
+    "ZONE_HAS_TABLES": (
+        "ZONE_HAS_TABLES",
+        "This zone still has tables. Move or remove them first.",
+        409,
+    ),
+}
+
+
+def _zone_error(code: str):
+    mapped = _ZONE_ERROR_MAP.get(code, ("CREATION_FAILED", "Failed to save zone.", 500))
+    return error_response(*mapped)
+
+
+@router.get("/branches/{branch_id}/zones")
+def list_zones(
+    branch_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = ZoneService.list_for_branch(db, staff["tenant_id"], branch_id)
+    if not result["success"]:
+        return _zone_error(result["error_code"])
+    return success_response(
+        data=[ZoneData.model_validate(z).model_dump(mode="json") for z in result["zones"]]
+    )
+
+
+@router.post("/branches/{branch_id}/zones")
+def create_zone(
+    branch_id: str,
+    data: CreateZoneRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can create zones")
+    _assert_branch_scope(staff, branch_id)
+    result = ZoneService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        name=data.name,
+        display_order=data.display_order,
+    )
+    if not result["success"]:
+        return _zone_error(result["error_code"])
+    return success_response(
+        data=ZoneData.model_validate(result["zone"]).model_dump(mode="json"),
+        message="Zone created",
+        status_code=201,
+    )
+
+
+@router.patch("/branches/{branch_id}/zones/{zone_id}")
+def update_zone(
+    branch_id: str,
+    zone_id: str,
+    data: UpdateZoneRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can edit zones")
+    _assert_branch_scope(staff, branch_id)
+    result = ZoneService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        zone_id=zone_id,
+        name=data.name,
+        display_order=data.display_order,
+    )
+    if not result["success"]:
+        return _zone_error(result["error_code"])
+    return success_response(
+        data=ZoneData.model_validate(result["zone"]).model_dump(mode="json"),
+        message="Zone updated",
+    )
+
+
+@router.delete("/branches/{branch_id}/zones/{zone_id}")
+def delete_zone(
+    branch_id: str,
+    zone_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can delete zones")
+    _assert_branch_scope(staff, branch_id)
+    result = ZoneService.delete(db, tenant_id=staff["tenant_id"], zone_id=zone_id)
+    if not result["success"]:
+        return _zone_error(result["error_code"])
+    return success_response(data={"deleted": True}, message="Zone removed")
+
+
+# ---------------------------------------------------------------------------
+# Tables (physical seating) — CRUD gated to owner/manager, floor ops open to all
+# ---------------------------------------------------------------------------
+
+_TABLE_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "ZONE_NOT_FOUND": ("ZONE_NOT_FOUND", "Zone not found in this branch.", 404),
+    "TABLE_NOT_FOUND": ("TABLE_NOT_FOUND", "Table not found.", 404),
+    "LABEL_TAKEN": ("LABEL_TAKEN", "A table with this label already exists in the zone.", 409),
+    "INVALID_STATUS": ("INVALID_STATUS", "Status must be empty, occupied or reserved.", 422),
+    "TABLE_NOT_EMPTY": (
+        "TABLE_NOT_EMPTY",
+        "This table is currently occupied or reserved. Clear it first.",
+        409,
+    ),
+    "TABLE_OCCUPIED": (
+        "TABLE_OCCUPIED",
+        "This table is occupied — can't book a reservation on top of a live order.",
+        409,
+    ),
+    "NO_RESERVATION": ("NO_RESERVATION", "There is no reservation on this table.", 409),
+    "GUEST_NAME_REQUIRED": ("GUEST_NAME_REQUIRED", "Guest name is required.", 422),
+    "INVALID_PARTY_SIZE": ("INVALID_PARTY_SIZE", "Party size must be at least 1.", 422),
+    "MERGE_NEEDS_TWO": ("MERGE_NEEDS_TWO", "Select at least two tables to merge.", 422),
+    "MERGE_CROSS_ZONE": (
+        "MERGE_CROSS_ZONE",
+        "All merged tables must be in the same zone.",
+        409,
+    ),
+    "TABLE_ALREADY_MERGED": (
+        "TABLE_ALREADY_MERGED",
+        "One of these tables is already merged. Unmerge it first.",
+        409,
+    ),
+    "NOT_MERGED": ("NOT_MERGED", "This table isn't part of a merge group.", 409),
+}
+
+
+def _table_error(code: str):
+    mapped = _TABLE_ERROR_MAP.get(code, ("CREATION_FAILED", "Failed to save table.", 500))
+    return error_response(*mapped)
+
+
+@router.get("/branches/{branch_id}/tables")
+def list_tables(
+    branch_id: str,
+    zone_id: str | None = None,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = TableService.list_for_branch(db, staff["tenant_id"], branch_id, zone_id)
+    if not result["success"]:
+        return _table_error(result["error_code"])
+    return success_response(
+        data=[TableData.model_validate(t).model_dump(mode="json") for t in result["tables"]]
+    )
+
+
+@router.post("/branches/{branch_id}/tables")
+def create_table(
+    branch_id: str,
+    data: CreateTableRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can create tables")
+    _assert_branch_scope(staff, branch_id)
+    result = TableService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        zone_id=data.zone_id,
+        label=data.label,
+    )
+    if not result["success"]:
+        return _table_error(result["error_code"])
+    return success_response(
+        data=TableData.model_validate(result["table"]).model_dump(mode="json"),
+        message="Table created",
+        status_code=201,
+    )
+
+
+@router.patch("/branches/{branch_id}/tables/{table_id}")
+def update_table(
+    branch_id: str,
+    table_id: str,
+    data: UpdateTableRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can edit tables")
+    _assert_branch_scope(staff, branch_id)
+    result = TableService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        table_id=table_id,
+        label=data.label,
+        zone_id=data.zone_id,
+        status=data.status,
+    )
+    if not result["success"]:
+        return _table_error(result["error_code"])
+    return success_response(
+        data=TableData.model_validate(result["table"]).model_dump(mode="json"),
+        message="Table updated",
+    )
+
+
+@router.delete("/branches/{branch_id}/tables/{table_id}")
+def delete_table(
+    branch_id: str,
+    table_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can delete tables")
+    _assert_branch_scope(staff, branch_id)
+    result = TableService.delete(db, tenant_id=staff["tenant_id"], branch_id=branch_id, table_id=table_id)
+    if not result["success"]:
+        return _table_error(result["error_code"])
+    return success_response(data={"deleted": True}, message="Table removed")
+
+
+@router.post("/branches/{branch_id}/tables/{table_id}/reserve")
+def reserve_table(
+    branch_id: str,
+    table_id: str,
+    data: ReserveTableRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    # Any staff role — reserving a table is a floor operation.
+    _assert_branch_scope(staff, branch_id)
+    result = TableService.reserve(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        table_id=table_id,
+        guest_name=data.guest_name,
+        phone=data.phone,
+        date_val=data.date,
+        time=data.time,
+        party_size=data.party_size,
+    )
+    if not result["success"]:
+        return _table_error(result["error_code"])
+    return success_response(
+        data=TableData.model_validate(result["table"]).model_dump(mode="json"),
+        message="Reservation set",
+    )
+
+
+@router.delete("/branches/{branch_id}/tables/{table_id}/reservation")
+def clear_table_reservation(
+    branch_id: str,
+    table_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = TableService.clear_reservation(
+        db, tenant_id=staff["tenant_id"], branch_id=branch_id, table_id=table_id
+    )
+    if not result["success"]:
+        return _table_error(result["error_code"])
+    return success_response(
+        data=TableData.model_validate(result["table"]).model_dump(mode="json"),
+        message="Reservation cleared",
+    )
+
+
+@router.post("/branches/{branch_id}/tables/merge")
+def merge_tables(
+    branch_id: str,
+    data: MergeTablesRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = TableService.merge(
+        db, tenant_id=staff["tenant_id"], branch_id=branch_id, table_ids=data.table_ids
+    )
+    if not result["success"]:
+        return _table_error(result["error_code"])
+    return success_response(
+        data=[TableData.model_validate(t).model_dump(mode="json") for t in result["tables"]],
+        message="Tables merged",
+    )
+
+
+@router.post("/branches/{branch_id}/tables/{table_id}/unmerge")
+def unmerge_table(
+    branch_id: str,
+    table_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = TableService.unmerge(
+        db, tenant_id=staff["tenant_id"], branch_id=branch_id, table_id=table_id
+    )
+    if not result["success"]:
+        return _table_error(result["error_code"])
+    return success_response(
+        data=[TableData.model_validate(t).model_dump(mode="json") for t in result["tables"]],
+        message="Tables unmerged",
+    )

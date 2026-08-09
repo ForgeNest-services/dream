@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, field_validator
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from features.restro.roles import RestroRole
 
@@ -194,3 +194,120 @@ class UpdateMenuItemRequest(BaseModel):
 
 class SetSoldOutRequest(BaseModel):
     sold_out: bool
+
+
+# ---------------------------------------------------------------------------
+# Zones (floors / sections within a branch)
+# ---------------------------------------------------------------------------
+
+class ZoneData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    name: str
+    display_order: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateZoneRequest(BaseModel):
+    name: str
+    display_order: int = 0
+
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Zone name is required")
+        return v
+
+
+class UpdateZoneRequest(BaseModel):
+    name: str | None = None
+    display_order: int | None = None
+
+
+# ---------------------------------------------------------------------------
+# Tables (physical seating within a zone)
+# ---------------------------------------------------------------------------
+
+class TableData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    zone_id: str
+    label: str
+    status: str
+    merge_id: str | None
+    reservation_guest_name: str | None
+    reservation_phone: str | None
+    reservation_date: date | None
+    reservation_time: str | None
+    reservation_party_size: int | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateTableRequest(BaseModel):
+    zone_id: str
+    label: str
+
+    @field_validator("label")
+    @classmethod
+    def label_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Table label is required")
+        return v
+
+
+class UpdateTableRequest(BaseModel):
+    label: str | None = None
+    zone_id: str | None = None
+    status: str | None = None
+
+
+class ReserveTableRequest(BaseModel):
+    guest_name: str
+    phone: str | None = None
+    date: date
+    time: str
+    party_size: int
+
+    @field_validator("guest_name")
+    @classmethod
+    def guest_name_not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Guest name is required")
+        return v
+
+    @field_validator("time")
+    @classmethod
+    def time_format(cls, v: str) -> str:
+        # Accept "HH:MM" 24-hour; frontend picker enforces this shape too.
+        if not v or len(v) != 5 or v[2] != ":":
+            raise ValueError("Time must be in HH:MM format")
+        return v
+
+    @field_validator("party_size")
+    @classmethod
+    def party_size_positive(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("Party size must be at least 1")
+        return v
+
+
+class MergeTablesRequest(BaseModel):
+    table_ids: list[str]
+
+    @field_validator("table_ids")
+    @classmethod
+    def at_least_two(cls, v: list[str]) -> list[str]:
+        if len(v) < 2:
+            raise ValueError("Provide at least two table IDs to merge")
+        return v

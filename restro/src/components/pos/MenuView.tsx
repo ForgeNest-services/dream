@@ -38,6 +38,11 @@ import { toast } from "sonner";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
+// Frontend-only pseudo-category: "All" shows every item across every real
+// category. Never sent to the backend — used as a sentinel value for the
+// activeCat state only.
+const ALL_CATEGORY = "__all__";
+
 function emptyItem(categoryId: string): MenuItem {
   return {
     id: uid(),
@@ -100,19 +105,39 @@ export function MenuView() {
     deleteMenuItem,
     toggleSoldOut,
   } = usePos();
-  const [activeCat, setActiveCat] = useState(categories[0]?.id ?? "");
+  const [activeCat, setActiveCat] = useState<string>(ALL_CATEGORY);
   const [newCat, setNewCat] = useState("");
   const [draft, setDraft] = useState<MenuItem | null>(null);
   const [catToDelete, setCatToDelete] = useState<{ id: string; name: string } | null>(null);
   const [itemToDelete, setItemToDelete] = useState<MenuItem | null>(null);
 
-  const items = menu.filter((m) => m.categoryId === activeCat);
+  const isAll = activeCat === ALL_CATEGORY;
+  const items = isAll ? menu : menu.filter((m) => m.categoryId === activeCat);
+  const activeCategoryName = isAll
+    ? "All items"
+    : (categories.find((c) => c.id === activeCat)?.name ?? "Menu");
+  // "All" can't hold new items — default new-item creation to the first real
+  // category. If there are no real categories yet, the dialog will surface it.
+  const addItemTargetCategory = isAll ? (categories[0]?.id ?? "") : activeCat;
 
   return (
     <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
       <aside className="pos-card h-fit p-4">
         <h2 className="font-display text-lg">Categories</h2>
         <ul className="mt-3 space-y-2">
+          <li>
+            <button
+              onClick={() => setActiveCat(ALL_CATEGORY)}
+              className={`min-h-11 w-full rounded-xl px-3 text-left text-sm font-medium transition-colors ${
+                isAll
+                  ? "bg-navy text-navy-foreground"
+                  : "bg-secondary text-secondary-foreground hover:bg-accent"
+              }`}
+            >
+              All items
+              <span className="ml-1.5 text-xs opacity-70">({menu.length})</span>
+            </button>
+          </li>
           {categories.map((c) => (
             <li key={c.id} className="flex items-center gap-1">
               <button
@@ -172,10 +197,13 @@ export function MenuView() {
 
       <section className="space-y-4">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-          <h2 className="truncate font-display text-xl">
-            {categories.find((c) => c.id === activeCat)?.name ?? "Menu"}
-          </h2>
-          <Button size="lg" className="h-12 shrink-0" onClick={() => setDraft(emptyItem(activeCat))}>
+          <h2 className="truncate font-display text-xl">{activeCategoryName}</h2>
+          <Button
+            size="lg"
+            className="h-12 shrink-0"
+            disabled={categories.length === 0}
+            onClick={() => setDraft(emptyItem(addItemTargetCategory))}
+          >
             <Plus className="size-5" />
             Add Item
           </Button>
@@ -235,7 +263,9 @@ export function MenuView() {
           ))}
           {items.length === 0 && (
             <p className="pos-card col-span-full p-8 text-sm text-muted-foreground">
-              No items in this category yet.
+              {isAll
+                ? "No menu items yet. Pick a category and click Add Item to get started."
+                : "No items in this category yet."}
             </p>
           )}
         </div>

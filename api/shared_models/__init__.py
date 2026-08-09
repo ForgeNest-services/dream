@@ -11,6 +11,8 @@ from .restro_credential import RestroCredential
 from .restro_category import RestroCategory
 from .restro_menu_item import RestroMenuItem
 from .restro_menu_item_variant import RestroMenuItemVariant
+from .restro_zone import RestroZone
+from .restro_table import RestroTable
 from .app import App
 
 __all__ = [
@@ -27,5 +29,7 @@ __all__ = [
     "RestroCategory",
     "RestroMenuItem",
     "RestroMenuItemVariant",
+    "RestroZone",
+    "RestroTable",
     "App",
 ]

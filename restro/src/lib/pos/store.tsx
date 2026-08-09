@@ -7,17 +7,18 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
 import { authStorage, type StoredSession } from "./auth-storage";
 import { authApi } from "../auth-api";
 import { branchesApi, type BranchDto } from "../branches-api";
 import { categoriesApi } from "../categories-api";
 import { menuItemsApi, type MenuItemDto } from "../menu-items-api";
+import { zonesApi, type ZoneDto } from "../zones-api";
+import { tablesApi, type TableDto } from "../tables-api";
 import {
   EMPLOYEES,
-  DEFAULT_ZONES,
   EXPENSES,
   INVENTORY,
-  makeTables,
   type Category,
   type DeliveryInfo,
   type DeliveryStatus,
@@ -46,6 +47,32 @@ function toBranch(b: BranchDto): Branch {
 
 function toCategory(c: { id: string; name: string }): Category {
   return { id: c.id, name: c.name };
+}
+
+function toZone(z: ZoneDto): Zone {
+  return { id: z.id, name: z.name };
+}
+
+function toRestaurantTable(t: TableDto): RestaurantTable {
+  const reservation: Reservation | undefined =
+    t.reservation_guest_name && t.reservation_date && t.reservation_time
+      ? {
+          guestName: t.reservation_guest_name,
+          phone: t.reservation_phone ?? "",
+          date: t.reservation_date,
+          time: t.reservation_time,
+          partySize: t.reservation_party_size ?? 1,
+        }
+      : undefined;
+  const base: RestaurantTable = {
+    id: t.id,
+    label: t.label,
+    groupId: t.zone_id,
+    status: t.status,
+  };
+  if (t.merge_id) base.mergeId = t.merge_id;
+  if (reservation) base.reservation = reservation;
+  return base;
 }
 
 function toMenuItem(m: MenuItemDto): MenuItem {
@@ -97,18 +124,20 @@ type Ctx = {
   toggleSoldOut: (id: string) => Promise<void>;
 
   zones: Zone[];
-  addZone: (name: string) => void;
-  renameZone: (id: string, name: string) => void;
-  deleteZone: (id: string) => void;
+  zonesLoading: boolean;
+  addZone: (name: string) => Promise<void>;
+  renameZone: (id: string, name: string) => Promise<void>;
+  deleteZone: (id: string) => Promise<void>;
 
   tables: RestaurantTable[];
+  tablesLoading: boolean;
   tablesInZone: (zoneId: string) => RestaurantTable[];
-  setTableCount: (zoneId: string, count: number) => void;
-  deleteTable: (id: string) => void;
-  reserveTable: (tableId: string, reservation: Reservation) => void;
-  clearReservation: (tableId: string) => void;
-  mergeTables: (ids: string[]) => void;
-  unmergeTable: (id: string) => void;
+  setTableCount: (zoneId: string, count: number) => Promise<void>;
+  deleteTable: (id: string) => Promise<void>;
+  reserveTable: (tableId: string, reservation: Reservation) => Promise<void>;
+  clearReservation: (tableId: string) => Promise<void>;
+  mergeTables: (ids: string[]) => Promise<void>;
+  unmergeTable: (id: string) => Promise<void>;
   mergedGroup: (table: RestaurantTable) => RestaurantTable[];
 
   orders: Order[];
@@ -317,6 +346,50 @@ export function PosProvider({ children }: { children: ReactNode }) {
     };
   }, [session, branchId]);
 
+  // Load zones (server auto-provisions "Main Floor" if none exist).
+  useEffect(() => {
+    if (!session || !branchId) {
+      setZones([]);
+      return;
+    }
+    let cancelled = false;
+    setZonesLoading(true);
+    zonesApi
+      .list(branchId)
+      .then((response) => {
+        if (cancelled) return;
+        setZones((response.data ?? []).map(toZone));
+      })
+      .finally(() => {
+        if (!cancelled) setZonesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, branchId]);
+
+  // Load tables for the active branch. Kept in one flat list; UI filters per zone.
+  useEffect(() => {
+    if (!session || !branchId) {
+      setTables([]);
+      return;
+    }
+    let cancelled = false;
+    setTablesLoading(true);
+    tablesApi
+      .list(branchId)
+      .then((response) => {
+        if (cancelled) return;
+        setTables((response.data ?? []).map(toRestaurantTable));
+      })
+      .finally(() => {
+        if (!cancelled) setTablesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, branchId]);
+
   const login = useCallback(async (username: string, password: string): Promise<LoginResult> => {
     try {
       const response = await authApi.login(username, password);
@@ -354,8 +427,10 @@ export function PosProvider({ children }: { children: ReactNode }) {
   const branch = branches.find((b) => b.id === branchId) ?? branches[0] ?? null;
 
   const [settingsMap, setSettingsMap] = useState<Record<string, Settings>>({});
-  const [zones, setZones] = useState<Zone[]>(DEFAULT_ZONES);
-  const [tables, setTables] = useState<RestaurantTable[]>(makeTables());
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [zonesLoading, setZonesLoading] = useState(false);
+  const [tables, setTables] = useState<RestaurantTable[]>([]);
+  const [tablesLoading, setTablesLoading] = useState(false);
   const [orders, setOrders] = useState<Order[]>(seedDelivery());
   const [inventory, setInventory] = useState<InventoryItem[]>(INVENTORY);
   const [movements, setMovements] = useState<StockMovement[]>([]);
@@ -486,70 +561,185 @@ export function PosProvider({ children }: { children: ReactNode }) {
     },
 
     zones,
-    addZone: (name) => setZones((p) => [...p, { id: `z${uid()}`, name: name.trim() || `Zone ${p.length + 1}` }]),
-    renameZone: (id, name) => setZones((p) => p.map((z) => (z.id === id ? { ...z, name } : z))),
-    deleteZone: (id) => {
-      setZones((p) => p.filter((z) => z.id !== id));
-      setTables((p) => p.filter((t) => t.groupId !== id));
+    zonesLoading,
+    addZone: async (name) => {
+      if (!branchId) return;
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      try {
+        const response = await zonesApi.create(branchId, { name: trimmed });
+        if (response.data) setZones((p) => [...p, toZone(response.data!)]);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to add zone");
+      }
+    },
+    renameZone: async (id, name) => {
+      if (!branchId) return;
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      try {
+        const response = await zonesApi.update(branchId, id, { name: trimmed });
+        if (response.data) {
+          const updated = response.data;
+          setZones((p) => p.map((z) => (z.id === id ? toZone(updated) : z)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to rename zone");
+      }
+    },
+    deleteZone: async (id) => {
+      if (!branchId) return;
+      try {
+        await zonesApi.remove(branchId, id);
+        setZones((p) => p.filter((z) => z.id !== id));
+        // Backend refuses to delete a zone with tables — but if it succeeded,
+        // there weren't any, so nothing to prune locally.
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete zone");
+      }
     },
 
     tables,
+    tablesLoading,
     tablesInZone: (zoneId) => tables.filter((t) => t.groupId === zoneId),
-    setTableCount: (zoneId, count) =>
-      setTables((prev) => {
-        const others = prev.filter((t) => t.groupId !== zoneId);
-        const mine = prev.filter((t) => t.groupId === zoneId);
-        const safe = Math.max(0, Math.min(60, Math.round(count)));
-        if (safe <= mine.length) return [...others, ...mine.slice(0, safe)];
-        const extra = Array.from({ length: safe - mine.length }, (_, i) => ({
-          id: `${zoneId}-t${mine.length + i + 1}-${uid()}`,
-          label: `T${mine.length + i + 1}`,
-          groupId: zoneId,
-          status: "empty" as RestaurantTable["status"],
-        }));
-        return [...others, ...mine, ...extra];
-      }),
-    deleteTable: (id) => setTables((p) => p.filter((t) => t.id !== id)),
-    reserveTable: (tableId, reservation) =>
-      setTables((p) =>
-        p.map((t) => (t.id === tableId ? { ...t, status: "reserved", reservation } : t)),
-      ),
-    clearReservation: (tableId) =>
-      setTables((p) =>
-        p.map((t) => {
-          if (t.id !== tableId) return t;
-          const { reservation: _drop, ...rest } = t;
-          return { ...rest, status: "empty" };
-        }),
-      ),
-    mergeTables: (ids) => {
-      if (ids.length < 2) return;
-      const zone = tables.find((t) => t.id === ids[0])?.groupId;
-      if (ids.some((id) => tables.find((t) => t.id === id)?.groupId !== zone)) return;
-      const mergeId = uid();
-      setTables((p) => p.map((t) => (ids.includes(t.id) ? { ...t, mergeId } : t)));
-      // fold any existing draft orders into the first table's bill
-      const primary = ids[0]!;
-      setOrders((prev) => {
-        const involved = prev.filter((o) => ids.includes(o.tableId) && o.status === "draft");
-        if (involved.length < 2) return prev;
-        const lines = involved.flatMap((o) => o.lines);
-        const keep = involved[0]!;
-        return prev
-          .filter((o) => !(involved.includes(o) && o.id !== keep.id))
-          .map((o) => (o.id === keep.id ? { ...o, tableId: primary, lines } : o));
-      });
+    setTableCount: async (zoneId, count) => {
+      if (!branchId) return;
+      const safe = Math.max(0, Math.min(60, Math.round(count)));
+      const mine = tables.filter((t) => t.groupId === zoneId);
+      // Grow: create new tables with the next-available "Tn" label based on
+      // what's already in the zone, so we don't collide with existing labels.
+      if (safe > mine.length) {
+        const usedNums = new Set(
+          mine
+            .map((t) => Number(t.label.replace(/^T/, "")))
+            .filter((n) => Number.isFinite(n) && n > 0),
+        );
+        let nextNum = 1;
+        const created: RestaurantTable[] = [];
+        for (let i = 0; i < safe - mine.length; i++) {
+          while (usedNums.has(nextNum)) nextNum++;
+          const label = `T${nextNum}`;
+          usedNums.add(nextNum);
+          nextNum++;
+          try {
+            const response = await tablesApi.create(branchId, {
+              zone_id: zoneId,
+              label,
+            });
+            if (response.data) created.push(toRestaurantTable(response.data));
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to add table");
+            break;
+          }
+        }
+        if (created.length) setTables((p) => [...p, ...created]);
+        return;
+      }
+      // Shrink: delete extras from the end. Skip any that aren't empty; toast
+      // if we can't remove all requested.
+      const toRemove = mine.slice(safe).reverse();
+      const removed = new Set<string>();
+      let blocked = 0;
+      for (const t of toRemove) {
+        if (t.status !== "empty") {
+          blocked++;
+          continue;
+        }
+        try {
+          await tablesApi.remove(branchId, t.id);
+          removed.add(t.id);
+        } catch {
+          blocked++;
+        }
+      }
+      if (removed.size) setTables((p) => p.filter((t) => !removed.has(t.id)));
+      if (blocked > 0) {
+        toast.warning(
+          `${blocked} table${blocked === 1 ? "" : "s"} couldn't be removed — clear active orders / reservations first.`,
+        );
+      }
     },
-    unmergeTable: (id) =>
-      setTables((p) => {
-        const target = p.find((t) => t.id === id);
-        if (!target?.mergeId) return p;
-        return p.map((t) => {
-          if (t.mergeId !== target.mergeId) return t;
-          const { mergeId: _drop, ...rest } = t;
-          return rest;
+    deleteTable: async (id) => {
+      if (!branchId) return;
+      try {
+        await tablesApi.remove(branchId, id);
+        setTables((p) => p.filter((t) => t.id !== id));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete table");
+      }
+    },
+    reserveTable: async (tableId, reservation) => {
+      if (!branchId) return;
+      try {
+        const response = await tablesApi.reserve(branchId, tableId, {
+          guest_name: reservation.guestName,
+          phone: reservation.phone || null,
+          date: reservation.date,
+          time: reservation.time,
+          party_size: reservation.partySize,
         });
-      }),
+        if (response.data) {
+          const updated = toRestaurantTable(response.data);
+          setTables((p) => p.map((t) => (t.id === tableId ? updated : t)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to reserve table");
+      }
+    },
+    clearReservation: async (tableId) => {
+      if (!branchId) return;
+      try {
+        const response = await tablesApi.clearReservation(branchId, tableId);
+        if (response.data) {
+          const updated = toRestaurantTable(response.data);
+          setTables((p) => p.map((t) => (t.id === tableId ? updated : t)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to clear reservation");
+      }
+    },
+    mergeTables: async (ids) => {
+      if (!branchId || ids.length < 2) return;
+      try {
+        const response = await tablesApi.merge(branchId, ids);
+        if (response.data) {
+          const updated = new Map(
+            response.data.map((t) => [t.id, toRestaurantTable(t)]),
+          );
+          setTables((p) => p.map((t) => updated.get(t.id) ?? t));
+          // Fold any existing draft orders on the merged tables into the first
+          // table's bill. Orders are still local mock state until Phase 5.
+          const primary = ids[0]!;
+          setOrders((prev) => {
+            const involved = prev.filter(
+              (o) => ids.includes(o.tableId) && o.status === "draft",
+            );
+            if (involved.length < 2) return prev;
+            const lines = involved.flatMap((o) => o.lines);
+            const keep = involved[0]!;
+            return prev
+              .filter((o) => !(involved.includes(o) && o.id !== keep.id))
+              .map((o) => (o.id === keep.id ? { ...o, tableId: primary, lines } : o));
+          });
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to merge tables");
+      }
+    },
+    unmergeTable: async (id) => {
+      if (!branchId) return;
+      try {
+        const response = await tablesApi.unmerge(branchId, id);
+        if (response.data) {
+          const updated = new Map(
+            response.data.map((t) => [t.id, toRestaurantTable(t)]),
+          );
+          setTables((p) => p.map((t) => updated.get(t.id) ?? t));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to unmerge table");
+      }
+    },
     mergedGroup: (table) =>
       table.mergeId ? tables.filter((t) => t.mergeId === table.mergeId) : [table],
 
