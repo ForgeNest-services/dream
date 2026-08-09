@@ -24,12 +24,23 @@ from features.restro.schemas import (
     UpdateTableRequest,
     ReserveTableRequest,
     MergeTablesRequest,
+    OrderData,
+    CreateOrderRequest,
+    AddOrderLineRequest,
+    UpdateOrderLineRequest,
+    VoidOrderLineRequest,
+    SetKitchenStatusRequest,
+    SetDiscountRequest,
+    MarkPaidRequest,
+    SetDeliveryStatusRequest,
 )
 from features.restro.service import RestroCredentialService, RestroAuthService
 from features.restro.category_service import CategoryService
 from features.restro.menu_item_service import MenuItemService
 from features.restro.zone_service import ZoneService
 from features.restro.table_service import TableService
+from features.restro.order_service import OrderService
+from features.restro.repository import RestroCredentialRepository
 
 
 router = APIRouter(prefix="/restro", tags=["restro"])
@@ -752,3 +763,426 @@ def unmerge_table(
         data=[TableData.model_validate(t).model_dump(mode="json") for t in result["tables"]],
         message="Tables unmerged",
     )
+
+
+# ---------------------------------------------------------------------------
+# Orders (staff-facing — every role can operate on orders as floor ops)
+# ---------------------------------------------------------------------------
+
+_ORDER_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "TABLE_NOT_FOUND": ("TABLE_NOT_FOUND", "Table not found in this branch.", 404),
+    "ORDER_NOT_FOUND": ("ORDER_NOT_FOUND", "Order not found.", 404),
+    "LINE_NOT_FOUND": ("LINE_NOT_FOUND", "Order line not found.", 404),
+    "MENU_ITEM_NOT_FOUND": (
+        "MENU_ITEM_NOT_FOUND",
+        "Menu item not found for this branch.",
+        404,
+    ),
+    "VARIANT_NOT_FOUND": (
+        "VARIANT_NOT_FOUND",
+        "That variant no longer exists on this menu item.",
+        404,
+    ),
+    "VARIANT_REQUIRED": (
+        "VARIANT_REQUIRED",
+        "This item has variants — pick one.",
+        422,
+    ),
+    "ITEM_SOLD_OUT": ("ITEM_SOLD_OUT", "This item is sold out right now.", 409),
+    "INVALID_TYPE": ("INVALID_TYPE", "type must be 'dine-in' or 'delivery'.", 422),
+    "TABLE_REQUIRED": ("TABLE_REQUIRED", "table_id is required for a dine-in order.", 422),
+    "DELIVERY_INFO_REQUIRED": (
+        "DELIVERY_INFO_REQUIRED",
+        "Delivery orders need customer name, phone and address.",
+        422,
+    ),
+    "TABLE_ALREADY_HAS_DRAFT": (
+        "TABLE_ALREADY_HAS_DRAFT",
+        "This table already has an open bill. Open the existing order instead.",
+        409,
+    ),
+    "ORDER_NOT_EDITABLE": (
+        "ORDER_NOT_EDITABLE",
+        "This order is closed — it can't be edited.",
+        409,
+    ),
+    "INVALID_QTY": ("INVALID_QTY", "Quantity must be at least 1.", 422),
+    "INVALID_PRICE": ("INVALID_PRICE", "Price must be zero or positive.", 422),
+    "NAME_AND_PRICE_REQUIRED": (
+        "NAME_AND_PRICE_REQUIRED",
+        "Off-menu lines need both a name and a price.",
+        422,
+    ),
+    "CANNOT_DELETE_SENT_LINE": (
+        "CANNOT_DELETE_SENT_LINE",
+        "This line has already been sent to the kitchen — void it with a reason instead.",
+        409,
+    ),
+    "INVALID_KITCHEN_STATUS": (
+        "INVALID_KITCHEN_STATUS",
+        "Kitchen status must be one of: new, cooking, ready, served.",
+        422,
+    ),
+    "INVALID_DISCOUNT_TYPE": (
+        "INVALID_DISCOUNT_TYPE",
+        "Discount type must be 'percent' or 'flat'.",
+        422,
+    ),
+    "INVALID_DISCOUNT_VALUE": (
+        "INVALID_DISCOUNT_VALUE",
+        "Discount value can't be negative.",
+        422,
+    ),
+    "INVALID_PAYMENT_METHOD": (
+        "INVALID_PAYMENT_METHOD",
+        "Payment method must be one of: cash, qr, card.",
+        422,
+    ),
+    "INVALID_DELIVERY_STATUS": (
+        "INVALID_DELIVERY_STATUS",
+        "Delivery status must be one of: pending, out, delivered.",
+        422,
+    ),
+    "NOT_A_DELIVERY_ORDER": (
+        "NOT_A_DELIVERY_ORDER",
+        "This order isn't a delivery order.",
+        409,
+    ),
+    "LINE_ADD_FAILED": ("LINE_ADD_FAILED", "Failed to add line.", 500),
+    "CREATION_FAILED": ("CREATION_FAILED", "Failed to create order.", 500),
+}
+
+
+def _order_error(code: str):
+    mapped = _ORDER_ERROR_MAP.get(code, ("SERVER_ERROR", "Something went wrong.", 500))
+    return error_response(*mapped)
+
+
+def _order_payload(order) -> dict:
+    """Serialize an Order (with lines relationship loaded) to the response
+    shape. Kept centralized so every endpoint returns identical structure."""
+    return OrderData.model_validate(order).model_dump(mode="json")
+
+
+@router.get("/branches/{branch_id}/orders")
+def list_orders(
+    branch_id: str,
+    status: str | None = None,
+    type: str | None = None,
+    kitchen_status: str | None = None,
+    table_id: str | None = None,
+    limit: int | None = None,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.list_for_branch(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        status=status,
+        type=type,
+        kitchen_status=kitchen_status,
+        table_id=table_id,
+        limit=limit,
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    return success_response(data=[_order_payload(o) for o in result["orders"]])
+
+
+@router.get("/branches/{branch_id}/orders/by-table/{table_id}")
+def get_draft_order_for_table(
+    branch_id: str,
+    table_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.get_draft_for_table(
+        db, tenant_id=staff["tenant_id"], branch_id=branch_id, table_id=table_id
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    # order may be None (no draft yet) — return null explicitly so the client
+    # can decide whether to open one.
+    return success_response(
+        data=_order_payload(result["order"]) if result["order"] else None
+    )
+
+
+@router.get("/branches/{branch_id}/orders/{order_id}")
+def get_order(
+    branch_id: str,
+    order_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.get(db, staff["tenant_id"], branch_id, order_id)
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    return success_response(data=_order_payload(result["order"]))
+
+
+@router.post("/branches/{branch_id}/orders")
+def create_order(
+    branch_id: str,
+    data: CreateOrderRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    # Snapshot the waiter's login username so the receipt can name them even
+    # if the credential is later renamed or deleted. The JWT doesn't carry
+    # username (only cred_id + role) — look it up here.
+    cred_id = staff.get("cred_id")
+    waiter_name = staff.get("role") or "staff"
+    if cred_id:
+        cred = RestroCredentialRepository.get_by_id(db, staff["tenant_id"], cred_id)
+        if cred:
+            waiter_name = cred.username
+    result = OrderService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        type=data.type,
+        table_id=data.table_id,
+        delivery_customer_name=data.delivery_customer_name,
+        delivery_phone=data.delivery_phone,
+        delivery_address=data.delivery_address,
+        waiter_name=waiter_name,
+        waiter_cred_id=cred_id,
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    return success_response(
+        data=_order_payload(result["order"]), message="Order created", status_code=201
+    )
+
+
+@router.post("/branches/{branch_id}/orders/{order_id}/lines")
+def add_order_line(
+    branch_id: str,
+    order_id: str,
+    data: AddOrderLineRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.add_line(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        menu_item_id=data.menu_item_id,
+        variant_name=data.variant_name,
+        name=data.name,
+        price=data.price,
+        qty=data.qty,
+        note=data.note,
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    return success_response(
+        data=_order_payload(result["order"]), message="Item added"
+    )
+
+
+@router.patch("/branches/{branch_id}/orders/{order_id}/lines/{line_id}")
+def update_order_line(
+    branch_id: str,
+    order_id: str,
+    line_id: str,
+    data: UpdateOrderLineRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.update_line(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        line_id=line_id,
+        qty=data.qty,
+        note=data.note,
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    # Return the whole order so the client refreshes the running total in one round-trip.
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    return success_response(data=_order_payload(order), message="Line updated")
+
+
+@router.post("/branches/{branch_id}/orders/{order_id}/lines/{line_id}/void")
+def void_order_line(
+    branch_id: str,
+    order_id: str,
+    line_id: str,
+    data: VoidOrderLineRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.void_line(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        line_id=line_id,
+        reason=data.reason,
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    return success_response(data=_order_payload(order), message="Line voided")
+
+
+@router.delete("/branches/{branch_id}/orders/{order_id}/lines/{line_id}")
+def delete_order_line(
+    branch_id: str,
+    order_id: str,
+    line_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.delete_line(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        line_id=line_id,
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    return success_response(data=_order_payload(order), message="Line removed")
+
+
+@router.post("/branches/{branch_id}/orders/{order_id}/send-to-kitchen")
+def send_order_to_kitchen(
+    branch_id: str,
+    order_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.send_to_kitchen(
+        db, tenant_id=staff["tenant_id"], branch_id=branch_id, order_id=order_id
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    return success_response(
+        data=_order_payload(order),
+        message=f"Sent {result['marked']} line(s) to kitchen",
+    )
+
+
+@router.patch("/branches/{branch_id}/orders/{order_id}/kitchen-status")
+def set_kitchen_status(
+    branch_id: str,
+    order_id: str,
+    data: SetKitchenStatusRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.set_kitchen_status(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        kitchen_status=data.kitchen_status,
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    return success_response(data=_order_payload(order), message="Kitchen status updated")
+
+
+@router.patch("/branches/{branch_id}/orders/{order_id}/discount")
+def set_order_discount(
+    branch_id: str,
+    order_id: str,
+    data: SetDiscountRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.set_discount(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        discount_type=data.discount_type,
+        discount_value=data.discount_value,
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    return success_response(data=_order_payload(order), message="Discount updated")
+
+
+@router.post("/branches/{branch_id}/orders/{order_id}/mark-paid")
+def mark_order_paid(
+    branch_id: str,
+    order_id: str,
+    data: MarkPaidRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.mark_paid(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        payment_method=data.payment_method,
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    return success_response(data=_order_payload(order), message="Marked as paid")
+
+
+@router.post("/branches/{branch_id}/orders/{order_id}/cancel")
+def cancel_order(
+    branch_id: str,
+    order_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.cancel(
+        db, tenant_id=staff["tenant_id"], branch_id=branch_id, order_id=order_id
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    return success_response(data=_order_payload(order), message="Order cancelled")
+
+
+@router.patch("/branches/{branch_id}/orders/{order_id}/delivery-status")
+def set_order_delivery_status(
+    branch_id: str,
+    order_id: str,
+    data: SetDeliveryStatusRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.set_delivery_status(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        delivery_status=data.delivery_status,
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    return success_response(data=_order_payload(order), message="Delivery status updated")
