@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { NPR } from "@/lib/pos/data";
 import { billTotals, usePos } from "@/lib/pos/store";
+import { formatDateWithStoredBs } from "@/lib/pos/nepali-date";
 
 type Tab = "orders" | "category" | "items";
 
@@ -19,13 +20,8 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "items", label: "Menu wise" },
 ];
 
-const fmt = (ts: number) =>
-  new Date(ts).toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+// Deprecated: use formatDateWithStoredBs(o.placedAt, o.placedAtBs) inline so
+// the report reflects the exact BS date stamped on each order.
 
 export function ReportsView() {
   const { orders, settings, categories, menu, tables } = usePos();
@@ -184,7 +180,9 @@ export function ReportsView() {
                 <tr key={o.id} className="border-b border-border/70 align-top">
                   <td className="py-3 pr-3">#{o.id.slice(-4).toUpperCase()}</td>
                   <td className="py-3 pr-3">{label(o)}</td>
-                  <td className="py-3 pr-3 text-muted-foreground">{fmt(o.placedAt)}</td>
+                  <td className="py-3 pr-3 text-muted-foreground">
+                    {formatDateWithStoredBs(o.placedAt, o.placedAtBs)}
+                  </td>
                   <td className="py-3 pr-3 text-muted-foreground">
                     {o.lines.map((l) => `${l.qty}× ${l.name}${l.variantName ? ` (${l.variantName})` : ""}`).join(", ")}
                   </td>

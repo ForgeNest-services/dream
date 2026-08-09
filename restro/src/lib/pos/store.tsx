@@ -103,10 +103,12 @@ function toOrder(o: OrderDto): Order {
     status: o.status === "draft" ? "draft" : "paid",
     kitchenStatus: o.kitchen_status,
     placedAt: new Date(o.placed_at).getTime(),
+    placedAtBs: o.placed_at_bs,
     discountType: o.discount_type,
     discountValue: Number(o.discount_value),
     waiter: o.waiter_name,
   };
+  if (o.paid_at_bs) order.paidAtBs = o.paid_at_bs;
   if (o.payment_method) order.paymentMethod = o.payment_method;
   if (
     o.type === "delivery" &&

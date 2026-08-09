@@ -346,7 +346,9 @@ class OrderData(BaseModel):
     status: str
     kitchen_status: str
     placed_at: datetime
+    placed_at_bs: str
     paid_at: datetime | None
+    paid_at_bs: str | None
     discount_type: str
     discount_value: Decimal
     payment_method: str | None

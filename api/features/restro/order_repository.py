@@ -3,6 +3,7 @@ from decimal import Decimal
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 from shared_models import RestroOrder, RestroOrderLine, RestroTable
+from utils.bikram_sambat import to_bs_iso
 
 
 ORDER_TYPES = {"dine-in", "delivery"}
@@ -31,6 +32,11 @@ class OrderRepository:
         delivery_phone: str | None = None,
         delivery_address: str | None = None,
     ) -> RestroOrder:
+        # Snapshot placed_at + its BS equivalent together. Using an explicit
+        # timestamp (instead of relying on the model default) so both columns
+        # agree on the exact same moment — the default runs at flush, which
+        # would compute BS from a slightly earlier `now()`.
+        now = datetime.now(timezone.utc)
         order = RestroOrder(
             tenant_id=tenant_id,
             branch_id=branch_id,
@@ -38,6 +44,8 @@ class OrderRepository:
             status="draft",
             kitchen_status="new",
             table_id=table_id,
+            placed_at=now,
+            placed_at_bs=to_bs_iso(now) or "",
             waiter_name=waiter_name,
             waiter_cred_id=waiter_cred_id,
             delivery_customer_name=delivery_customer_name,
@@ -145,6 +153,8 @@ class OrderRepository:
             order.kitchen_status = kitchen_status
         if paid_at is not None:
             order.paid_at = paid_at
+            # Keep the BS mirror in lockstep.
+            order.paid_at_bs = to_bs_iso(paid_at)
         if payment_method is not None:
             order.payment_method = payment_method
         db.commit()
@@ -172,7 +182,10 @@ class OrderRepository:
 
     @staticmethod
     def bump_placed_at(db: Session, order: RestroOrder) -> RestroOrder:
-        order.placed_at = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        order.placed_at = now
+        # Refresh the BS mirror so it always matches placed_at.
+        order.placed_at_bs = to_bs_iso(now) or order.placed_at_bs
         db.commit()
         db.refresh(order)
         return order

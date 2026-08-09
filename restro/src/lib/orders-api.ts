@@ -32,7 +32,11 @@ export interface OrderDto {
   status: OrderStatus;
   kitchen_status: KitchenStatus;
   placed_at: string;
+  // Bikram Sambat mirror of placed_at, stored server-side as "YYYY-MM-DD"
+  // (BS). See api/utils/bikram_sambat.py.
+  placed_at_bs: string;
   paid_at: string | null;
+  paid_at_bs: string | null;
   discount_type: DiscountType;
   discount_value: string;
   payment_method: PaymentMethod | null;

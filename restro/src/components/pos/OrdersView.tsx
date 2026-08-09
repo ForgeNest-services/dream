@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NPR, type Order, type RestaurantTable } from "@/lib/pos/data";
 import { billTotals, usePos } from "@/lib/pos/store";
+import { formatDateWithStoredBs } from "@/lib/pos/nepali-date";
 import { OrderScreen } from "./OrderScreen";
 import { ReserveDialog, TableGrid } from "./TableGrid";
 import { BillReceipt, PrintDialog } from "./ThermalPrint";
@@ -56,13 +57,8 @@ export function OrdersView({ showControls = false }: { showControls?: boolean })
   );
 }
 
-const fmt = (ts: number) =>
-  new Date(ts).toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+// Deprecated: use formatDateWithStoredBs(o.placedAt, o.placedAtBs) inline for
+// order rows so the receipt shows the stamped BS date, not a recomputed one.
 
 function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
   const { orders, tables, settings } = usePos();
@@ -135,7 +131,9 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
                 <tr key={o.id} className="border-b border-border/70">
                   <td className="py-3 pr-3">#{o.id.slice(-4).toUpperCase()}</td>
                   <td className="py-3 pr-3">{label(o)}</td>
-                  <td className="py-3 pr-3 text-muted-foreground">{fmt(o.placedAt)}</td>
+                  <td className="py-3 pr-3 text-muted-foreground">
+                    {formatDateWithStoredBs(o.placedAt, o.placedAtBs)}
+                  </td>
                   <td className="py-3 pr-3">
                     <span
                       className={`rounded-lg px-2 py-1 text-xs ${

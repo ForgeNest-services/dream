@@ -8,10 +8,20 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { NPR, type Order, type Settings } from "@/lib/pos/data";
-import { formatBikramSambat } from "@/lib/pos/nepali-date";
+import { formatBikramSambat, NEPALI_MONTHS } from "@/lib/pos/nepali-date";
 
 function Divider() {
   return <div className="my-1 border-t border-dashed border-black" />;
+}
+
+// Uses the persisted `order.placedAtBs` when available so the printed
+// receipt matches the exact BS date the order was stamped with server-side.
+// Falls back to converting `now` if a fresh (unsaved) order is ever printed.
+function bsFromOrder(order: Order): string {
+  if (!order.placedAtBs) return formatBikramSambat(new Date());
+  const [y, m, d] = order.placedAtBs.split("-");
+  const month = NEPALI_MONTHS[Number(m) - 1] ?? m;
+  return `${month} ${Number(d)}, ${Number(y)} BS`;
 }
 
 export function KotReceipt({
@@ -23,7 +33,8 @@ export function KotReceipt({
   tableLabel: string;
   settings: Settings;
 }) {
-  const now = new Date();
+  const printedAt = new Date();
+  const placed = new Date(order.placedAt);
   return (
     <div className="thermal-receipt mx-auto p-2">
       <p className="text-center text-[13px] uppercase tracking-widest">Kitchen Order Ticket</p>
@@ -33,9 +44,14 @@ export function KotReceipt({
       <p>Order : #{order.id.slice(0, 6).toUpperCase()}</p>
       <p>Waiter: {order.waiter}</p>
       <p>
-        Time : {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ·{" "}
-        {formatBikramSambat(now)}
+        Time : {placed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ·{" "}
+        {bsFromOrder(order)}
       </p>
+      {printedAt.getTime() - placed.getTime() > 60_000 && (
+        <p className="text-[10px] opacity-70">
+          Printed: {printedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        </p>
+      )}
       <Divider />
       <p>QTY ITEM</p>
       <Divider />
@@ -66,7 +82,7 @@ export function BillReceipt({
   settings: Settings;
   totals: { subtotal: number; discount: number; vat: number; total: number };
 }) {
-  const now = new Date();
+  const placed = new Date(order.placedAt);
   const row = (label: string, value: string) => (
     <div className="flex justify-between gap-2">
       <span>{label}</span>
@@ -82,8 +98,11 @@ export function BillReceipt({
       <p>Bill  : #{order.id.slice(0, 6).toUpperCase()}</p>
       <p>Table : {tableLabel}</p>
       <p>Staff : {order.waiter}</p>
-      <p>Date : {formatBikramSambat(now)}</p>
-      <p>Time : {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+      <p>Date : {bsFromOrder(order)}</p>
+      <p>
+        Also: {placed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+      </p>
+      <p>Time : {placed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
       <Divider />
       {order.lines.map((l) => (
         <div key={l.id} className="mb-1">

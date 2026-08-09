@@ -30,6 +30,8 @@ class RestroOrder(Base):
         ),
         Index("ix_restro_order_branch_status", "branch_id", "status"),
         Index("ix_restro_order_branch_kitchen", "branch_id", "kitchen_status"),
+        # Fiscal-year / monthly BS reporting hits this index.
+        Index("ix_restro_order_branch_placed_bs", "branch_id", "placed_at_bs"),
         {"schema": "public"},
     )
 
@@ -46,6 +48,14 @@ class RestroOrder(Base):
 
     placed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     paid_at = Column(DateTime, nullable=True)
+
+    # Bikram Sambat mirrors of placed_at / paid_at, snapshotted at write time.
+    # "YYYY-MM-DD" (BS). Kept as a real column (not a view) so reports and
+    # fiscal-year queries hit an index instead of running the converter over
+    # every row, and so records stay valid even if the BS calendar table is
+    # later corrected. See api/utils/bikram_sambat.py.
+    placed_at_bs = Column(String(10), nullable=False)
+    paid_at_bs = Column(String(10), nullable=True)
 
     discount_type = Column(String(10), nullable=False, default="percent")  # percent|flat
     discount_value = Column(Numeric(10, 2), nullable=False, default=0)
