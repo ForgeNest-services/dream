@@ -64,8 +64,12 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      # S3 API — reachable by nginx on the host, proxied under media.srotaapps.com.
+      - "127.0.0.1:9000:9000"
+      # Admin console — bound to loopback so it's NOT reachable from the
+      # public internet. To open it: `ssh -L 9001:127.0.0.1:9001 user@server`
+      # then browse to http://localhost:9001 on your laptop.
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio_data:/data
     networks:
