@@ -23,6 +23,10 @@ import { NPR, type MenuItem, type Order, type RestaurantTable } from "@/lib/pos/
 import { useBillTotals, usePos } from "@/lib/pos/store";
 import { BillReceipt, KotReceipt, PrintDialog } from "./ThermalPrint";
 
+// Frontend-only pseudo-category. "All" shows every menu item across every
+// real category — never sent to the backend.
+const ALL_CATEGORY = "__all__";
+
 export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack: () => void }) {
   const {
     categories,
@@ -35,7 +39,7 @@ export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack:
     mergedGroup,
   } = usePos();
 
-  const [activeCat, setActiveCat] = useState(categories[0]?.id ?? "");
+  const [activeCat, setActiveCat] = useState<string>(ALL_CATEGORY);
   const [variantItem, setVariantItem] = useState<MenuItem | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [billOpen, setBillOpen] = useState(false);
@@ -47,7 +51,8 @@ export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack:
   const totals = useBillTotals(order, settings.vatEnabled, settings.vatRate);
   const unsent = order?.lines.filter((l) => !l.sent).length ?? 0;
   const qty = order?.lines.reduce((s, l) => s + l.qty, 0) ?? 0;
-  const items = menu.filter((m) => m.categoryId === activeCat);
+  const items =
+    activeCat === ALL_CATEGORY ? menu : menu.filter((m) => m.categoryId === activeCat);
   const tableLabel = mergedGroup(table).map((t) => t.label).join(" + ");
 
   const add = (item: MenuItem, variantName?: string, price?: number) =>
@@ -89,6 +94,12 @@ export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack:
 
         <Tabs value={activeCat} onValueChange={setActiveCat}>
           <TabsList className="h-11 w-full justify-start overflow-x-auto">
+            <TabsTrigger
+              value={ALL_CATEGORY}
+              className="h-9 shrink-0 px-3 text-xs sm:text-sm"
+            >
+              All
+            </TabsTrigger>
             {categories.map((c) => (
               <TabsTrigger key={c.id} value={c.id} className="h-9 shrink-0 px-3 text-xs sm:text-sm">
                 {c.name}
@@ -97,27 +108,31 @@ export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack:
           </TabsList>
         </Tabs>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 2xl:grid-cols-4">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-2.5 md:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
           {items.map((item) => (
             <button
               key={item.id}
               disabled={item.soldOut}
               onClick={() => (item.hasVariants ? setVariantItem(item) : add(item))}
-              className={`pos-card overflow-hidden text-left transition-transform active:scale-[0.98] ${
+              className={`pos-card flex flex-col overflow-hidden text-left transition-transform active:scale-[0.98] ${
                 item.soldOut ? "cursor-not-allowed opacity-45 grayscale" : "hover:border-primary"
               }`}
             >
-              <img
-                src={item.image || placeholder}
-                alt={item.name}
-                loading="lazy"
-                width={512}
-                height={512}
-                className="h-20 w-full object-cover sm:h-24"
-              />
-              <div className="p-2.5">
-                <p className="truncate text-sm font-medium leading-tight">{item.name}</p>
-                <p className="mt-1 text-sm text-primary">
+              <div className="flex h-32 w-full items-center justify-center bg-secondary sm:h-36 md:h-40">
+                <img
+                  src={item.image || placeholder}
+                  alt={item.name}
+                  loading="lazy"
+                  width={512}
+                  height={512}
+                  className="h-full w-full object-contain"
+                />
+              </div>
+              <div className="flex-1 p-2">
+                <p className="line-clamp-2 text-xs font-medium leading-tight sm:text-sm">
+                  {item.name}
+                </p>
+                <p className="mt-1 text-xs text-primary sm:text-sm">
                   {item.hasVariants ? `${item.variants.length} options` : NPR(item.price ?? 0)}
                 </p>
                 {item.soldOut && (

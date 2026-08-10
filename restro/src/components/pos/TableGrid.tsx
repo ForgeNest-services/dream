@@ -224,9 +224,14 @@ function ZoneDialog() {
           {zones.map((z) => (
             <li key={z.id} className="flex items-center gap-2">
               <Input
+                key={z.id}
                 className="h-12"
-                value={z.name}
-                onChange={(e) => renameZone(z.id, e.target.value)}
+                defaultValue={z.name}
+                onBlur={(e) => {
+                  const next = e.target.value.trim();
+                  if (next && next !== z.name) renameZone(z.id, next);
+                  else e.target.value = z.name;
+                }}
               />
               <Button
                 variant="ghost"

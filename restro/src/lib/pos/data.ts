@@ -106,6 +106,12 @@ export type Order = {
   status: "draft" | "paid";
   kitchenStatus: KitchenStatus;
   placedAt: number;
+  // Bikram Sambat mirrors, stored server-side and passed through as strings
+  // ("YYYY-MM-DD" in BS). Use these when displaying on receipts, reports,
+  // and order lists so we're showing the exact date the record was stamped
+  // with — not one recomputed on read.
+  placedAtBs: string;
+  paidAtBs?: string;
   discountType: "percent" | "flat";
   discountValue: number;
   paymentMethod?: "cash" | "qr" | "card";

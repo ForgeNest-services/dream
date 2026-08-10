@@ -7,17 +7,19 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
 import { authStorage, type StoredSession } from "./auth-storage";
 import { authApi } from "../auth-api";
 import { branchesApi, type BranchDto } from "../branches-api";
 import { categoriesApi } from "../categories-api";
 import { menuItemsApi, type MenuItemDto } from "../menu-items-api";
+import { zonesApi, type ZoneDto } from "../zones-api";
+import { tablesApi, type TableDto } from "../tables-api";
+import { ordersApi, type OrderDto, type OrderLineDto } from "../orders-api";
 import {
   EMPLOYEES,
-  DEFAULT_ZONES,
   EXPENSES,
   INVENTORY,
-  makeTables,
   type Category,
   type DeliveryInfo,
   type DeliveryStatus,
@@ -46,6 +48,83 @@ function toBranch(b: BranchDto): Branch {
 
 function toCategory(c: { id: string; name: string }): Category {
   return { id: c.id, name: c.name };
+}
+
+function toZone(z: ZoneDto): Zone {
+  return { id: z.id, name: z.name };
+}
+
+function toRestaurantTable(t: TableDto): RestaurantTable {
+  const reservation: Reservation | undefined =
+    t.reservation_guest_name && t.reservation_date && t.reservation_time
+      ? {
+          guestName: t.reservation_guest_name,
+          phone: t.reservation_phone ?? "",
+          date: t.reservation_date,
+          time: t.reservation_time,
+          partySize: t.reservation_party_size ?? 1,
+        }
+      : undefined;
+  const base: RestaurantTable = {
+    id: t.id,
+    label: t.label,
+    groupId: t.zone_id,
+    status: t.status,
+  };
+  if (t.merge_id) base.mergeId = t.merge_id;
+  if (reservation) base.reservation = reservation;
+  return base;
+}
+
+function toOrderLine(l: OrderLineDto): OrderLine {
+  const line: OrderLine = {
+    id: l.id,
+    menuItemId: l.menu_item_id ?? "",
+    name: l.name,
+    price: Number(l.price),
+    qty: l.qty,
+    note: l.note ?? "",
+    sent: l.sent,
+  };
+  if (l.variant_name) line.variantName = l.variant_name;
+  return line;
+}
+
+function toOrder(o: OrderDto): Order {
+  const order: Order = {
+    id: o.id,
+    tableId: o.table_id ?? "",
+    type: o.type,
+    // Voided lines are historical audit rows — hide them from the UI which
+    // treats a bill as its live line set.
+    lines: o.lines.filter((l) => !l.is_voided).map(toOrderLine),
+    // Frontend Order type only knows draft|paid; treat backend "cancelled"
+    // as effectively closed so the UI hides it from live views.
+    status: o.status === "draft" ? "draft" : "paid",
+    kitchenStatus: o.kitchen_status,
+    placedAt: new Date(o.placed_at).getTime(),
+    placedAtBs: o.placed_at_bs,
+    discountType: o.discount_type,
+    discountValue: Number(o.discount_value),
+    waiter: o.waiter_name,
+  };
+  if (o.paid_at_bs) order.paidAtBs = o.paid_at_bs;
+  if (o.payment_method) order.paymentMethod = o.payment_method;
+  if (
+    o.type === "delivery" &&
+    o.delivery_customer_name &&
+    o.delivery_phone !== null &&
+    o.delivery_address &&
+    o.delivery_status
+  ) {
+    order.delivery = {
+      customerName: o.delivery_customer_name,
+      phone: o.delivery_phone,
+      address: o.delivery_address,
+      status: o.delivery_status,
+    };
+  }
+  return order;
 }
 
 function toMenuItem(m: MenuItemDto): MenuItem {
@@ -97,32 +176,42 @@ type Ctx = {
   toggleSoldOut: (id: string) => Promise<void>;
 
   zones: Zone[];
-  addZone: (name: string) => void;
-  renameZone: (id: string, name: string) => void;
-  deleteZone: (id: string) => void;
+  zonesLoading: boolean;
+  addZone: (name: string) => Promise<void>;
+  renameZone: (id: string, name: string) => Promise<void>;
+  deleteZone: (id: string) => Promise<void>;
 
   tables: RestaurantTable[];
+  tablesLoading: boolean;
   tablesInZone: (zoneId: string) => RestaurantTable[];
-  setTableCount: (zoneId: string, count: number) => void;
-  deleteTable: (id: string) => void;
-  reserveTable: (tableId: string, reservation: Reservation) => void;
-  clearReservation: (tableId: string) => void;
-  mergeTables: (ids: string[]) => void;
-  unmergeTable: (id: string) => void;
+  setTableCount: (zoneId: string, count: number) => Promise<void>;
+  deleteTable: (id: string) => Promise<void>;
+  reserveTable: (tableId: string, reservation: Reservation) => Promise<void>;
+  clearReservation: (tableId: string) => Promise<void>;
+  mergeTables: (ids: string[]) => Promise<void>;
+  unmergeTable: (id: string) => Promise<void>;
   mergedGroup: (table: RestaurantTable) => RestaurantTable[];
 
   orders: Order[];
+  ordersLoading: boolean;
   orderForTable: (tableId: string) => Order | undefined;
-  addLine: (tableId: string, line: Omit<OrderLine, "id" | "sent">) => void;
-  updateLine: (orderId: string, lineId: string, patch: Partial<OrderLine>) => void;
-  removeLine: (orderId: string, lineId: string) => void;
-  sendToKitchen: (orderId: string) => void;
-  setDiscount: (orderId: string, type: "percent" | "flat", value: number) => void;
-  markPaid: (orderId: string, method: "cash" | "qr" | "card") => void;
-  setKitchenStatus: (orderId: string, status: KitchenStatus) => void;
+  addLine: (tableId: string, line: Omit<OrderLine, "id" | "sent">) => Promise<void>;
+  updateLine: (
+    orderId: string,
+    lineId: string,
+    patch: Partial<OrderLine>,
+  ) => Promise<void>;
+  removeLine: (orderId: string, lineId: string) => Promise<void>;
+  sendToKitchen: (orderId: string) => Promise<void>;
+  setDiscount: (orderId: string, type: "percent" | "flat", value: number) => Promise<void>;
+  markPaid: (orderId: string, method: "cash" | "qr" | "card") => Promise<void>;
+  setKitchenStatus: (orderId: string, status: KitchenStatus) => Promise<void>;
 
-  addDeliveryOrder: (info: DeliveryInfo, lines: Omit<OrderLine, "id" | "sent">[]) => void;
-  setDeliveryStatus: (orderId: string, status: DeliveryStatus) => void;
+  addDeliveryOrder: (
+    info: DeliveryInfo,
+    lines: Omit<OrderLine, "id" | "sent">[],
+  ) => Promise<void>;
+  setDeliveryStatus: (orderId: string, status: DeliveryStatus) => Promise<void>;
 
   inventory: InventoryItem[];
   movements: StockMovement[];
@@ -149,71 +238,6 @@ const defaultSettings = (branch: Branch | null): Settings => ({
   vatEnabled: true,
   vatRate: 13,
 });
-
-const seedDelivery = (): Order[] => [
-  {
-    id: "d1",
-    tableId: "",
-    type: "delivery",
-    delivery: {
-      customerName: "Prabin Karki",
-      phone: "9841002233",
-      address: "Baluwatar, Ward 4, Kathmandu",
-      status: "pending",
-    },
-    lines: [
-      { id: "dl1", menuItemId: "m13", name: "Steam Momo", variantName: "Chicken", price: 200, qty: 2, note: "Extra achar", sent: true },
-      { id: "dl2", menuItemId: "m1", name: "Milk Tea", price: 60, qty: 2, note: "", sent: true },
-    ],
-    status: "draft",
-    kitchenStatus: "cooking",
-    placedAt: Date.now() - 12 * 60000,
-    discountType: "percent",
-    discountValue: 0,
-    waiter: "Bina Tamang",
-  },
-  {
-    id: "d2",
-    tableId: "",
-    type: "delivery",
-    delivery: {
-      customerName: "Sabina Thapa",
-      phone: "9812223344",
-      address: "Jhamsikhel, Lalitpur",
-      status: "out",
-    },
-    lines: [
-      { id: "dl3", menuItemId: "m16", name: "Thakali Khana Set", variantName: "Mutton", price: 650, qty: 1, note: "", sent: true },
-    ],
-    status: "draft",
-    kitchenStatus: "ready",
-    placedAt: Date.now() - 40 * 60000,
-    discountType: "percent",
-    discountValue: 0,
-    waiter: "Ramesh Gurung",
-  },
-  {
-    id: "d3",
-    tableId: "",
-    type: "delivery",
-    delivery: {
-      customerName: "Anup Lama",
-      phone: "9803344556",
-      address: "New Baneshwor, Kathmandu",
-      status: "delivered",
-    },
-    lines: [
-      { id: "dl4", menuItemId: "m10", name: "Chicken Burger", price: 350, qty: 3, note: "", sent: true },
-    ],
-    status: "paid",
-    kitchenStatus: "served",
-    placedAt: Date.now() - 3 * 3600000,
-    discountType: "percent",
-    discountValue: 0,
-    paymentMethod: "cash",
-    waiter: "Bina Tamang",
-  },
-];
 
 export function PosProvider({ children }: { children: ReactNode }) {
   const [session, setSessionState] = useState<StoredSession | null>(null);
@@ -317,6 +341,79 @@ export function PosProvider({ children }: { children: ReactNode }) {
     };
   }, [session, branchId]);
 
+  // Load zones (server auto-provisions "Main Floor" if none exist).
+  useEffect(() => {
+    if (!session || !branchId) {
+      setZones([]);
+      return;
+    }
+    let cancelled = false;
+    setZonesLoading(true);
+    zonesApi
+      .list(branchId)
+      .then((response) => {
+        if (cancelled) return;
+        setZones((response.data ?? []).map(toZone));
+      })
+      .finally(() => {
+        if (!cancelled) setZonesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, branchId]);
+
+  // Load tables for the active branch. Kept in one flat list; UI filters per zone.
+  useEffect(() => {
+    if (!session || !branchId) {
+      setTables([]);
+      return;
+    }
+    let cancelled = false;
+    setTablesLoading(true);
+    tablesApi
+      .list(branchId)
+      .then((response) => {
+        if (cancelled) return;
+        setTables((response.data ?? []).map(toRestaurantTable));
+      })
+      .finally(() => {
+        if (!cancelled) setTablesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, branchId]);
+
+  // Load orders for the active branch. Cancelled orders are filtered out —
+  // they exist server-side for audit but the UI treats them as gone.
+  // TODO(scale): today we fetch everything; when a branch has thousands of
+  // paid orders this will get heavy. Move to paginated fetch (limit + a
+  // "closed orders" view that pages back further) when we hit that.
+  useEffect(() => {
+    if (!session || !branchId) {
+      setOrders([]);
+      return;
+    }
+    let cancelled = false;
+    setOrdersLoading(true);
+    ordersApi
+      .list(branchId, { limit: 200 })
+      .then((response) => {
+        if (cancelled) return;
+        const fetched = (response.data ?? [])
+          .filter((o) => o.status !== "cancelled")
+          .map(toOrder);
+        setOrders(fetched);
+      })
+      .finally(() => {
+        if (!cancelled) setOrdersLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, branchId]);
+
   const login = useCallback(async (username: string, password: string): Promise<LoginResult> => {
     try {
       const response = await authApi.login(username, password);
@@ -354,9 +451,12 @@ export function PosProvider({ children }: { children: ReactNode }) {
   const branch = branches.find((b) => b.id === branchId) ?? branches[0] ?? null;
 
   const [settingsMap, setSettingsMap] = useState<Record<string, Settings>>({});
-  const [zones, setZones] = useState<Zone[]>(DEFAULT_ZONES);
-  const [tables, setTables] = useState<RestaurantTable[]>(makeTables());
-  const [orders, setOrders] = useState<Order[]>(seedDelivery());
+  const [zones, setZones] = useState<Zone[]>([]);
+  const [zonesLoading, setZonesLoading] = useState(false);
+  const [tables, setTables] = useState<RestaurantTable[]>([]);
+  const [tablesLoading, setTablesLoading] = useState(false);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
   const [inventory, setInventory] = useState<InventoryItem[]>(INVENTORY);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [employees, setEmployees] = useState<Employee[]>(EMPLOYEES);
@@ -373,24 +473,6 @@ export function PosProvider({ children }: { children: ReactNode }) {
         t.id === tableId || (mergeId && t.mergeId === mergeId) ? { ...t, status } : t,
       );
     });
-
-  const ensureOrder = (tableId: string, list: Order[]): [Order, Order[]] => {
-    const existing = list.find((o) => o.tableId === tableId && o.status === "draft");
-    if (existing) return [existing, list];
-    const fresh: Order = {
-      id: uid(),
-      tableId,
-      type: "dine-in",
-      lines: [],
-      status: "draft",
-      kitchenStatus: "new",
-      placedAt: Date.now(),
-      discountType: "percent",
-      discountValue: 0,
-      waiter: actor,
-    };
-    return [fresh, [...list, fresh]];
-  };
 
   const value: Ctx = {
     session,
@@ -486,74 +568,190 @@ export function PosProvider({ children }: { children: ReactNode }) {
     },
 
     zones,
-    addZone: (name) => setZones((p) => [...p, { id: `z${uid()}`, name: name.trim() || `Zone ${p.length + 1}` }]),
-    renameZone: (id, name) => setZones((p) => p.map((z) => (z.id === id ? { ...z, name } : z))),
-    deleteZone: (id) => {
-      setZones((p) => p.filter((z) => z.id !== id));
-      setTables((p) => p.filter((t) => t.groupId !== id));
+    zonesLoading,
+    addZone: async (name) => {
+      if (!branchId) return;
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      try {
+        const response = await zonesApi.create(branchId, { name: trimmed });
+        if (response.data) setZones((p) => [...p, toZone(response.data!)]);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to add zone");
+      }
+    },
+    renameZone: async (id, name) => {
+      if (!branchId) return;
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      try {
+        const response = await zonesApi.update(branchId, id, { name: trimmed });
+        if (response.data) {
+          const updated = response.data;
+          setZones((p) => p.map((z) => (z.id === id ? toZone(updated) : z)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to rename zone");
+      }
+    },
+    deleteZone: async (id) => {
+      if (!branchId) return;
+      try {
+        await zonesApi.remove(branchId, id);
+        setZones((p) => p.filter((z) => z.id !== id));
+        // Backend refuses to delete a zone with tables — but if it succeeded,
+        // there weren't any, so nothing to prune locally.
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete zone");
+      }
     },
 
     tables,
+    tablesLoading,
     tablesInZone: (zoneId) => tables.filter((t) => t.groupId === zoneId),
-    setTableCount: (zoneId, count) =>
-      setTables((prev) => {
-        const others = prev.filter((t) => t.groupId !== zoneId);
-        const mine = prev.filter((t) => t.groupId === zoneId);
-        const safe = Math.max(0, Math.min(60, Math.round(count)));
-        if (safe <= mine.length) return [...others, ...mine.slice(0, safe)];
-        const extra = Array.from({ length: safe - mine.length }, (_, i) => ({
-          id: `${zoneId}-t${mine.length + i + 1}-${uid()}`,
-          label: `T${mine.length + i + 1}`,
-          groupId: zoneId,
-          status: "empty" as RestaurantTable["status"],
-        }));
-        return [...others, ...mine, ...extra];
-      }),
-    deleteTable: (id) => setTables((p) => p.filter((t) => t.id !== id)),
-    reserveTable: (tableId, reservation) =>
-      setTables((p) =>
-        p.map((t) => (t.id === tableId ? { ...t, status: "reserved", reservation } : t)),
-      ),
-    clearReservation: (tableId) =>
-      setTables((p) =>
-        p.map((t) => {
-          if (t.id !== tableId) return t;
-          const { reservation: _drop, ...rest } = t;
-          return { ...rest, status: "empty" };
-        }),
-      ),
-    mergeTables: (ids) => {
-      if (ids.length < 2) return;
-      const zone = tables.find((t) => t.id === ids[0])?.groupId;
-      if (ids.some((id) => tables.find((t) => t.id === id)?.groupId !== zone)) return;
-      const mergeId = uid();
-      setTables((p) => p.map((t) => (ids.includes(t.id) ? { ...t, mergeId } : t)));
-      // fold any existing draft orders into the first table's bill
-      const primary = ids[0]!;
-      setOrders((prev) => {
-        const involved = prev.filter((o) => ids.includes(o.tableId) && o.status === "draft");
-        if (involved.length < 2) return prev;
-        const lines = involved.flatMap((o) => o.lines);
-        const keep = involved[0]!;
-        return prev
-          .filter((o) => !(involved.includes(o) && o.id !== keep.id))
-          .map((o) => (o.id === keep.id ? { ...o, tableId: primary, lines } : o));
-      });
+    setTableCount: async (zoneId, count) => {
+      if (!branchId) return;
+      const safe = Math.max(0, Math.min(60, Math.round(count)));
+      const mine = tables.filter((t) => t.groupId === zoneId);
+      // Grow: create new tables with the next-available "Tn" label based on
+      // what's already in the zone, so we don't collide with existing labels.
+      if (safe > mine.length) {
+        const usedNums = new Set(
+          mine
+            .map((t) => Number(t.label.replace(/^T/, "")))
+            .filter((n) => Number.isFinite(n) && n > 0),
+        );
+        let nextNum = 1;
+        const created: RestaurantTable[] = [];
+        for (let i = 0; i < safe - mine.length; i++) {
+          while (usedNums.has(nextNum)) nextNum++;
+          const label = `T${nextNum}`;
+          usedNums.add(nextNum);
+          nextNum++;
+          try {
+            const response = await tablesApi.create(branchId, {
+              zone_id: zoneId,
+              label,
+            });
+            if (response.data) created.push(toRestaurantTable(response.data));
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to add table");
+            break;
+          }
+        }
+        if (created.length) setTables((p) => [...p, ...created]);
+        return;
+      }
+      // Shrink: delete extras from the end. Skip any that aren't empty; toast
+      // if we can't remove all requested.
+      const toRemove = mine.slice(safe).reverse();
+      const removed = new Set<string>();
+      let blocked = 0;
+      for (const t of toRemove) {
+        if (t.status !== "empty") {
+          blocked++;
+          continue;
+        }
+        try {
+          await tablesApi.remove(branchId, t.id);
+          removed.add(t.id);
+        } catch {
+          blocked++;
+        }
+      }
+      if (removed.size) setTables((p) => p.filter((t) => !removed.has(t.id)));
+      if (blocked > 0) {
+        toast.warning(
+          `${blocked} table${blocked === 1 ? "" : "s"} couldn't be removed — clear active orders / reservations first.`,
+        );
+      }
     },
-    unmergeTable: (id) =>
-      setTables((p) => {
-        const target = p.find((t) => t.id === id);
-        if (!target?.mergeId) return p;
-        return p.map((t) => {
-          if (t.mergeId !== target.mergeId) return t;
-          const { mergeId: _drop, ...rest } = t;
-          return rest;
+    deleteTable: async (id) => {
+      if (!branchId) return;
+      try {
+        await tablesApi.remove(branchId, id);
+        setTables((p) => p.filter((t) => t.id !== id));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete table");
+      }
+    },
+    reserveTable: async (tableId, reservation) => {
+      if (!branchId) return;
+      try {
+        const response = await tablesApi.reserve(branchId, tableId, {
+          guest_name: reservation.guestName,
+          phone: reservation.phone || null,
+          date: reservation.date,
+          time: reservation.time,
+          party_size: reservation.partySize,
         });
-      }),
+        if (response.data) {
+          const updated = toRestaurantTable(response.data);
+          setTables((p) => p.map((t) => (t.id === tableId ? updated : t)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to reserve table");
+      }
+    },
+    clearReservation: async (tableId) => {
+      if (!branchId) return;
+      try {
+        const response = await tablesApi.clearReservation(branchId, tableId);
+        if (response.data) {
+          const updated = toRestaurantTable(response.data);
+          setTables((p) => p.map((t) => (t.id === tableId ? updated : t)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to clear reservation");
+      }
+    },
+    mergeTables: async (ids) => {
+      if (!branchId || ids.length < 2) return;
+      try {
+        const response = await tablesApi.merge(branchId, ids);
+        if (response.data) {
+          const updated = new Map(
+            response.data.map((t) => [t.id, toRestaurantTable(t)]),
+          );
+          setTables((p) => p.map((t) => updated.get(t.id) ?? t));
+          // Fold any existing draft orders on the merged tables into the first
+          // table's bill. Orders are still local mock state until Phase 5.
+          const primary = ids[0]!;
+          setOrders((prev) => {
+            const involved = prev.filter(
+              (o) => ids.includes(o.tableId) && o.status === "draft",
+            );
+            if (involved.length < 2) return prev;
+            const lines = involved.flatMap((o) => o.lines);
+            const keep = involved[0]!;
+            return prev
+              .filter((o) => !(involved.includes(o) && o.id !== keep.id))
+              .map((o) => (o.id === keep.id ? { ...o, tableId: primary, lines } : o));
+          });
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to merge tables");
+      }
+    },
+    unmergeTable: async (id) => {
+      if (!branchId) return;
+      try {
+        const response = await tablesApi.unmerge(branchId, id);
+        if (response.data) {
+          const updated = new Map(
+            response.data.map((t) => [t.id, toRestaurantTable(t)]),
+          );
+          setTables((p) => p.map((t) => updated.get(t.id) ?? t));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to unmerge table");
+      }
+    },
     mergedGroup: (table) =>
       table.mergeId ? tables.filter((t) => t.mergeId === table.mergeId) : [table],
 
     orders,
+    ordersLoading,
     orderForTable: (tableId) => {
       const table = tables.find((t) => t.id === tableId);
       const ids = table?.mergeId
@@ -561,95 +759,190 @@ export function PosProvider({ children }: { children: ReactNode }) {
         : [tableId];
       return orders.find((o) => ids.includes(o.tableId) && o.status === "draft");
     },
-    addLine: (tableId, line) => {
-      setOrders((prev) => {
+    addLine: async (tableId, line) => {
+      if (!branchId) return;
+      try {
+        // Find the merge group's existing draft (if any); otherwise create one
+        // against the caller's table. Backend enforces one-open-bill-per-table
+        // at the DB level, so if two waiters race, the second gets a clean
+        // TABLE_ALREADY_HAS_DRAFT error.
         const table = tables.find((t) => t.id === tableId);
         const ids = table?.mergeId
           ? tables.filter((t) => t.mergeId === table.mergeId).map((t) => t.id)
           : [tableId];
-        const existing = prev.find((o) => ids.includes(o.tableId) && o.status === "draft");
-        const [order, list] = existing ? [existing, prev] : ensureOrder(tableId, prev);
-        return list.map((o) => {
-          if (o.id !== order.id) return o;
-          const match = o.lines.find(
-            (l) =>
-              !l.sent &&
-              l.menuItemId === line.menuItemId &&
-              (l.variantName ?? "") === (line.variantName ?? ""),
-          );
-          if (match) {
-            return {
-              ...o,
-              lines: o.lines.map((l) => (l.id === match.id ? { ...l, qty: l.qty + line.qty } : l)),
-            };
-          }
-          return { ...o, lines: [...o.lines, { ...line, id: uid(), sent: false }] };
+        let existing = orders.find((o) => ids.includes(o.tableId) && o.status === "draft");
+        if (!existing) {
+          const created = await ordersApi.create(branchId, {
+            type: "dine-in",
+            table_id: tableId,
+          });
+          if (!created.data) return;
+          const fresh = toOrder(created.data);
+          existing = fresh;
+          setOrders((p) => [...p, fresh]);
+        }
+        const linePayload = {
+          menu_item_id: line.menuItemId || null,
+          variant_name: line.variantName ?? null,
+          name: line.menuItemId ? undefined : line.name,
+          price: line.menuItemId ? undefined : line.price,
+          qty: line.qty,
+          note: line.note || null,
+        };
+        const response = await ordersApi.addLine(branchId, existing.id, linePayload);
+        if (response.data) {
+          const updated = toOrder(response.data);
+          setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));
+        }
+        // Backend auto-flipped this table (and its merge group) to occupied —
+        // mirror it locally so the table grid updates without a refetch.
+        setTableStatus(tableId, "occupied");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to add item");
+      }
+    },
+    updateLine: async (orderId, lineId, patch) => {
+      if (!branchId) return;
+      try {
+        const response = await ordersApi.updateLine(branchId, orderId, lineId, {
+          qty: patch.qty,
+          note: patch.note ?? undefined,
         });
-      });
-      setTableStatus(tableId, "occupied");
+        if (response.data) {
+          const updated = toOrder(response.data);
+          setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to update line");
+      }
     },
-    updateLine: (orderId, lineId, patch) =>
-      setOrders((p) =>
-        p.map((o) =>
-          o.id === orderId
-            ? { ...o, lines: o.lines.map((l) => (l.id === lineId ? { ...l, ...patch } : l)) }
-            : o,
-        ),
-      ),
-    removeLine: (orderId, lineId) =>
-      setOrders((p) =>
-        p.map((o) => (o.id === orderId ? { ...o, lines: o.lines.filter((l) => l.id !== lineId) } : o)),
-      ),
-    sendToKitchen: (orderId) =>
-      setOrders((p) =>
-        p.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                placedAt: o.lines.some((l) => l.sent) ? o.placedAt : Date.now(),
-                kitchenStatus: o.kitchenStatus === "served" ? "new" : o.kitchenStatus,
-                lines: o.lines.map((l) => ({ ...l, sent: true })),
-              }
-            : o,
-        ),
-      ),
-    setDiscount: (orderId, type, val) =>
-      setOrders((p) =>
-        p.map((o) => (o.id === orderId ? { ...o, discountType: type, discountValue: val } : o)),
-      ),
-    markPaid: (orderId, method) => {
-      const order = orders.find((o) => o.id === orderId);
-      setOrders((p) =>
-        p.map((o) => (o.id === orderId ? { ...o, status: "paid", paymentMethod: method } : o)),
-      );
-      if (order?.tableId) setTableStatus(order.tableId, "empty");
+    removeLine: async (orderId, lineId) => {
+      if (!branchId) return;
+      try {
+        // Deleting a sent line is refused by the backend (audit); UI's Trash
+        // button treats "remove" loosely — try delete first, fall through to
+        // void with an empty reason if the line was already sent.
+        let response;
+        try {
+          response = await ordersApi.deleteLine(branchId, orderId, lineId);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "";
+          if (message.includes("sent to the kitchen")) {
+            response = await ordersApi.voidLine(branchId, orderId, lineId);
+          } else {
+            throw err;
+          }
+        }
+        if (response?.data) {
+          const updated = toOrder(response.data);
+          setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to remove line");
+      }
     },
-    setKitchenStatus: (orderId, status) =>
-      setOrders((p) => p.map((o) => (o.id === orderId ? { ...o, kitchenStatus: status } : o))),
-
-    addDeliveryOrder: (info, lines) =>
-      setOrders((p) => [
-        ...p,
-        {
-          id: uid(),
-          tableId: "",
+    sendToKitchen: async (orderId) => {
+      if (!branchId) return;
+      try {
+        const response = await ordersApi.sendToKitchen(branchId, orderId);
+        if (response.data) {
+          const updated = toOrder(response.data);
+          setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to send to kitchen");
+      }
+    },
+    setDiscount: async (orderId, type, val) => {
+      if (!branchId) return;
+      try {
+        const response = await ordersApi.setDiscount(branchId, orderId, type, val);
+        if (response.data) {
+          const updated = toOrder(response.data);
+          setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to set discount");
+      }
+    },
+    markPaid: async (orderId, method) => {
+      if (!branchId) return;
+      try {
+        const current = orders.find((o) => o.id === orderId);
+        const response = await ordersApi.markPaid(branchId, orderId, method);
+        if (response.data) {
+          const updated = toOrder(response.data);
+          setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));
+        }
+        // Backend frees the table (whole merge group). Mirror locally.
+        if (current?.tableId) setTableStatus(current.tableId, "empty");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to mark paid");
+      }
+    },
+    setKitchenStatus: async (orderId, status) => {
+      if (!branchId) return;
+      try {
+        const response = await ordersApi.setKitchenStatus(branchId, orderId, status);
+        if (response.data) {
+          const updated = toOrder(response.data);
+          setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to update kitchen status");
+      }
+    },
+    addDeliveryOrder: async (info, lines) => {
+      if (!branchId) return;
+      try {
+        const created = await ordersApi.create(branchId, {
           type: "delivery",
-          delivery: info,
-          lines: lines.map((l) => ({ ...l, id: uid(), sent: true })),
-          status: "draft",
-          kitchenStatus: "new",
-          placedAt: Date.now(),
-          discountType: "percent",
-          discountValue: 0,
-          waiter: actor,
-        },
-      ]),
-    setDeliveryStatus: (orderId, status) =>
-      setOrders((p) =>
-        p.map((o) =>
-          o.id === orderId && o.delivery ? { ...o, delivery: { ...o.delivery, status } } : o,
-        ),
-      ),
+          delivery_customer_name: info.customerName,
+          delivery_phone: info.phone,
+          delivery_address: info.address,
+        });
+        if (!created.data) return;
+        let currentOrder: Order = toOrder(created.data);
+        setOrders((p) => [...p, currentOrder]);
+        // Sequential line adds — a delivery order rarely has more than 5–10
+        // items so 1 + N round-trips is fine, and it lets the server reject
+        // individual bad lines cleanly.
+        for (const line of lines) {
+          const response = await ordersApi.addLine(branchId, currentOrder.id, {
+            menu_item_id: line.menuItemId || null,
+            variant_name: line.variantName ?? null,
+            name: line.menuItemId ? undefined : line.name,
+            price: line.menuItemId ? undefined : line.price,
+            qty: line.qty,
+            note: line.note || null,
+          });
+          if (response.data) {
+            currentOrder = toOrder(response.data);
+            setOrders((p) => p.map((o) => (o.id === currentOrder.id ? currentOrder : o)));
+          }
+        }
+        // Fire the KOT so the kitchen sees the delivery order immediately.
+        const sent = await ordersApi.sendToKitchen(branchId, currentOrder.id);
+        if (sent.data) {
+          const updated = toOrder(sent.data);
+          setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to add delivery order");
+      }
+    },
+    setDeliveryStatus: async (orderId, status) => {
+      if (!branchId) return;
+      try {
+        const response = await ordersApi.setDeliveryStatus(branchId, orderId, status);
+        if (response.data) {
+          const updated = toOrder(response.data);
+          setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to update delivery status");
+      }
+    },
 
     inventory,
     movements,

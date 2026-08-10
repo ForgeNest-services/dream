@@ -8,6 +8,7 @@ import {
   type DeliveryStatus,
 } from "@/lib/pos/data";
 import { billTotals, usePos } from "@/lib/pos/store";
+import { formatDateWithStoredBs } from "@/lib/pos/nepali-date";
 
 const STATUS_ORDER: DeliveryStatus[] = ["pending", "out", "delivered"];
 
@@ -82,11 +83,11 @@ export function DeliveryView() {
                 ))}
               </ul>
 
-              <div className="mt-3 flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  {new Date(o.placedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <span className="min-w-0 truncate text-xs text-muted-foreground">
+                  {formatDateWithStoredBs(o.placedAt, o.placedAtBs)}
                 </span>
-                <span className="font-display text-lg font-semibold text-primary">{NPR(totals.total)}</span>
+                <span className="shrink-0 font-display text-lg font-semibold text-primary">{NPR(totals.total)}</span>
               </div>
 
               <div className="mt-3 grid grid-cols-3 gap-2">
