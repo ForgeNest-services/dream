@@ -18,7 +18,7 @@ def _app_catalog() -> list[dict]:
                 "unified across every property you manage."
             ),
             "icon": "Hotel",
-            "url": "http://localhost:3002",
+            "url": "https://pms.srotaapps.com",
             "screenshots": [],
             "features": [
                 "Booking calendar with walk-in and advance reservations",
@@ -42,7 +42,7 @@ def _app_catalog() -> list[dict]:
                 "reports — with Bikram Sambat dates and multi-branch support."
             ),
             "icon": "Restaurant",
-            "url": "http://localhost:3003",
+            "url": "https://rms.srotaapps.com",
             "screenshots": [],
             "features": [
                 "Floor & table management with reservations",

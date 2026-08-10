@@ -21,15 +21,24 @@ certbot can't complete the HTTP-01 challenge.
 # 1. copy the config into nginx's sites-available (drop the .conf extension
 #    to match the naming convention already used on the host)
 sudo cp nginx/srota-ui.conf /etc/nginx/sites-available/srota-ui
+sudo cp nginx/srota-admin.conf /etc/nginx/sites-available/srota-admin
+sudo cp nginx/srota-rms.conf /etc/nginx/sites-available/srota-rms
+sudo cp nginx/srota-api.conf /etc/nginx/sites-available/srota-api
 
 # 2. enable it
 sudo ln -sf /etc/nginx/sites-available/srota-ui /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/srota-admin /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/srota-rms /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/srota-api /etc/nginx/sites-enabled/
 
 # 3. sanity-check + reload
 sudo nginx -t && sudo nginx -s reload
 
 # 4. get the cert — certbot edits srota-ui in place to add the SSL block
 sudo certbot --nginx -d srotaapps.com -d www.srotaapps.com
+sudo certbot --nginx -d app.srotaapps.com
+sudo certbot --nginx -d rms.srotaapps.com 
+sudo certbot --nginx -d api.srotaapps.com 
 ```
 
 Repeat steps 1–4 for each of admin / api / pms / rms.
