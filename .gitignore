@@ -5,3 +5,5 @@ SETUP.md
 logs/
 
 .claude/
+
+.env.prod
