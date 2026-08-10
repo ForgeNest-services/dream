@@ -11,6 +11,13 @@ SSL block + HTTP→HTTPS redirect on first run.
 | `srota-api.conf`    | api.srotaapps.com        | `127.0.0.1:8006`  |
 | `srota-pms.conf`    | pms.srotaapps.com        | `127.0.0.1:3007`  |
 | `srota-rms.conf`    | rms.srotaapps.com        | `127.0.0.1:3008`  |
+| `srota-media.conf`  | media.srotaapps.com      | `127.0.0.1:9000`  |
+
+> `media.srotaapps.com` proxies **only** MinIO's S3 API on :9000, not the
+> admin console on :9001. Visiting the root (`https://media.srotaapps.com/`)
+> won't do anything useful — the URLs are only meaningful with a bucket +
+> key path (`/srota-uploads/<key>`). If you need the console, SSH-tunnel
+> `-L 9001:127.0.0.1:9001` instead of exposing it publicly.
 
 ## First-time deploy (per subdomain)
 
@@ -25,6 +32,7 @@ sudo cp nginx/srota-admin.conf /etc/nginx/sites-available/srota-admin
 sudo cp nginx/srota-rms.conf /etc/nginx/sites-available/srota-rms
 sudo cp nginx/srota-api.conf /etc/nginx/sites-available/srota-api
 sudo cp nginx/srota-pms.conf /etc/nginx/sites-available/srota-pms
+sudo cp nginx/srota-media.conf /etc/nginx/sites-available/srota-media
 
 # 2. enable it
 sudo ln -sf /etc/nginx/sites-available/srota-ui /etc/nginx/sites-enabled/
@@ -32,6 +40,7 @@ sudo ln -sf /etc/nginx/sites-available/srota-admin /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/srota-rms /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/srota-api /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/srota-pms /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/srota-media /etc/nginx/sites-enabled/
 
 # 3. sanity-check + reload
 sudo nginx -t && sudo nginx -s reload
@@ -39,9 +48,10 @@ sudo nginx -t && sudo nginx -s reload
 # 4. get the cert — certbot edits srota-ui in place to add the SSL block
 sudo certbot --nginx -d srotaapps.com -d www.srotaapps.com
 sudo certbot --nginx -d app.srotaapps.com
-sudo certbot --nginx -d rms.srotaapps.com 
-sudo certbot --nginx -d api.srotaapps.com 
-sudo certbot --nginx -d pms.srotaapps.com 
+sudo certbot --nginx -d rms.srotaapps.com
+sudo certbot --nginx -d api.srotaapps.com
+sudo certbot --nginx -d pms.srotaapps.com
+sudo certbot --nginx -d media.srotaapps.com
 ```
 
 Repeat steps 1–4 for each of admin / api / pms / rms.

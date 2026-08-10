@@ -117,6 +117,11 @@ services:
       context: ./pms
       dockerfile: Dockerfile
     container_name: srota-pms
+    environment:
+      # Tells Vite to advertise its HMR websocket as
+      # wss://pms.srotaapps.com:443 so the browser can actually connect
+      # through the nginx SSL front. Empty / unset = same-origin ws://.
+      VITE_HMR_HOST: pms.srotaapps.com
     ports:
       - "3007:3002"
     volumes:
@@ -133,6 +138,8 @@ services:
       context: ./restro
       dockerfile: Dockerfile
     container_name: srota-restro
+    environment:
+      VITE_HMR_HOST: rms.srotaapps.com
     ports:
       - "3008:3003"
     volumes:
