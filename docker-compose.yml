@@ -3,16 +3,16 @@ services:
     build:
       context: ./api
       dockerfile: Dockerfile
-    container_name: api
+    container_name: srota-api
     env_file:
       - .env
     ports:
-      - "8000:8000"
+      - "8006:8000"
     volumes:
       - /var/log/template:/app/logs
       - /etc/localtime:/etc/localtime:ro
     networks:
-      - app-network
+      - srota-network
     restart: unless-stopped
     depends_on:
       postgres:
@@ -24,14 +24,14 @@ services:
 
   postgres:
     image: postgres:15-alpine
-    container_name: postgres
+    container_name: srota-postgres
     restart: unless-stopped
     env_file:
       - .env
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - app-network
+      - srota-network
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
       interval: 10s
@@ -40,13 +40,13 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: redis
+    container_name: srota-redis
     restart: unless-stopped
     command: redis-server --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     networks:
-      - app-network
+      - srota-network
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -55,7 +55,7 @@ services:
 
   minio:
     image: cgr.dev/chainguard/minio:latest
-    container_name: minio
+    container_name: srota-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     env_file:
@@ -69,15 +69,15 @@ services:
     volumes:
       - minio_data:/data
     networks:
-      - app-network
+      - srota-network
 
   worker:
     <<: *python-service
-    container_name: worker
+    container_name: srota-worker
     command: python worker.py
     ports: []
     networks:
-      - app-network
+      - srota-network
     healthcheck:
       disable: true
     depends_on:
@@ -88,11 +88,11 @@ services:
     build:
       context: ./ui
       dockerfile: Dockerfile
-    container_name: ui
+    container_name: srota-ui
     ports:
-      - "3000:80"
+      - "3009:80"
     networks:
-      - app-network
+      - srota-network
     restart: unless-stopped
 
   admin:
@@ -103,45 +103,45 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
         NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
         NEXT_PUBLIC_ENVIRO: ${NEXT_PUBLIC_ENVIRO}
-    container_name: admin
+    container_name: srota-admin
     env_file:
       - .env
     ports:
-      - "3001:3001"
+      - "3006:3001"
     networks:
-      - app-network
+      - srota-network
     restart: unless-stopped
 
   pms:
     build:
       context: ./pms
       dockerfile: Dockerfile
-    container_name: pms
+    container_name: srota-pms
     ports:
-      - "3002:3002"
+      - "3007:3002"
     volumes:
       - ./pms/src:/app/src
       - ./pms/public:/app/public
       - ./pms/vite.config.ts:/app/vite.config.ts
       - ./pms/tsconfig.json:/app/tsconfig.json
     networks:
-      - app-network
+      - srota-network
     restart: unless-stopped
 
   restro:
     build:
       context: ./restro
       dockerfile: Dockerfile
-    container_name: restro
+    container_name: srota-restro
     ports:
-      - "3003:3003"
+      - "3008:3003"
     volumes:
       - ./restro/src:/app/src
       - ./restro/public:/app/public
       - ./restro/vite.config.ts:/app/vite.config.ts
       - ./restro/tsconfig.json:/app/tsconfig.json
     networks:
-      - app-network
+      - srota-network
     restart: unless-stopped
 
 volumes:
@@ -150,5 +150,5 @@ volumes:
   minio_data:
 
 networks:
-  app-network:
+  srota-network:
     driver: bridge
