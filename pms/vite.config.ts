@@ -9,6 +9,7 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 3002,
     strictPort: true,
+    allowedHosts: ["pms.srotaapps.com"],
     watch: {
       usePolling: true,
       interval: 300,
