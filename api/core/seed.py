@@ -8,9 +8,9 @@ from utils.logger import logger
 def _app_catalog() -> list[dict]:
     return [
         {
-            "code": "hotel_pms",
-            "slug": "hotel-pms",
-            "name": "Hotel PMS",
+            "code": "srota_pms",
+            "slug": "srota-pms",
+            "name": "Srota PMS",
             "tagline": "Run your hotel from one calm dashboard.",
             "description": (
                 "Property management for hotels: bookings, check-in/out, folios, "
@@ -32,9 +32,9 @@ def _app_catalog() -> list[dict]:
             "is_public": True,
         },
         {
-            "code": "restro",
-            "slug": "restro",
-            "name": "Zestro",
+            "code": "srota_rms",
+            "slug": "srota-rms",
+            "name": "Srota RMS",
             "tagline": "The floor-friendly restaurant POS.",
             "description": (
                 "Restaurant point-of-sale built for fast service: floor tables, "

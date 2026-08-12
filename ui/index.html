@@ -35,17 +35,17 @@
       <div class="mx-auto max-w-7xl px-6 lg:px-10">
         <nav
           id="site-nav"
-          class="mt-4 flex items-center justify-between rounded-2xl border border-ink/10 bg-white/80 px-4 py-0.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-md transition-shadow sm:px-6"
+          class="mt-4 flex items-center justify-between gap-2 rounded-2xl border border-ink/10 bg-white/80 px-3 py-0.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-md transition-shadow sm:px-6"
         >
           <a
             href="/"
-            class="flex shrink-0 items-center"
+            class="flex min-w-0 shrink items-center"
             aria-label="Srota home"
           >
             <img
               src="./public/primary-logo.png"
               alt="Srota, Source of Solutions"
-              class="h-12 w-auto sm:h-20"
+              class="h-9 w-auto sm:h-20"
             />
           </a>
 
@@ -156,7 +156,7 @@
             >
           </div>
 
-          <div class="flex items-center gap-2">
+          <div class="flex shrink-0 items-center gap-1 sm:gap-2">
             <a
               href="https://app.srotaapps.com"
               target="_blank"
@@ -168,13 +168,13 @@
               href="https://app.srotaapps.com"
               target="_blank"
               rel="noopener"
-              class="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-ocean sm:px-5"
+              class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-ink px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-ocean sm:px-5 sm:py-2.5 sm:text-sm"
             >
               Start Free
             </a>
             <button
               id="menu-toggle"
-              class="ml-1 grid size-10 place-items-center rounded-full text-ink transition-colors hover:bg-ink/[0.04] lg:hidden"
+              class="grid size-9 shrink-0 place-items-center rounded-full text-ink transition-colors hover:bg-ink/[0.04] sm:size-10 lg:hidden"
               aria-label="Open menu"
               aria-expanded="false"
             >
@@ -364,24 +364,21 @@
         <div class="mx-auto max-w-7xl px-6 lg:px-10">
           <div class="mx-auto max-w-4xl text-center">
             <p
-              data-reveal
               class="font-accent mx-auto mb-5 max-w-md text-xl text-ocean sm:text-2xl"
             >
               the source of solutions
             </p>
 
             <h1
-              data-reveal
               class="font-display text-[2.6rem] font-semibold leading-[1.08] tracking-[-0.02em] text-ink sm:text-6xl lg:text-[4.5rem]"
             >
               Make your business
-              <span class="relative inline-block whitespace-nowrap">
+              <span class="relative inline-block sm:whitespace-nowrap">
                 run paperless<span class="text-ocean">.</span>
               </span>
             </h1>
 
             <p
-              data-reveal
               class="mx-auto mt-6 max-w-xl text-balance text-lg leading-relaxed text-slate sm:text-xl"
             >
               Srota is a marketplace of business software: property management,
@@ -390,7 +387,6 @@
             </p>
 
             <div
-              data-reveal
               class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row"
             >
               <a
@@ -416,7 +412,7 @@
               </a>
             </div>
 
-            <p data-reveal class="mt-5 text-sm text-slate/80">
+            <p class="mt-5 text-sm text-slate/80">
               Use any one app free for 30 days.
             </p>
           </div>
@@ -427,9 +423,9 @@
       <section class="px-6 lg:px-10" data-reveal>
         <div class="mx-auto max-w-5xl">
           <p
-            class="font-accent flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center text-4xl leading-[1.3] text-ink sm:text-5xl lg:text-6xl"
+            class="font-accent flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center text-2xl leading-[1.3] text-ink sm:text-4xl lg:text-6xl"
           >
-            <span class="relative inline-block whitespace-nowrap px-2">
+            <span class="relative inline-block px-2 sm:whitespace-nowrap">
               <svg
                 class="pointer-events-none absolute -inset-x-2 inset-y-0 -z-10 h-full w-[calc(100%+1rem)]"
                 viewBox="0 0 320 70"
@@ -444,7 +440,7 @@
               </svg>
               Source of Resource</span
             >
-            <span class="relative inline-block whitespace-nowrap px-2">
+            <span class="relative inline-block px-2 sm:whitespace-nowrap">
               <svg
                 class="pointer-events-none absolute -inset-x-2 inset-y-0 -z-10 h-full w-[calc(100%+1rem)]"
                 viewBox="0 0 220 70"
@@ -1317,8 +1313,20 @@
       </div>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js"></script>
-    <script src="./dist/index.js"></script>
+    <!--
+      dist/index.js has zero GSAP dependency at load time (it checks
+      window.gsap before touching it) — loading it independently, not queued
+      behind two third-party CDN scripts via defer's document-order rule,
+      means the hamburger menu / accordions / forms work the instant this
+      one small local file parses, even on a slow connection where the GSAP
+      CDN scripts are still in flight.
+    -->
+    <script src="./dist/index.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js" async></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js"
+      async
+      onload="window.__gsapReady = true; window.dispatchEvent(new Event('gsap:ready'))"
+    ></script>
   </body>
 </html>

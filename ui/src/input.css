@@ -59,3 +59,49 @@
     scroll-behavior: auto !important;
   }
 }
+
+/*
+  [data-reveal] content is visible by default — no JS, no GSAP, no content
+  loss. Only once GSAP has actually loaded and is about to drive the scroll
+  reveal does index.js add .gsap-reveal-ready to <html>, which arms the
+  pre-animation hidden state right before GSAP's fromTo() takes over. A slow
+  or blocked CDN script can therefore never leave the page blank.
+*/
+.gsap-reveal-ready [data-reveal] {
+  opacity: 0;
+}
+
+/*
+  Hero ambient blobs: pure CSS transform animation (compositor-only, no
+  main-thread cost) replacing what used to be a GSAP-driven float. Desktop
+  only — on mobile the blobs sit static, trading a small amount of ambient
+  motion for meaningfully less JS/CPU work on weaker devices.
+*/
+@media (min-width: 1024px) {
+  #flow-blob-1 {
+    animation: flow-blob-float-1 9s ease-in-out infinite;
+  }
+  #flow-blob-2 {
+    animation: flow-blob-float-2 11s ease-in-out infinite;
+  }
+}
+
+@keyframes flow-blob-float-1 {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(40px, 30px);
+  }
+}
+
+@keyframes flow-blob-float-2 {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(-30px, -20px);
+  }
+}
