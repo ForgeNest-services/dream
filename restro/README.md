@@ -1,10 +1,10 @@
-# Zestro — Restaurant POS
+# Srota RMS — Restaurant POS
 
-Zestro is the restaurant point-of-sale app in the Forgenest hospitality SaaS suite (globally referenced as **restro**). It runs on tablets (waiter order-taking) and desktops (kitchen display, owner dashboard).
+Srota RMS is the restaurant point-of-sale app in the Srota hospitality SaaS suite (codebase referenced as **restro**). It runs on tablets (waiter order-taking) and desktops (kitchen display, owner dashboard).
 
 Stack: Vite + TanStack Start + TanStack Router + React 19 + Tailwind v4 + shadcn/ui + Bun.
 
-Currently: Lovable-generated UI, cleaned up, mock data only. Backend wiring will land under `api/features/restro/` when the slice is built (see `../CLAUDE.md`).
+Backend-wired: login, branches, categories, menu items + image upload. See `../CLAUDE.md` for current build state.
 
 ## Development
 

@@ -27,7 +27,7 @@ export function LoginScreen() {
         <div className="mb-8 flex flex-col items-center text-center">
           <img
             src="/logo.png"
-            alt="Zestro"
+            alt="Srota RMS"
             className="mb-4 h-24 w-auto sm:h-28"
           />
           <p className="text-sm font-medium tracking-wide text-navy-foreground/60">

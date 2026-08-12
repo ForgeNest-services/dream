@@ -64,11 +64,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
-      # S3 API — reachable by nginx on the host, proxied under media.srotaapps.com.
       - "127.0.0.1:9000:9000"
-      # Admin console — bound to loopback so it's NOT reachable from the
-      # public internet. To open it: `ssh -L 9001:127.0.0.1:9001 user@server`
-      # then browse to http://localhost:9001 on your laptop.
       - "127.0.0.1:9001:9001"
     volumes:
       - minio_data:/data
@@ -120,23 +116,13 @@ services:
     build:
       context: ./pms
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL}
     container_name: srota-pms
-    environment:
-      # Browser-visible API URL (baked into the client bundle by Vite at
-      # transform time). Defaults to the local api container's host port;
-      # override in the root .env to point at the prod api subdomain.
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:8006/api}
-      # Tells Vite to advertise its HMR websocket as
-      # wss://pms.srotaapps.com:443 so the browser can actually connect
-      # through the nginx SSL front. Unset (default) = same-origin ws://.
-      VITE_HMR_HOST: ${VITE_PMS_HMR_HOST:-}
+    env_file:
+      - .env
     ports:
-      - "3007:3002"
-    volumes:
-      - ./pms/src:/app/src
-      - ./pms/public:/app/public
-      - ./pms/vite.config.ts:/app/vite.config.ts
-      - ./pms/tsconfig.json:/app/tsconfig.json
+      - "3007:80"
     networks:
       - srota-network
     restart: unless-stopped
@@ -145,17 +131,13 @@ services:
     build:
       context: ./restro
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL}
     container_name: srota-restro
-    environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:8006/api}
-      VITE_HMR_HOST: ${VITE_RESTRO_HMR_HOST:-}
+    env_file:
+      - .env
     ports:
-      - "3008:3003"
-    volumes:
-      - ./restro/src:/app/src
-      - ./restro/public:/app/public
-      - ./restro/vite.config.ts:/app/vite.config.ts
-      - ./restro/tsconfig.json:/app/tsconfig.json
+      - "3008:80"
     networks:
       - srota-network
     restart: unless-stopped

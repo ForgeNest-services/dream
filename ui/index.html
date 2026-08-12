@@ -35,17 +35,17 @@
       <div class="mx-auto max-w-7xl px-6 lg:px-10">
         <nav
           id="site-nav"
-          class="mt-4 flex items-center justify-between rounded-2xl border border-ink/10 bg-white/80 px-4 py-0.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-md transition-shadow sm:px-6"
+          class="mt-4 flex items-center justify-between gap-2 rounded-2xl border border-ink/10 bg-white/80 px-3 py-0.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-md transition-shadow sm:px-6"
         >
           <a
             href="/"
-            class="flex shrink-0 items-center"
+            class="flex min-w-0 shrink items-center"
             aria-label="Srota home"
           >
             <img
               src="./public/primary-logo.png"
               alt="Srota, Source of Solutions"
-              class="h-12 w-auto sm:h-20"
+              class="h-9 w-auto sm:h-20"
             />
           </a>
 
@@ -156,7 +156,7 @@
             >
           </div>
 
-          <div class="flex items-center gap-2">
+          <div class="flex shrink-0 items-center gap-1 sm:gap-2">
             <a
               href="https://app.srotaapps.com"
               target="_blank"
@@ -168,13 +168,13 @@
               href="https://app.srotaapps.com"
               target="_blank"
               rel="noopener"
-              class="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-ocean sm:px-5"
+              class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-ink px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-ocean sm:px-5 sm:py-2.5 sm:text-sm"
             >
               Start Free
             </a>
             <button
               id="menu-toggle"
-              class="ml-1 grid size-10 place-items-center rounded-full text-ink transition-colors hover:bg-ink/[0.04] lg:hidden"
+              class="grid size-9 shrink-0 place-items-center rounded-full text-ink transition-colors hover:bg-ink/[0.04] sm:size-10 lg:hidden"
               aria-label="Open menu"
               aria-expanded="false"
             >
@@ -364,24 +364,21 @@
         <div class="mx-auto max-w-7xl px-6 lg:px-10">
           <div class="mx-auto max-w-4xl text-center">
             <p
-              data-reveal
               class="font-accent mx-auto mb-5 max-w-md text-xl text-ocean sm:text-2xl"
             >
               the source of solutions
             </p>
 
             <h1
-              data-reveal
               class="font-display text-[2.6rem] font-semibold leading-[1.08] tracking-[-0.02em] text-ink sm:text-6xl lg:text-[4.5rem]"
             >
               Make your business
-              <span class="relative inline-block whitespace-nowrap">
+              <span class="relative inline-block sm:whitespace-nowrap">
                 run paperless<span class="text-ocean">.</span>
               </span>
             </h1>
 
             <p
-              data-reveal
               class="mx-auto mt-6 max-w-xl text-balance text-lg leading-relaxed text-slate sm:text-xl"
             >
               Srota is a marketplace of business software: property management,
@@ -390,7 +387,6 @@
             </p>
 
             <div
-              data-reveal
               class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row"
             >
               <a
@@ -416,7 +412,7 @@
               </a>
             </div>
 
-            <p data-reveal class="mt-5 text-sm text-slate/80">
+            <p class="mt-5 text-sm text-slate/80">
               Use any one app free for 30 days.
             </p>
           </div>
@@ -427,9 +423,9 @@
       <section class="px-6 lg:px-10" data-reveal>
         <div class="mx-auto max-w-5xl">
           <p
-            class="font-accent flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center text-4xl leading-[1.3] text-ink sm:text-5xl lg:text-6xl"
+            class="font-accent flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center text-2xl leading-[1.3] text-ink sm:text-4xl lg:text-6xl"
           >
-            <span class="relative inline-block whitespace-nowrap px-2">
+            <span class="relative inline-block px-2 sm:whitespace-nowrap">
               <svg
                 class="pointer-events-none absolute -inset-x-2 inset-y-0 -z-10 h-full w-[calc(100%+1rem)]"
                 viewBox="0 0 320 70"
@@ -444,7 +440,7 @@
               </svg>
               Source of Resource</span
             >
-            <span class="relative inline-block whitespace-nowrap px-2">
+            <span class="relative inline-block px-2 sm:whitespace-nowrap">
               <svg
                 class="pointer-events-none absolute -inset-x-2 inset-y-0 -z-10 h-full w-[calc(100%+1rem)]"
                 viewBox="0 0 220 70"
@@ -499,24 +495,11 @@
               ></div>
               <div class="p-7">
                 <div class="flex items-start justify-between">
-                  <div
-                    class="grid size-12 place-items-center rounded-2xl bg-ocean/10 text-ocean transition-transform duration-300 group-hover:-rotate-6"
-                  >
-                    <svg class="size-6" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M4 21V9l8-5 8 5v12"
-                        stroke="currentColor"
-                        stroke-width="1.6"
-                        stroke-linejoin="round"
-                      />
-                      <path
-                        d="M9 21v-6h6v6"
-                        stroke="currentColor"
-                        stroke-width="1.6"
-                        stroke-linejoin="round"
-                      />
-                    </svg>
-                  </div>
+                  <img
+                    src="./public/logos/PMS.png"
+                    alt="Srota PMS"
+                    class="h-6 w-auto"
+                  />
                   <span
                     class="rounded-full bg-ocean/10 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-wide text-ocean"
                     >Live</span
@@ -558,24 +541,11 @@
               ></div>
               <div class="p-7">
                 <div class="flex items-start justify-between">
-                  <div
-                    class="grid size-12 place-items-center rounded-2xl bg-teal/10 text-teal transition-transform duration-300 group-hover:-rotate-6"
-                  >
-                    <svg class="size-6" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M4 8h16l-1.5 10.5a2 2 0 0 1-2 1.5H7.5a2 2 0 0 1-2-1.5L4 8Z"
-                        stroke="currentColor"
-                        stroke-width="1.6"
-                        stroke-linejoin="round"
-                      />
-                      <path
-                        d="M8 8V6a4 4 0 0 1 8 0v2"
-                        stroke="currentColor"
-                        stroke-width="1.6"
-                        stroke-linecap="round"
-                      />
-                    </svg>
-                  </div>
+                  <img
+                    src="./public/logos/RMS.png"
+                    alt="Srota RMS"
+                    class="h-6 w-auto"
+                  />
                   <span
                     class="rounded-full bg-teal/10 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-wide text-teal"
                     >Live</span
@@ -605,69 +575,49 @@
               </div>
             </article>
 
-            <!-- Zestro (RMS lite, desktop, offline-first) -->
+            <!-- Srota IMS -->
             <article
-              id="zestro"
+              id="ims"
               class="app-card group relative scroll-mt-24 overflow-hidden rounded-[1.75rem] border border-ink/10 bg-white transition-shadow duration-300 hover:shadow-xl hover:shadow-ink/[0.06]"
               data-accent="ocean"
               tabindex="0"
             >
               <div
-                class="absolute inset-x-0 top-0 h-1 origin-left scale-x-0 bg-ink transition-transform duration-300 ease-out group-hover:scale-x-100"
+                class="absolute inset-x-0 top-0 h-1 origin-left scale-x-0 bg-ocean transition-transform duration-300 ease-out group-hover:scale-x-100"
               ></div>
               <div class="p-7">
                 <div class="flex items-start justify-between">
-                  <div
-                    class="grid size-12 place-items-center rounded-2xl bg-ink/5 text-ink transition-transform duration-300 group-hover:-rotate-6"
-                  >
-                    <svg class="size-6" viewBox="0 0 24 24" fill="none">
-                      <rect
-                        x="3"
-                        y="4"
-                        width="18"
-                        height="12"
-                        rx="1.5"
-                        stroke="currentColor"
-                        stroke-width="1.6"
-                      />
-                      <path
-                        d="M8 20h8M12 16v4"
-                        stroke="currentColor"
-                        stroke-width="1.6"
-                        stroke-linecap="round"
-                      />
-                    </svg>
-                  </div>
+                  <img
+                    src="./public/logos/IMS.png"
+                    alt="Srota IMS"
+                    class="h-6 w-auto"
+                  />
                   <span
-                    class="rounded-full bg-ink/5 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-wide text-slate"
-                    >Desktop</span
+                    class="rounded-full bg-amber/10 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-wide text-amber"
+                    >Coming soon</span
                   >
                 </div>
                 <h3 class="mt-6 font-display text-lg font-semibold text-ink">
-                  Zestro
+                  Srota IMS
                 </h3>
                 <p class="mt-2 text-sm leading-relaxed text-slate">
-                  Srota RMS lite for the counter: installs on the till, keeps
-                  working with no internet, and syncs sales to the cloud once
-                  you're back online.
+                  Stock levels, purchase orders and supplier tracking across
+                  every branch.
                 </p>
-                <a
-                  href="https://zestro.forgenestservices.com.np/"
-                  target="_blank"
-                  rel="noopener"
-                  class="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-ocean hover:text-ocean-dark"
-                >
-                  Open Zestro
-                  <svg class="size-3.5" viewBox="0 0 16 16" fill="none">
-                    <path
-                      d="M3.5 8h9M8.5 4l4 4-4 4"
-                      stroke="currentColor"
-                      stroke-width="1.6"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
-                </a>
+                <div class="mt-5 flex flex-wrap gap-1.5">
+                  <span
+                    class="rounded-full bg-mist px-2.5 py-1 text-xs font-medium text-slate"
+                    >Stock tracking</span
+                  >
+                  <span
+                    class="rounded-full bg-mist px-2.5 py-1 text-xs font-medium text-slate"
+                    >Purchase orders</span
+                  >
+                  <span
+                    class="rounded-full bg-mist px-2.5 py-1 text-xs font-medium text-slate"
+                    >Suppliers</span
+                  >
+                </div>
               </div>
             </article>
           </div>
@@ -1363,8 +1313,20 @@
       </div>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js"></script>
-    <script src="./dist/index.js"></script>
+    <!--
+      dist/index.js has zero GSAP dependency at load time (it checks
+      window.gsap before touching it) — loading it independently, not queued
+      behind two third-party CDN scripts via defer's document-order rule,
+      means the hamburger menu / accordions / forms work the instant this
+      one small local file parses, even on a slow connection where the GSAP
+      CDN scripts are still in flight.
+    -->
+    <script src="./dist/index.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js" async></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js"
+      async
+      onload="window.__gsapReady = true; window.dispatchEvent(new Event('gsap:ready'))"
+    ></script>
   </body>
 </html>

@@ -12,9 +12,16 @@
     initNewsletterForm();
     initContactForm();
 
-    if (window.gsap) {
-      initHeroFlow();
+    // GSAP/ScrollTrigger load via <script async>, independently of this
+    // file, so they may already be present, still in flight, or (rare
+    // async/async race) may have finished and fired gsap:ready before this
+    // listener was even attached — window.__gsapReady covers that case.
+    if (window.gsap && window.ScrollTrigger) {
       initScrollReveal();
+    } else if (window.__gsapReady) {
+      initScrollReveal();
+    } else {
+      window.addEventListener("gsap:ready", initScrollReveal, { once: true });
     }
   });
 
@@ -186,63 +193,20 @@
   }
 
   // ---------------------------------------------------------------------
-  // Hero ambient flow field — droplet/flow motif from the brand mark
-  // ---------------------------------------------------------------------
-  function initHeroFlow() {
-    if (reduceMotion) return;
-
-    gsap.to("#flow-blob-1", {
-      x: 40,
-      y: 30,
-      duration: 9,
-      ease: "sine.inOut",
-      repeat: -1,
-      yoyo: true,
-    });
-    gsap.to("#flow-blob-2", {
-      x: -30,
-      y: -20,
-      duration: 11,
-      ease: "sine.inOut",
-      repeat: -1,
-      yoyo: true,
-    });
-
-    var paths = gsap.utils.toArray(".flow-path");
-    paths.forEach(function (path, i) {
-      var length = path.getTotalLength();
-      gsap.set(path, { strokeDasharray: length, strokeDashoffset: length });
-      gsap.to(path, {
-        strokeDashoffset: 0,
-        duration: 2.4,
-        delay: 0.3 + i * 0.25,
-        ease: "power2.out",
-      });
-      gsap.to(path, {
-        y: i % 2 === 0 ? 14 : -14,
-        duration: 6 + i,
-        delay: 2.6,
-        ease: "sine.inOut",
-        repeat: -1,
-        yoyo: true,
-      });
-    });
-
-    gsap.from("#hero-field", { opacity: 0, duration: 1.6, ease: "power1.out" });
-  }
-
-  // ---------------------------------------------------------------------
   // Scroll reveal — [data-reveal] elements fade/rise into view once
   // ---------------------------------------------------------------------
   function initScrollReveal() {
+    if (reduceMotion) return;
+
     gsap.registerPlugin(ScrollTrigger);
+
+    // Arms the CSS rule that hides [data-reveal] elements pre-animation.
+    // Doing this here (not in the HTML/CSS unconditionally) means content
+    // stays visible by default if GSAP never loads.
+    document.documentElement.classList.add("gsap-reveal-ready");
 
     var targets = gsap.utils.toArray("[data-reveal]");
     targets.forEach(function (el, i) {
-      if (reduceMotion) {
-        gsap.set(el, { opacity: 1, y: 0 });
-        return;
-      }
       gsap.fromTo(
         el,
         { opacity: 0, y: 22 },

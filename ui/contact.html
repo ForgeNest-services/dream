@@ -35,17 +35,17 @@
       <div class="mx-auto max-w-7xl px-6 lg:px-10">
         <nav
           id="site-nav"
-          class="mt-4 flex items-center justify-between rounded-2xl border border-ink/10 bg-white/80 px-4 py-0.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-md transition-shadow sm:px-6"
+          class="mt-4 flex items-center justify-between gap-2 rounded-2xl border border-ink/10 bg-white/80 px-3 py-0.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-md transition-shadow sm:px-6"
         >
           <a
             href="/"
-            class="flex shrink-0 items-center"
+            class="flex min-w-0 shrink items-center"
             aria-label="Srota home"
           >
             <img
               src="./public/primary-logo.png"
               alt="Srota, Source of Solutions"
-              class="h-12 w-auto sm:h-20"
+              class="h-9 w-auto sm:h-20"
             />
           </a>
 
@@ -156,25 +156,25 @@
             >
           </div>
 
-          <div class="flex items-center gap-2">
+          <div class="flex shrink-0 items-center gap-1 sm:gap-2">
             <a
-              href="http://localhost:3001"
+              href="https://app.srotaapps.com"
               target="_blank"
               rel="noopener"
               class="hidden rounded-full px-4 py-2.5 text-sm font-semibold text-ink/70 transition-colors hover:text-ink sm:inline-block"
               >Sign in</a
             >
             <a
-              href="http://localhost:3001"
+              href="https://app.srotaapps.com"
               target="_blank"
               rel="noopener"
-              class="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-ocean sm:px-5"
+              class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-ink px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-ocean sm:px-5 sm:py-2.5 sm:text-sm"
             >
               Start Free
             </a>
             <button
               id="menu-toggle"
-              class="ml-1 grid size-10 place-items-center rounded-full text-ink transition-colors hover:bg-ink/[0.04] lg:hidden"
+              class="grid size-9 shrink-0 place-items-center rounded-full text-ink transition-colors hover:bg-ink/[0.04] sm:size-10 lg:hidden"
               aria-label="Open menu"
               aria-expanded="false"
             >
@@ -688,8 +688,20 @@
       </div>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js"></script>
-    <script src="./dist/index.js"></script>
+    <!--
+      dist/index.js has zero GSAP dependency at load time (it checks
+      window.gsap before touching it) — loading it independently, not queued
+      behind two third-party CDN scripts via defer's document-order rule,
+      means the hamburger menu / accordions / forms work the instant this
+      one small local file parses, even on a slow connection where the GSAP
+      CDN scripts are still in flight.
+    -->
+    <script src="./dist/index.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js" async></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js"
+      async
+      onload="window.__gsapReady = true; window.dispatchEvent(new Event('gsap:ready'))"
+    ></script>
   </body>
 </html>

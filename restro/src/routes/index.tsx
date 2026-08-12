@@ -7,13 +7,13 @@ import { landingRouteForRole } from "@/lib/pos/nav";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Zestro — Restaurant POS" },
+      { title: "Srota RMS — Restaurant POS" },
       {
         name: "description",
         content:
-          "Zestro: multi-branch restaurant POS with floor tables, menu & variants, manual inventory, kitchen display and sales reports with Bikram Sambat dates.",
+          "Srota RMS: multi-branch restaurant POS with floor tables, menu & variants, manual inventory, kitchen display and sales reports with Bikram Sambat dates.",
       },
-      { property: "og:title", content: "Zestro — Restaurant POS" },
+      { property: "og:title", content: "Srota RMS — Restaurant POS" },
       {
         property: "og:description",
         content:

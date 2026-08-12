@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { useAuth } from '@/hooks/useAuth';
 import { LoginForm } from './forms/LoginForm';
 import { RegisterForm } from './forms/RegisterForm';
@@ -37,16 +38,32 @@ export function AuthPage() {
   }
 
   return (
-    <div style={{
+    <div className="auth-page" style={{
       minHeight: '100vh',
       display: 'flex',
       backgroundColor: colors.neutral[0],
     }}>
+      <style jsx>{`
+        .auth-page {
+          flex-direction: row;
+        }
+        .auth-branding {
+          display: flex;
+        }
+        @media (max-width: 767px) {
+          .auth-page {
+            flex-direction: column;
+          }
+          .auth-branding {
+            display: none;
+          }
+        }
+      `}</style>
+
       {/* Left Side - Branding */}
-      <div style={{
+      <div className="auth-branding" style={{
         flex: 1,
         background: `linear-gradient(135deg, ${colors.primary[800]} 0%, ${colors.primary[600]} 100%)`,
-        display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
         alignItems: 'center',
@@ -86,14 +103,14 @@ export function AuthPage() {
         }} />
 
         <div style={{ textAlign: 'center', maxWidth: '300px', position: 'relative', zIndex: 1 }}>
-          <h1 style={{
-            fontSize: '40px',
-            fontWeight: '700',
-            marginBottom: spacing.md,
-            fontFamily: 'var(--font-playfair)',
-          }}>
-            Welcome
-          </h1>
+          <Image
+            src="/logo-white.png"
+            alt="Srota"
+            width={789}
+            height={290}
+            priority
+            style={{ height: '56px', width: 'auto', margin: '0 auto', marginBottom: spacing.lg }}
+          />
           <p style={{
             fontSize: '16px',
             opacity: 0.85,
@@ -112,6 +129,7 @@ export function AuthPage() {
         justifyContent: 'center',
         padding: spacing.xl,
         backgroundColor: colors.primary[50],
+        minHeight: '100vh',
       }}>
         <div style={{ width: '100%', maxWidth: '400px' }}>
           {/* Form Header */}
