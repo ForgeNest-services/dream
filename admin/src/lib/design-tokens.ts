@@ -48,8 +48,8 @@ export const colors = {
 
 export const typography = {
   font: {
-    primary: 'var(--font-playfair), "Playfair Display", serif',
-    secondary: 'var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    primary: 'var(--font-playfair), "Montserrat", sans-serif',
+    secondary: 'var(--font-sans), "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
   },
 
   sizes: {

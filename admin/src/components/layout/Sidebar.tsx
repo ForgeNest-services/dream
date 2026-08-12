@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/hooks/useAuth';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   MdDashboard,
@@ -70,17 +71,14 @@ export function Sidebar() {
           }}
         >
           {showLabels && (
-            <h1
-              style={{
-                fontSize: '22px',
-                fontWeight: '700',
-                color: colors.neutral[0],
-                fontFamily: 'var(--font-playfair)',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Dream
-            </h1>
+            <Image
+              src="/logo-white.png"
+              alt="Srota"
+              width={789}
+              height={290}
+              priority
+              style={{ height: '40px', width: 'auto' }}
+            />
           )}
           {isDesktop && (
             <button
