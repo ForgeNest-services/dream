@@ -145,17 +145,11 @@ services:
     build:
       context: ./restro
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8006/api}
     container_name: srota-restro
-    environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:8006/api}
-      VITE_HMR_HOST: ${VITE_RESTRO_HMR_HOST:-}
     ports:
-      - "3008:3003"
-    volumes:
-      - ./restro/src:/app/src
-      - ./restro/public:/app/public
-      - ./restro/vite.config.ts:/app/vite.config.ts
-      - ./restro/tsconfig.json:/app/tsconfig.json
+      - "3008:80"
     networks:
       - srota-network
     restart: unless-stopped

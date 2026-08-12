@@ -10,12 +10,83 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppRouteImport } from './routes/_app'
+import { Route as AppDailyRouteImport } from './routes/_app.daily'
+import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
+import { Route as AppDeliveryRouteImport } from './routes/_app.delivery'
+import { Route as AppEmployeesRouteImport } from './routes/_app.employees'
+import { Route as AppExpensesRouteImport } from './routes/_app.expenses'
+import { Route as AppInventoryRouteImport } from './routes/_app.inventory'
+import { Route as AppKitchenRouteImport } from './routes/_app.kitchen'
+import { Route as AppMenuRouteImport } from './routes/_app.menu'
+import { Route as AppOrdersRouteImport } from './routes/_app.orders'
+import { Route as AppReportsRouteImport } from './routes/_app.reports'
+import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as MenuBranchIdRouteImport } from './routes/menu.$branchId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppDailyRoute = AppDailyRouteImport.update({
+  id: '/daily',
+  path: '/daily',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDashboardRoute = AppDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDeliveryRoute = AppDeliveryRouteImport.update({
+  id: '/delivery',
+  path: '/delivery',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppEmployeesRoute = AppEmployeesRouteImport.update({
+  id: '/employees',
+  path: '/employees',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppExpensesRoute = AppExpensesRouteImport.update({
+  id: '/expenses',
+  path: '/expenses',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppInventoryRoute = AppInventoryRouteImport.update({
+  id: '/inventory',
+  path: '/inventory',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppKitchenRoute = AppKitchenRouteImport.update({
+  id: '/kitchen',
+  path: '/kitchen',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMenuRoute = AppMenuRouteImport.update({
+  id: '/menu',
+  path: '/menu',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOrdersRoute = AppOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsRoute = AppReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
 } as any)
 const MenuBranchIdRoute = MenuBranchIdRouteImport.update({
   id: '/menu/$branchId',
@@ -25,27 +96,103 @@ const MenuBranchIdRoute = MenuBranchIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/daily': typeof AppDailyRoute
+  '/dashboard': typeof AppDashboardRoute
+  '/delivery': typeof AppDeliveryRoute
+  '/employees': typeof AppEmployeesRoute
+  '/expenses': typeof AppExpensesRoute
+  '/inventory': typeof AppInventoryRoute
+  '/kitchen': typeof AppKitchenRoute
+  '/menu': typeof AppMenuRoute
+  '/orders': typeof AppOrdersRoute
+  '/reports': typeof AppReportsRoute
+  '/settings': typeof AppSettingsRoute
   '/menu/$branchId': typeof MenuBranchIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/daily': typeof AppDailyRoute
+  '/dashboard': typeof AppDashboardRoute
+  '/delivery': typeof AppDeliveryRoute
+  '/employees': typeof AppEmployeesRoute
+  '/expenses': typeof AppExpensesRoute
+  '/inventory': typeof AppInventoryRoute
+  '/kitchen': typeof AppKitchenRoute
+  '/menu': typeof AppMenuRoute
+  '/orders': typeof AppOrdersRoute
+  '/reports': typeof AppReportsRoute
+  '/settings': typeof AppSettingsRoute
   '/menu/$branchId': typeof MenuBranchIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_app': typeof AppRouteWithChildren
+  '/_app/daily': typeof AppDailyRoute
+  '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/delivery': typeof AppDeliveryRoute
+  '/_app/employees': typeof AppEmployeesRoute
+  '/_app/expenses': typeof AppExpensesRoute
+  '/_app/inventory': typeof AppInventoryRoute
+  '/_app/kitchen': typeof AppKitchenRoute
+  '/_app/menu': typeof AppMenuRoute
+  '/_app/orders': typeof AppOrdersRoute
+  '/_app/reports': typeof AppReportsRoute
+  '/_app/settings': typeof AppSettingsRoute
   '/menu/$branchId': typeof MenuBranchIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/menu/$branchId'
+  fullPaths:
+    | '/'
+    | '/daily'
+    | '/dashboard'
+    | '/delivery'
+    | '/employees'
+    | '/expenses'
+    | '/inventory'
+    | '/kitchen'
+    | '/menu'
+    | '/orders'
+    | '/reports'
+    | '/settings'
+    | '/menu/$branchId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/menu/$branchId'
-  id: '__root__' | '/' | '/menu/$branchId'
+  to:
+    | '/'
+    | '/daily'
+    | '/dashboard'
+    | '/delivery'
+    | '/employees'
+    | '/expenses'
+    | '/inventory'
+    | '/kitchen'
+    | '/menu'
+    | '/orders'
+    | '/reports'
+    | '/settings'
+    | '/menu/$branchId'
+  id:
+    | '__root__'
+    | '/'
+    | '/_app'
+    | '/_app/daily'
+    | '/_app/dashboard'
+    | '/_app/delivery'
+    | '/_app/employees'
+    | '/_app/expenses'
+    | '/_app/inventory'
+    | '/_app/kitchen'
+    | '/_app/menu'
+    | '/_app/orders'
+    | '/_app/reports'
+    | '/_app/settings'
+    | '/menu/$branchId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
   MenuBranchIdRoute: typeof MenuBranchIdRoute
 }
 
@@ -58,6 +205,90 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app/daily': {
+      id: '/_app/daily'
+      path: '/daily'
+      fullPath: '/daily'
+      preLoaderRoute: typeof AppDailyRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/dashboard': {
+      id: '/_app/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/delivery': {
+      id: '/_app/delivery'
+      path: '/delivery'
+      fullPath: '/delivery'
+      preLoaderRoute: typeof AppDeliveryRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/employees': {
+      id: '/_app/employees'
+      path: '/employees'
+      fullPath: '/employees'
+      preLoaderRoute: typeof AppEmployeesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/expenses': {
+      id: '/_app/expenses'
+      path: '/expenses'
+      fullPath: '/expenses'
+      preLoaderRoute: typeof AppExpensesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/inventory': {
+      id: '/_app/inventory'
+      path: '/inventory'
+      fullPath: '/inventory'
+      preLoaderRoute: typeof AppInventoryRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/kitchen': {
+      id: '/_app/kitchen'
+      path: '/kitchen'
+      fullPath: '/kitchen'
+      preLoaderRoute: typeof AppKitchenRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/menu': {
+      id: '/_app/menu'
+      path: '/menu'
+      fullPath: '/menu'
+      preLoaderRoute: typeof AppMenuRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/orders': {
+      id: '/_app/orders'
+      path: '/orders'
+      fullPath: '/orders'
+      preLoaderRoute: typeof AppOrdersRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports': {
+      id: '/_app/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof AppReportsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/menu/$branchId': {
       id: '/menu/$branchId'
       path: '/menu/$branchId'
@@ -68,10 +299,51 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppRouteChildren {
+  AppDailyRoute: typeof AppDailyRoute
+  AppDashboardRoute: typeof AppDashboardRoute
+  AppDeliveryRoute: typeof AppDeliveryRoute
+  AppEmployeesRoute: typeof AppEmployeesRoute
+  AppExpensesRoute: typeof AppExpensesRoute
+  AppInventoryRoute: typeof AppInventoryRoute
+  AppKitchenRoute: typeof AppKitchenRoute
+  AppMenuRoute: typeof AppMenuRoute
+  AppOrdersRoute: typeof AppOrdersRoute
+  AppReportsRoute: typeof AppReportsRoute
+  AppSettingsRoute: typeof AppSettingsRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppDailyRoute: AppDailyRoute,
+  AppDashboardRoute: AppDashboardRoute,
+  AppDeliveryRoute: AppDeliveryRoute,
+  AppEmployeesRoute: AppEmployeesRoute,
+  AppExpensesRoute: AppExpensesRoute,
+  AppInventoryRoute: AppInventoryRoute,
+  AppKitchenRoute: AppKitchenRoute,
+  AppMenuRoute: AppMenuRoute,
+  AppOrdersRoute: AppOrdersRoute,
+  AppReportsRoute: AppReportsRoute,
+  AppSettingsRoute: AppSettingsRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
   MenuBranchIdRoute: MenuBranchIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
