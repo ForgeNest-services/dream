@@ -455,3 +455,90 @@ class SetDeliveryStatusRequest(BaseModel):
         if v not in ("pending", "out", "delivered"):
             raise ValueError("delivery_status must be one of: pending, out, delivered")
         return v
+
+
+# ---------------------------------------------------------------------------
+# Inventory
+# ---------------------------------------------------------------------------
+
+class InventoryItemData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    name: str
+    category: str
+    unit: str
+    stock: Decimal
+    threshold: Decimal
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class StockMovementData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    item_id: str
+    type: str
+    delta: Decimal
+    reason: str
+    note: str | None
+    cost: Decimal | None
+    actor_name: str
+    actor_cred_id: str | None
+    created_at: datetime
+
+
+class CreateInventoryItemRequest(BaseModel):
+    name: str
+    category: str = "Other"
+    unit: str = "piece"
+    threshold: Decimal = Decimal("0")
+    # Opening balance recorded as an "Initial stock" movement so the audit log
+    # doesn't have a phantom starting quantity that no one restocked in.
+    stock: Decimal = Decimal("0")
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Item name is required")
+        return v
+
+
+class UpdateInventoryItemRequest(BaseModel):
+    name: str | None = None
+    category: str | None = None
+    unit: str | None = None
+    threshold: Decimal | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str | None) -> str | None:
+        if v is not None and not v.strip():
+            raise ValueError("Item name is required")
+        return v
+
+
+class RestockRequest(BaseModel):
+    qty: Decimal
+    cost: Decimal | None = None
+    note: str | None = None
+
+
+class AdjustStockRequest(BaseModel):
+    delta: Decimal
+    reason: str
+    note: str | None = None
+
+    @field_validator("reason")
+    @classmethod
+    def reason_not_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Reason is required")
+        return v

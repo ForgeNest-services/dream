@@ -17,9 +17,13 @@ import { zonesApi, type ZoneDto } from "../zones-api";
 import { tablesApi, type TableDto } from "../tables-api";
 import { ordersApi, type OrderDto, type OrderLineDto } from "../orders-api";
 import {
+  inventoryApi,
+  type InventoryItemDto,
+  type StockMovementDto,
+} from "../inventory-api";
+import {
   EMPLOYEES,
   EXPENSES,
-  INVENTORY,
   type Category,
   type DeliveryInfo,
   type DeliveryStatus,
@@ -37,8 +41,6 @@ import {
   type Zone,
   type KitchenStatus,
 } from "./data";
-
-const uid = () => Math.random().toString(36).slice(2, 10);
 
 export type Branch = { id: string; name: string; address: string; phone: string };
 
@@ -125,6 +127,39 @@ function toOrder(o: OrderDto): Order {
     };
   }
   return order;
+}
+
+function toInventoryItem(dto: InventoryItemDto): InventoryItem {
+  // Server sends Decimal fields as strings; UI works in numbers. We accept
+  // any unit string the server has but narrow to the frontend's known set —
+  // anything unrecognized falls back to "piece" so the picker never breaks.
+  const unit: InventoryItem["unit"] =
+    dto.unit === "kg" || dto.unit === "liter" || dto.unit === "piece" || dto.unit === "packet"
+      ? dto.unit
+      : "piece";
+  return {
+    id: dto.id,
+    name: dto.name,
+    category: dto.category,
+    stock: Number(dto.stock),
+    threshold: Number(dto.threshold),
+    unit,
+  };
+}
+
+function toStockMovement(dto: StockMovementDto): StockMovement {
+  const movement: StockMovement = {
+    id: dto.id,
+    itemId: dto.item_id,
+    type: dto.type,
+    delta: Number(dto.delta),
+    reason: dto.reason,
+    by: dto.actor_name,
+    at: new Date(dto.created_at).getTime(),
+  };
+  if (dto.note) movement.note = dto.note;
+  if (dto.cost !== null) movement.cost = Number(dto.cost);
+  return movement;
 }
 
 function toMenuItem(m: MenuItemDto): MenuItem {
@@ -214,11 +249,13 @@ type Ctx = {
   setDeliveryStatus: (orderId: string, status: DeliveryStatus) => Promise<void>;
 
   inventory: InventoryItem[];
+  inventoryLoading: boolean;
   movements: StockMovement[];
-  saveInventoryItem: (item: InventoryItem) => void;
-  deleteInventoryItem: (id: string) => void;
-  restock: (itemId: string, qty: number, cost: number, note: string) => void;
-  adjustStock: (itemId: string, delta: number, reason: string, note: string) => void;
+  loadMovements: (itemId: string) => Promise<void>;
+  saveInventoryItem: (item: InventoryItem) => Promise<void>;
+  deleteInventoryItem: (id: string) => Promise<void>;
+  restock: (itemId: string, qty: number, cost: number, note: string) => Promise<void>;
+  adjustStock: (itemId: string, delta: number, reason: string, note: string) => Promise<void>;
 
   employees: Employee[];
   saveEmployee: (emp: Employee) => void;
@@ -457,13 +494,38 @@ export function PosProvider({ children }: { children: ReactNode }) {
   const [tablesLoading, setTablesLoading] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
-  const [inventory, setInventory] = useState<InventoryItem[]>(INVENTORY);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [employees, setEmployees] = useState<Employee[]>(EMPLOYEES);
   const [expenses, setExpenses] = useState<Expense[]>(EXPENSES);
 
   const settings = settingsMap[branchId] ?? defaultSettings(branch);
-  const actor = session?.username ?? "system";
+
+  // Load inventory whenever the branch changes. Movements are lazy — fetched
+  // on demand when the user opens the history modal, since one item's log can
+  // be long and we don't need all items' logs upfront.
+  useEffect(() => {
+    if (!session || !branchId) {
+      setInventory([]);
+      setMovements([]);
+      return;
+    }
+    let cancelled = false;
+    setInventoryLoading(true);
+    inventoryApi
+      .list(branchId)
+      .then((response) => {
+        if (cancelled) return;
+        setInventory((response.data ?? []).map(toInventoryItem));
+      })
+      .finally(() => {
+        if (!cancelled) setInventoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, branchId]);
 
   const setTableStatus = (tableId: string, status: RestaurantTable["status"]) =>
     setTables((prev) => {
@@ -945,30 +1007,94 @@ export function PosProvider({ children }: { children: ReactNode }) {
     },
 
     inventory,
+    inventoryLoading,
     movements,
-    saveInventoryItem: (item) =>
-      setInventory((p) =>
-        p.some((i) => i.id === item.id) ? p.map((i) => (i.id === item.id ? item : i)) : [...p, item],
-      ),
-    deleteInventoryItem: (id) => {
-      setInventory((p) => p.filter((i) => i.id !== id));
-      setMovements((p) => p.filter((m) => m.itemId !== id));
+    loadMovements: async (itemId) => {
+      if (!branchId) return;
+      try {
+        const response = await inventoryApi.movements(branchId, itemId);
+        const fresh = (response.data ?? []).map(toStockMovement);
+        // Splice the fetched item's movements over any stale ones for that
+        // item; other items' logs stay in the cache untouched.
+        setMovements((prev) => [...prev.filter((m) => m.itemId !== itemId), ...fresh]);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to load movement log");
+      }
     },
-    restock: (itemId, qty, cost, note) => {
-      setInventory((p) => p.map((i) => (i.id === itemId ? { ...i, stock: i.stock + qty } : i)));
-      setMovements((p) => [
-        { id: uid(), itemId, type: "restock", delta: qty, reason: "Restock", note, cost, by: actor, at: Date.now() },
-        ...p,
-      ]);
+    saveInventoryItem: async (item) => {
+      if (!branchId) return;
+      try {
+        const existing = inventory.some((i) => i.id === item.id);
+        if (existing) {
+          const response = await inventoryApi.update(branchId, item.id, {
+            name: item.name,
+            category: item.category,
+            unit: item.unit,
+            threshold: item.threshold,
+          });
+          if (response.data) {
+            const updated = toInventoryItem(response.data);
+            setInventory((p) => p.map((i) => (i.id === item.id ? updated : i)));
+          }
+        } else {
+          const response = await inventoryApi.create(branchId, {
+            name: item.name,
+            category: item.category,
+            unit: item.unit,
+            threshold: item.threshold,
+            stock: item.stock,
+          });
+          if (response.data) setInventory((p) => [...p, toInventoryItem(response.data!)]);
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to save item");
+      }
     },
-    adjustStock: (itemId, delta, reason, note) => {
-      setInventory((p) =>
-        p.map((i) => (i.id === itemId ? { ...i, stock: Math.max(0, i.stock + delta) } : i)),
-      );
-      setMovements((p) => [
-        { id: uid(), itemId, type: "adjust", delta, reason, note, by: actor, at: Date.now() },
-        ...p,
-      ]);
+    deleteInventoryItem: async (id) => {
+      if (!branchId) return;
+      try {
+        await inventoryApi.remove(branchId, id);
+        setInventory((p) => p.filter((i) => i.id !== id));
+        setMovements((p) => p.filter((m) => m.itemId !== id));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete item");
+      }
+    },
+    restock: async (itemId, qty, cost, note) => {
+      if (!branchId) return;
+      try {
+        const response = await inventoryApi.restock(branchId, itemId, {
+          qty,
+          cost: cost || null,
+          note: note || null,
+        });
+        if (response.data) {
+          const item = toInventoryItem(response.data.item);
+          const movement = toStockMovement(response.data.movement);
+          setInventory((p) => p.map((i) => (i.id === itemId ? item : i)));
+          setMovements((p) => [movement, ...p]);
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to record restock");
+      }
+    },
+    adjustStock: async (itemId, delta, reason, note) => {
+      if (!branchId) return;
+      try {
+        const response = await inventoryApi.adjust(branchId, itemId, {
+          delta,
+          reason,
+          note: note || null,
+        });
+        if (response.data) {
+          const item = toInventoryItem(response.data.item);
+          const movement = toStockMovement(response.data.movement);
+          setInventory((p) => p.map((i) => (i.id === itemId ? item : i)));
+          setMovements((p) => [movement, ...p]);
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to record adjustment");
+      }
     },
 
     employees,
