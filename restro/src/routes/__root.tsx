@@ -79,13 +79,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { name: "theme-color", content: "#17181A" },
-      { title: "Zestro — Restaurant POS" },
+      { title: "Srota RMS — Restaurant POS" },
       {
         name: "description",
         content:
-          "Zestro: multi-branch restaurant POS with floor tables, menu & variants, manual inventory, kitchen display and sales reports with Bikram Sambat dates.",
+          "Srota RMS: multi-branch restaurant POS with floor tables, menu & variants, manual inventory, kitchen display and sales reports with Bikram Sambat dates.",
       },
-      { property: "og:title", content: "Zestro — Restaurant POS" },
+      { property: "og:title", content: "Srota RMS — Restaurant POS" },
       {
         property: "og:description",
         content:
@@ -93,7 +93,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "Zestro — Restaurant POS" },
+      { name: "twitter:title", content: "Srota RMS — Restaurant POS" },
       {
         name: "twitter:description",
         content:

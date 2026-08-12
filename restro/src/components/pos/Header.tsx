@@ -27,7 +27,6 @@ export function PosHeader() {
     branch,
     canSwitchBranch,
     setBranchId,
-    settings,
   } = usePos();
   if (!session) return null;
   const today = new Date();
@@ -54,13 +53,9 @@ export function PosHeader() {
         <div className="flex min-w-0 items-center gap-3">
           <img
             src="/logo.png"
-            alt="Zestro"
+            alt="Srota RMS"
             className="h-10 w-auto shrink-0 sm:h-11"
           />
-          <div className="min-w-0">
-            <p className="truncate font-display text-lg leading-none">{settings.restaurantName}</p>
-            <p className="mt-1 truncate text-xs text-navy-foreground/60">{branch?.name ?? "—"}</p>
-          </div>
 
           {canSwitchBranch && (
             <DropdownMenu>

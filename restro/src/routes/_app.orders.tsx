@@ -20,7 +20,7 @@ const PER_PAGE_ALLOWED = new Set([10, 25, 50, 100]);
 const STATUS_ALLOWED: OrdersSearch["status"][] = ["all", "draft", "paid"];
 
 export const Route = createFileRoute("/_app/orders")({
-  head: () => ({ meta: [{ title: "Orders — Zestro" }] }),
+  head: () => ({ meta: [{ title: "Orders — Srota RMS" }] }),
   // TanStack Router uses this to parse the URL into the typed search object.
   // We coerce unknowns into safe defaults instead of throwing — a malformed
   // link shouldn't 500 the page.

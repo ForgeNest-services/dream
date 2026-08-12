@@ -98,7 +98,7 @@ export type ManualInstallHint = {
 
 export function manualInstallHint(): ManualInstallHint {
   if (typeof navigator === "undefined") {
-    return { title: "Install Zestro", steps: ["Use your browser's Install menu."] };
+    return { title: "Install Srota RMS", steps: ["Use your browser's Install menu."] };
   }
   const ua = navigator.userAgent;
   const isIOS = /iPhone|iPad|iPod/i.test(ua);
@@ -130,15 +130,15 @@ export function manualInstallHint(): ManualInstallHint {
       title: "Install with Edge",
       steps: [
         "Click the menu (…) in the top-right corner.",
-        "Choose \"Apps\" → \"Install Zestro\".",
+        "Choose \"Apps\" → \"Install Srota RMS\".",
       ],
     };
   }
   return {
-    title: "Install Zestro",
+    title: "Install Srota RMS",
     steps: [
       "Click the install icon on the right of the address bar,",
-      "or open the browser menu and choose \"Install Zestro\".",
+      "or open the browser menu and choose \"Install Srota RMS\".",
     ],
   };
 }

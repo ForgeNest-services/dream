@@ -44,9 +44,9 @@ export function InstallAppButton() {
       // We don't know for sure if the browser routed the open into the PWA or
       // a new tab (depends on Chrome's per-app "Open supported links in the
       // app" setting). Nudge the user how to enable it if it didn't work.
-      toast.message("Opening Zestro…", {
+      toast.message("Opening Srota RMS…", {
         description:
-          "Nothing happened? In Chrome, open chrome://apps, right-click Zestro, and enable \"Open supported links in the app\".",
+          "Nothing happened? In Chrome, open chrome://apps, right-click Srota RMS, and enable \"Open supported links in the app\".",
         duration: 8000,
       });
       return;

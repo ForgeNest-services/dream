@@ -4,10 +4,10 @@ import { BRANCHES, CATEGORIES, MENU_ITEMS, NPR } from "@/lib/pos/data";
 export const Route = createFileRoute("/menu/$branchId")({
   head: () => ({
     meta: [
-      { title: "Menu — Zestro" },
-      { name: "description", content: "Browse the full food and drinks menu with live prices for this Zestro branch." },
-      { property: "og:title", content: "Menu — Zestro" },
-      { property: "og:description", content: "Browse the full food and drinks menu with live prices for this Zestro branch." },
+      { title: "Menu — Srota RMS" },
+      { name: "description", content: "Browse the full food and drinks menu with live prices for this Srota RMS branch." },
+      { property: "og:title", content: "Menu — Srota RMS" },
+      { property: "og:description", content: "Browse the full food and drinks menu with live prices for this Srota RMS branch." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -22,7 +22,7 @@ function PublicMenu() {
   return (
     <div className="min-h-screen bg-background">
       <header className="bg-navy px-4 py-8 text-center text-navy-foreground">
-        <h1 className="font-display text-2xl">Zestro</h1>
+        <h1 className="font-display text-2xl">Srota RMS</h1>
         <p className="mt-1 text-sm opacity-70">{branch.name} · {branch.address}</p>
         <p className="mt-3 text-xs uppercase tracking-widest text-amber">Menu</p>
       </header>
