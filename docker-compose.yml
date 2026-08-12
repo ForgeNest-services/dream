@@ -122,10 +122,14 @@ services:
       dockerfile: Dockerfile
     container_name: srota-pms
     environment:
+      # Browser-visible API URL (baked into the client bundle by Vite at
+      # transform time). Defaults to the local api container's host port;
+      # override in the root .env to point at the prod api subdomain.
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8006/api}
       # Tells Vite to advertise its HMR websocket as
       # wss://pms.srotaapps.com:443 so the browser can actually connect
-      # through the nginx SSL front. Empty / unset = same-origin ws://.
-      VITE_HMR_HOST: pms.srotaapps.com
+      # through the nginx SSL front. Unset (default) = same-origin ws://.
+      VITE_HMR_HOST: ${VITE_PMS_HMR_HOST:-}
     ports:
       - "3007:3002"
     volumes:
@@ -143,7 +147,8 @@ services:
       dockerfile: Dockerfile
     container_name: srota-restro
     environment:
-      VITE_HMR_HOST: rms.srotaapps.com
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8006/api}
+      VITE_HMR_HOST: ${VITE_RESTRO_HMR_HOST:-}
     ports:
       - "3008:3003"
     volumes:

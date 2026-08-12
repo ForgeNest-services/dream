@@ -34,6 +34,12 @@ from features.restro.schemas import (
     SetDiscountRequest,
     MarkPaidRequest,
     SetDeliveryStatusRequest,
+    InventoryItemData,
+    StockMovementData,
+    CreateInventoryItemRequest,
+    UpdateInventoryItemRequest,
+    RestockRequest,
+    AdjustStockRequest,
 )
 from features.restro.service import RestroCredentialService, RestroAuthService
 from features.restro.category_service import CategoryService
@@ -41,6 +47,7 @@ from features.restro.menu_item_service import MenuItemService
 from features.restro.zone_service import ZoneService
 from features.restro.table_service import TableService
 from features.restro.order_service import OrderService
+from features.restro.inventory_service import InventoryService
 from features.restro.repository import RestroCredentialRepository
 
 
@@ -1231,3 +1238,216 @@ def set_order_delivery_status(
         return _order_error(result["error_code"])
     order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
     return success_response(data=_order_payload(order), message="Delivery status updated")
+
+
+# ---------------------------------------------------------------------------
+# Inventory (staff-facing — every role can restock/adjust; CRUD gated to
+# owner/manager)
+# ---------------------------------------------------------------------------
+
+_INVENTORY_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "ITEM_NOT_FOUND": ("ITEM_NOT_FOUND", "Inventory item not found.", 404),
+    "NAME_TAKEN": ("NAME_TAKEN", "An inventory item with this name already exists.", 409),
+    "INVALID_UNIT": ("INVALID_UNIT", "Unit must be kg, liter, piece or packet.", 422),
+    "INVALID_THRESHOLD": ("INVALID_THRESHOLD", "Threshold can't be negative.", 422),
+    "INVALID_STOCK": ("INVALID_STOCK", "Opening stock can't be negative.", 422),
+    "INVALID_QTY": ("INVALID_QTY", "Quantity must be greater than zero.", 422),
+    "INVALID_COST": ("INVALID_COST", "Cost can't be negative.", 422),
+    "INVALID_DELTA": ("INVALID_DELTA", "Adjustment can't be zero.", 422),
+    "REASON_REQUIRED": ("REASON_REQUIRED", "Reason is required for an adjustment.", 422),
+}
+
+
+def _inventory_error(code: str):
+    mapped = _INVENTORY_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to save inventory item.", 500))
+    return error_response(*mapped)
+
+
+def _actor_from_staff(db: Session, staff: dict) -> tuple[str, str | None]:
+    """Snapshot the acting user's username (like `waiter_name` on orders) so
+    the movement log survives credential renames or deletions."""
+    cred_id = staff.get("cred_id")
+    name = staff.get("role") or "staff"
+    if cred_id:
+        cred = RestroCredentialRepository.get_by_id(db, staff["tenant_id"], cred_id)
+        if cred:
+            name = cred.username
+    return name, cred_id
+
+
+@router.get("/branches/{branch_id}/inventory")
+def list_inventory(
+    branch_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = InventoryService.list_for_branch(db, staff["tenant_id"], branch_id)
+    if not result["success"]:
+        return _inventory_error(result["error_code"])
+    return success_response(
+        data=[InventoryItemData.model_validate(i).model_dump(mode="json") for i in result["items"]]
+    )
+
+
+@router.post("/branches/{branch_id}/inventory")
+def create_inventory_item(
+    branch_id: str,
+    data: CreateInventoryItemRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can create inventory items")
+    _assert_branch_scope(staff, branch_id)
+    actor_name, cred_id = _actor_from_staff(db, staff)
+    result = InventoryService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        name=data.name,
+        category=data.category,
+        unit=data.unit,
+        threshold=data.threshold,
+        stock=data.stock,
+        actor_name=actor_name,
+        actor_cred_id=cred_id,
+    )
+    if not result["success"]:
+        return _inventory_error(result["error_code"])
+    return success_response(
+        data=InventoryItemData.model_validate(result["item"]).model_dump(mode="json"),
+        message="Inventory item created",
+        status_code=201,
+    )
+
+
+@router.patch("/branches/{branch_id}/inventory/{item_id}")
+def update_inventory_item(
+    branch_id: str,
+    item_id: str,
+    data: UpdateInventoryItemRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can edit inventory items")
+    _assert_branch_scope(staff, branch_id)
+    result = InventoryService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        item_id=item_id,
+        name=data.name,
+        category=data.category,
+        unit=data.unit,
+        threshold=data.threshold,
+    )
+    if not result["success"]:
+        return _inventory_error(result["error_code"])
+    return success_response(
+        data=InventoryItemData.model_validate(result["item"]).model_dump(mode="json"),
+        message="Inventory item updated",
+    )
+
+
+@router.delete("/branches/{branch_id}/inventory/{item_id}")
+def delete_inventory_item(
+    branch_id: str,
+    item_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can delete inventory items")
+    _assert_branch_scope(staff, branch_id)
+    result = InventoryService.delete(db, staff["tenant_id"], branch_id, item_id)
+    if not result["success"]:
+        return _inventory_error(result["error_code"])
+    return success_response(data={"deleted": True}, message="Inventory item removed")
+
+
+@router.post("/branches/{branch_id}/inventory/{item_id}/restock")
+def restock_inventory_item(
+    branch_id: str,
+    item_id: str,
+    data: RestockRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    actor_name, cred_id = _actor_from_staff(db, staff)
+    result = InventoryService.restock(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        item_id=item_id,
+        qty=data.qty,
+        cost=data.cost,
+        note=data.note,
+        actor_name=actor_name,
+        actor_cred_id=cred_id,
+    )
+    if not result["success"]:
+        return _inventory_error(result["error_code"])
+    return success_response(
+        data={
+            "item": InventoryItemData.model_validate(result["item"]).model_dump(mode="json"),
+            "movement": StockMovementData.model_validate(result["movement"]).model_dump(mode="json"),
+        },
+        message="Restock recorded",
+    )
+
+
+@router.post("/branches/{branch_id}/inventory/{item_id}/adjust")
+def adjust_inventory_item(
+    branch_id: str,
+    item_id: str,
+    data: AdjustStockRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    actor_name, cred_id = _actor_from_staff(db, staff)
+    result = InventoryService.adjust(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        item_id=item_id,
+        delta=data.delta,
+        reason=data.reason,
+        note=data.note,
+        actor_name=actor_name,
+        actor_cred_id=cred_id,
+    )
+    if not result["success"]:
+        return _inventory_error(result["error_code"])
+    return success_response(
+        data={
+            "item": InventoryItemData.model_validate(result["item"]).model_dump(mode="json"),
+            "movement": StockMovementData.model_validate(result["movement"]).model_dump(mode="json"),
+        },
+        message="Adjustment recorded",
+    )
+
+
+@router.get("/branches/{branch_id}/inventory/{item_id}/movements")
+def list_inventory_movements(
+    branch_id: str,
+    item_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = InventoryService.list_movements(
+        db, staff["tenant_id"], branch_id, item_id
+    )
+    if not result["success"]:
+        return _inventory_error(result["error_code"])
+    return success_response(
+        data=[
+            StockMovementData.model_validate(m).model_dump(mode="json")
+            for m in result["movements"]
+        ]
+    )

@@ -204,17 +204,6 @@ export const MENU_ITEMS: MenuItem[] = [
   { id: "m20", name: "Bara", categoryId: "c7", hasVariants: false, price: 150, variants: [], soldOut: false },
 ];
 
-export const INVENTORY: InventoryItem[] = [
-  { id: "i1", name: "Buff Keema", category: "Meat", stock: 12, unit: "kg", threshold: 10 },
-  { id: "i2", name: "Chicken Breast", category: "Meat", stock: 6, unit: "kg", threshold: 8 },
-  { id: "i3", name: "Cooking Oil", category: "Grocery", stock: 24, unit: "liter", threshold: 10 },
-  { id: "i4", name: "Maida (Flour)", category: "Grocery", stock: 45, unit: "kg", threshold: 20 },
-  { id: "i5", name: "Milk", category: "Dairy", stock: 3, unit: "liter", threshold: 15 },
-  { id: "i6", name: "Hookah Coal", category: "Hookah", stock: 0, unit: "packet", threshold: 5 },
-  { id: "i7", name: "Coca Cola 250ml", category: "Beverage", stock: 96, unit: "piece", threshold: 24 },
-  { id: "i8", name: "Tea Leaves", category: "Grocery", stock: 4, unit: "kg", threshold: 5 },
-];
-
 export const EMPLOYEES: Employee[] = [
   { id: "e1", name: "Suman Shrestha", designation: "Manager", phone: "9801234567", salary: 45000, shift: "9:00 AM - 6:00 PM", active: true },
   { id: "e2", name: "Bina Tamang", designation: "Waiter", phone: "9812345678", salary: 22000, shift: "11:00 AM - 9:00 PM", active: true },

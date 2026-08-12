@@ -30,7 +30,16 @@ function statusOf(i: InventoryItem) {
 }
 
 export function InventoryView() {
-  const { inventory, movements, restock, adjustStock, saveInventoryItem, deleteInventoryItem } = usePos();
+  const {
+    inventory,
+    inventoryLoading,
+    movements,
+    loadMovements,
+    restock,
+    adjustStock,
+    saveInventoryItem,
+    deleteInventoryItem,
+  } = usePos();
   const [editItem, setEditItem] = useState<InventoryItem | null>(null);
   const [restockItem, setRestockItem] = useState<InventoryItem | null>(null);
   const [adjustItem, setAdjustItem] = useState<InventoryItem | null>(null);
@@ -73,6 +82,20 @@ export function InventoryView() {
               </tr>
             </thead>
             <tbody>
+              {inventoryLoading && inventory.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                    Loading inventory…
+                  </td>
+                </tr>
+              )}
+              {!inventoryLoading && inventory.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                    No items yet — add your first with the button above.
+                  </td>
+                </tr>
+              )}
               {inventory.map((i) => {
                 const st = statusOf(i);
                 return (
@@ -116,7 +139,15 @@ export function InventoryView() {
                           <SlidersHorizontal className="size-4" />
                           Adjust
                         </Button>
-                        <Button size="sm" variant="ghost" className="h-10" onClick={() => setHistoryItem(i)}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-10"
+                          onClick={() => {
+                            setHistoryItem(i);
+                            void loadMovements(i.id);
+                          }}
+                        >
                           <History className="size-4" />
                           History
                         </Button>
@@ -167,13 +198,38 @@ export function InventoryView() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <Label>Stock (adjust only)</Label>
-                  <Input type="number" className="h-12" value={editItem.stock} disabled readOnly />
-                  <p className="text-[11px] text-muted-foreground">Use Restock or Adjust to change stock.</p>
+                  <Label>{editItem.id ? "Stock (adjust only)" : "Opening stock"}</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-12"
+                    value={editItem.stock}
+                    disabled={!!editItem.id}
+                    readOnly={!!editItem.id}
+                    onChange={(e) =>
+                      setEditItem({ ...editItem, stock: Math.max(0, Number(e.target.value)) })
+                    }
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    {editItem.id
+                      ? "Use Restock or Adjust to change stock — keeps the audit log clean."
+                      : "How much you have on hand right now. Logged as an “Initial stock” movement."}
+                  </p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Threshold</Label>
-                  <Input type="number" className="h-12" value={editItem.threshold} onChange={(e) => setEditItem({ ...editItem, threshold: Number(e.target.value) })} />
+                  <Label>Low-stock alert at</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-12"
+                    value={editItem.threshold}
+                    onChange={(e) =>
+                      setEditItem({ ...editItem, threshold: Math.max(0, Number(e.target.value)) })
+                    }
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    The item is flagged “Low” when stock drops to this value or below.
+                  </p>
                 </div>
               </div>
               <div className="space-y-2">
@@ -194,9 +250,11 @@ export function InventoryView() {
           <DialogFooter>
             <Button
               className="h-12 w-full"
-              onClick={() => {
+              onClick={async () => {
                 if (!editItem) return;
-                saveInventoryItem({ ...editItem, id: editItem.id || Math.random().toString(36).slice(2, 10) });
+                // Server assigns the id — pass empty string for a new item and
+                // the store's saveInventoryItem branches on inventory.some(...).
+                await saveInventoryItem(editItem);
                 setEditItem(null);
               }}
             >
