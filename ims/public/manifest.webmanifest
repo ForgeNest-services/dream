@@ -1,0 +1,24 @@
+{
+  "name": "SROTA IMS — Inventory & POS",
+  "short_name": "SROTA IMS",
+  "description": "IRD-compliant inventory management and point of sale for Nepali businesses.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f9fb",
+  "theme_color": "#0c2340",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
