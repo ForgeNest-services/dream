@@ -127,13 +127,13 @@ services:
       - srota-network
     restart: unless-stopped
 
-  restro:
+  rms:
     build:
-      context: ./restro
+      context: ./rms
       dockerfile: Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL}
-    container_name: srota-restro
+    container_name: srota-rms
     env_file:
       - .env
     ports:
