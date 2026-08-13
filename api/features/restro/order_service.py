@@ -9,12 +9,40 @@ from features.restro.order_repository import (
     KITCHEN_STATUSES,
     DELIVERY_STATUSES,
     PAYMENT_METHODS,
+    KHATA_SETTLEMENT_METHODS,
     DISCOUNT_TYPES,
 )
 from features.restro.table_repository import TableRepository
 from features.restro.menu_item_repository import MenuItemRepository
+from features.restro.customer_repository import CustomerRepository
 from features.branches.repository import BranchRepository
 from utils.logger import logger
+
+
+# TODO(settings): once per-branch VAT settings persist (Phase C: Settings),
+# read from settings instead of these constants. Snapshot at mark-paid time so
+# a later VAT rate change doesn't restate historical orders.
+DEFAULT_VAT_ENABLED = True
+DEFAULT_VAT_RATE = Decimal("13")
+
+
+def compute_order_total(order) -> Decimal:
+    """Mirrors the frontend billTotals(): subtotal from non-voided lines,
+    discount (percent or flat), then VAT applied to the taxable amount.
+    Used server-side both for reports and for the khata outstanding-balance
+    calculation, so the number always matches what the customer was shown at
+    bill time."""
+    subtotal = sum(
+        (Decimal(line.price) * line.qty for line in order.lines if not line.is_voided),
+        Decimal("0"),
+    )
+    if order.discount_type == "percent":
+        discount = subtotal * Decimal(order.discount_value) / Decimal("100")
+    else:
+        discount = Decimal(order.discount_value)
+    taxable = max(Decimal("0"), subtotal - discount)
+    vat = (taxable * DEFAULT_VAT_RATE / Decimal("100")) if DEFAULT_VAT_ENABLED else Decimal("0")
+    return (taxable + vat).quantize(Decimal("0.01"))
 
 
 class OrderService:
@@ -115,9 +143,7 @@ class OrderService:
         waiter_name: str,
         waiter_cred_id: str | None,
         table_id: str | None = None,
-        delivery_customer_name: str | None = None,
-        delivery_phone: str | None = None,
-        delivery_address: str | None = None,
+        customer_id: str | None = None,
     ) -> dict:
         if not OrderService._assert_branch(db, tenant_id, branch_id):
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
@@ -140,9 +166,18 @@ class OrderService:
                 return {"success": False, "error_code": "TABLE_ALREADY_HAS_DRAFT"}
             primary_table_id = table_id  # caller's chosen table is fine
         else:
-            # delivery
-            if not (delivery_customer_name and delivery_phone and delivery_address):
-                return {"success": False, "error_code": "DELIVERY_INFO_REQUIRED"}
+            # Delivery: customer_id is required (holds name/phone/address on
+            # the customer row). Dine-in can also carry customer_id for repeat
+            # walk-ins, but it's optional.
+            if not customer_id:
+                return {"success": False, "error_code": "CUSTOMER_REQUIRED"}
+
+        # If customer_id is supplied for any type, validate it belongs to
+        # this tenant+branch. Skip validation entirely when None (dine-in walk-in).
+        if customer_id:
+            customer = CustomerRepository.get_by_id(db, tenant_id, customer_id)
+            if not customer or customer.branch_id != branch_id or not customer.is_active:
+                return {"success": False, "error_code": "CUSTOMER_NOT_FOUND"}
 
         try:
             order = OrderRepository.create(
@@ -151,11 +186,9 @@ class OrderService:
                 branch_id=branch_id,
                 type=type,
                 table_id=primary_table_id,
+                customer_id=customer_id,
                 waiter_name=waiter_name,
                 waiter_cred_id=waiter_cred_id,
-                delivery_customer_name=delivery_customer_name,
-                delivery_phone=delivery_phone,
-                delivery_address=delivery_address,
             )
             logger.info(
                 f"Order created: {order.id}",
@@ -392,6 +425,7 @@ class OrderService:
         branch_id: str,
         order_id: str,
         payment_method: str,
+        customer_id: str | None = None,
     ) -> dict:
         if payment_method not in PAYMENT_METHODS:
             return {"success": False, "error_code": "INVALID_PAYMENT_METHOD"}
@@ -400,18 +434,84 @@ class OrderService:
             return {"success": False, "error_code": "ORDER_NOT_FOUND"}
         if order.status != "draft":
             return {"success": False, "error_code": "ORDER_NOT_EDITABLE"}
+
+        # Khata rule: customer required. Either supplied inline here (waiter
+        # picked/created at pay time) or already attached at order creation
+        # (delivery flow). If neither, refuse.
+        effective_customer_id = customer_id or order.customer_id
+        if payment_method == "khata":
+            if not effective_customer_id:
+                return {"success": False, "error_code": "CUSTOMER_REQUIRED_FOR_KHATA"}
+            customer = CustomerRepository.get_by_id(db, tenant_id, effective_customer_id)
+            if not customer or customer.branch_id != branch_id or not customer.is_active:
+                return {"success": False, "error_code": "CUSTOMER_NOT_FOUND"}
+
+        now = datetime.now(timezone.utc)
+        # For cash/qr the money's in — settled_at = paid_at, so the customer
+        # never accrues a balance. For khata we deliberately leave settled_at
+        # NULL until the customer pays down their tab via /settle-khata.
+        settled_at_value = None if payment_method == "khata" else now
+        clear_settled = payment_method == "khata"
+
         updated = OrderRepository.set_status(
             db,
             order,
             status="paid",
-            paid_at=datetime.now(timezone.utc),
+            paid_at=now,
             payment_method=payment_method,
+            customer_id=effective_customer_id if payment_method == "khata" else None,
+            settled_at=settled_at_value,
+            clear_settled_at=clear_settled,
         )
         # Free the dine-in table (whole merge group).
         if order.type == "dine-in" and order.table_id:
             OrderService._set_group_status(db, tenant_id, order.table_id, "empty")
-        logger.info(f"Order paid: {order.id}", extra={"tenant_id": tenant_id})
+        logger.info(
+            f"Order paid: {order.id} via {payment_method}",
+            extra={"tenant_id": tenant_id, "customer_id": effective_customer_id},
+        )
         return {"success": True, "order": updated}
+
+    @staticmethod
+    def settle_khata(
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        customer_id: str,
+        settlement_method: str,
+    ) -> dict:
+        """Customer paid down their khata — flip every unsettled khata order
+        of theirs to settled. Records the payment method used to settle (for
+        eventual daily-sales reports) via a log line for now; a proper
+        settlements ledger comes when we build Reports."""
+        if settlement_method not in KHATA_SETTLEMENT_METHODS:
+            return {"success": False, "error_code": "INVALID_SETTLEMENT_METHOD"}
+        customer = CustomerRepository.get_by_id(db, tenant_id, customer_id)
+        if not customer or customer.branch_id != branch_id or not customer.is_active:
+            return {"success": False, "error_code": "CUSTOMER_NOT_FOUND"}
+
+        unsettled = OrderRepository.list_unsettled_khata_for_customer(db, tenant_id, customer_id)
+        if not unsettled:
+            return {"success": False, "error_code": "NO_BALANCE_TO_SETTLE"}
+
+        total = sum((compute_order_total(o) for o in unsettled), Decimal("0"))
+        count = OrderRepository.settle_khata_for_customer(db, tenant_id, customer_id)
+        logger.info(
+            f"Khata settled: customer={customer_id} orders={count} total={total} via {settlement_method}",
+            extra={"tenant_id": tenant_id, "branch_id": branch_id},
+        )
+        return {
+            "success": True,
+            "orders_settled": count,
+            "amount_settled": total,
+            "settlement_method": settlement_method,
+        }
+
+    @staticmethod
+    def outstanding_balance(db: Session, tenant_id: str, customer_id: str) -> Decimal:
+        """Sum of unsettled khata order totals for a customer."""
+        unsettled = OrderRepository.list_unsettled_khata_for_customer(db, tenant_id, customer_id)
+        return sum((compute_order_total(o) for o in unsettled), Decimal("0"))
 
     @staticmethod
     def cancel(db: Session, tenant_id: str, branch_id: str, order_id: str) -> dict:

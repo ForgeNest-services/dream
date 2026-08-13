@@ -5,8 +5,15 @@ export type OrderType = "dine-in" | "delivery";
 export type OrderStatus = "draft" | "paid" | "cancelled";
 export type KitchenStatus = "new" | "cooking" | "ready" | "served";
 export type DeliveryStatus = "pending" | "out" | "delivered";
-export type PaymentMethod = "cash" | "qr" | "card";
+export type PaymentMethod = "cash" | "qr" | "khata";
 export type DiscountType = "percent" | "flat";
+
+export interface OrderCustomerRefDto {
+  id: string;
+  name: string;
+  phone: string | null;
+  address: string | null;
+}
 
 export interface OrderLineDto {
   id: string;
@@ -29,6 +36,7 @@ export interface OrderDto {
   tenant_id: string;
   branch_id: string;
   table_id: string | null;
+  customer_id: string | null;
   type: OrderType;
   status: OrderStatus;
   kitchen_status: KitchenStatus;
@@ -38,15 +46,20 @@ export interface OrderDto {
   placed_at_bs: string;
   paid_at: string | null;
   paid_at_bs: string | null;
+  // NULL until the khata order is paid down via /settle-khata. For cash/qr
+  // orders this equals paid_at (settlement is instant).
+  settled_at: string | null;
+  settled_at_bs: string | null;
   discount_type: DiscountType;
   discount_value: string;
   payment_method: PaymentMethod | null;
   waiter_name: string;
   waiter_cred_id: string | null;
-  delivery_customer_name: string | null;
-  delivery_phone: string | null;
-  delivery_address: string | null;
   delivery_status: DeliveryStatus | null;
+  // Embedded (slim) customer object — populated whenever customer_id is set.
+  // Delivery orders always have this; dine-in orders have it when the
+  // waiter attached a customer at pay time (khata).
+  customer: OrderCustomerRefDto | null;
   created_at: string;
   updated_at: string;
   lines: OrderLineDto[];
@@ -100,9 +113,9 @@ function toPaginatedQuery(params: OrdersPaginatedQuery): string {
 export interface CreateOrderPayload {
   type: OrderType;
   table_id?: string;
-  delivery_customer_name?: string;
-  delivery_phone?: string;
-  delivery_address?: string;
+  // Required for delivery. Optional for dine-in (attach a repeat customer
+  // upfront, or leave off and attach at khata-pay time).
+  customer_id?: string;
 }
 
 export interface AddOrderLinePayload {
@@ -195,10 +208,15 @@ export const ordersApi = {
       { discount_type, discount_value },
     );
   },
-  markPaid(branchId: string, orderId: string, payment_method: PaymentMethod) {
+  markPaid(
+    branchId: string,
+    orderId: string,
+    payment_method: PaymentMethod,
+    customer_id?: string,
+  ) {
     return apiClient.post<OrderDto>(
       `/restro/branches/${branchId}/orders/${orderId}/mark-paid`,
-      { payment_method },
+      { payment_method, customer_id: customer_id ?? null },
     );
   },
   cancel(branchId: string, orderId: string) {

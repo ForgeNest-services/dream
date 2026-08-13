@@ -19,20 +19,32 @@ import {
   DrawerTrigger,
 } from "@/components/ui/drawer";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { NPR, type MenuItem, type Order, type RestaurantTable } from "@/lib/pos/data";
+import { NPR, type MenuItem, type Order, type OrderCustomerRef, type RestaurantTable } from "@/lib/pos/data";
 import { useBillTotals, usePos } from "@/lib/pos/store";
 import { BillReceipt, KotReceipt, PrintDialog } from "./ThermalPrint";
+import { CustomerPicker } from "./CustomerPicker";
 
 // Frontend-only pseudo-category. "All" shows every menu item across every
 // real category — never sent to the backend.
 const ALL_CATEGORY = "__all__";
 
-export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack: () => void }) {
+// The order-taking screen works identically for a dine-in table and for a
+// delivery order — same menu grid, same running bill, same print + pay UX.
+// The only differences are: how the current order is looked up, how new
+// lines are added, and what label the header shows. Discriminated prop
+// keeps the branch minimal.
+export type OrderScreenProps =
+  | { mode: "dine-in"; table: RestaurantTable; onBack: () => void }
+  | { mode: "delivery"; orderId: string; onBack: () => void };
+
+export function OrderScreen(props: OrderScreenProps) {
   const {
     categories,
     menu,
     orderForTable,
+    orderById,
     addLine,
+    addLineToOrder,
     sendToKitchen,
     markPaid,
     settings,
@@ -45,25 +57,44 @@ export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack:
   const [billOpen, setBillOpen] = useState(false);
   const [kotOpen, setKotOpen] = useState(false);
   const [printBillOpen, setPrintBillOpen] = useState(false);
-  const [method, setMethod] = useState<"cash" | "qr" | "card">("cash");
+  const [method, setMethod] = useState<"cash" | "qr" | "khata">("cash");
+  // For khata payments the caller must attach a customer. Cleared each time
+  // the dialog re-opens. Delivery orders already have a customer attached
+  // from creation — in that case we skip the picker entirely and reuse it.
+  const [khataCustomerId, setKhataCustomerId] = useState<string | null>(null);
 
-  const order = orderForTable(table.id);
+  const order =
+    props.mode === "dine-in" ? orderForTable(props.table.id) : orderById(props.orderId);
   const totals = useBillTotals(order, settings.vatEnabled, settings.vatRate);
   const unsent = order?.lines.filter((l) => !l.sent).length ?? 0;
   const qty = order?.lines.reduce((s, l) => s + l.qty, 0) ?? 0;
   const items =
     activeCat === ALL_CATEGORY ? menu : menu.filter((m) => m.categoryId === activeCat);
-  const tableLabel = mergedGroup(table).map((t) => t.label).join(" + ");
+  const headerLabel =
+    props.mode === "dine-in"
+      ? mergedGroup(props.table).map((t) => t.label).join(" + ")
+      : order?.customer
+        ? `Delivery · ${order.customer.name}`
+        : "Delivery";
+  const subLabel =
+    props.mode === "dine-in"
+      ? order?.lines.length
+        ? "Draft order"
+        : "New order"
+      : order?.customer?.phone || "New delivery";
 
-  const add = (item: MenuItem, variantName?: string, price?: number) =>
-    addLine(table.id, {
+  const add = (item: MenuItem, variantName?: string, price?: number) => {
+    const line = {
       menuItemId: item.id,
       name: item.name,
       ...(variantName ? { variantName } : {}),
       price: price ?? item.price ?? 0,
       qty: 1,
       note: "",
-    });
+    };
+    if (props.mode === "dine-in") return addLine(props.table.id, line);
+    return addLineToOrder(props.orderId, line);
+  };
 
   const billPanel = (
     <BillPanel
@@ -81,14 +112,18 @@ export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack:
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
       <section className="space-y-3 pb-24 xl:pb-0">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" className="size-11 shrink-0" onClick={onBack} aria-label="Back to tables">
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-11 shrink-0"
+            onClick={props.onBack}
+            aria-label={props.mode === "dine-in" ? "Back to tables" : "Back to deliveries"}
+          >
             <ArrowLeft className="size-5" />
           </Button>
           <div className="min-w-0">
-            <h2 className="truncate font-display text-xl leading-tight">{tableLabel}</h2>
-            <p className="text-xs text-muted-foreground">
-              {order?.lines.length ? "Draft order" : "New order"}
-            </p>
+            <h2 className="truncate font-display text-xl leading-tight">{headerLabel}</h2>
+            <p className="truncate text-xs text-muted-foreground">{subLabel}</p>
           </div>
         </div>
 
@@ -147,8 +182,8 @@ export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack:
       {/* Desktop side panel */}
       <aside className="pos-card hidden h-fit flex-col p-4 xl:sticky xl:top-24 xl:flex">
         <h3 className="font-display text-lg">Running bill</h3>
-        <p className="text-xs text-muted-foreground">
-          {tableLabel} · {order?.lines.length ?? 0} line(s)
+        <p className="truncate text-xs text-muted-foreground">
+          {headerLabel} · {order?.lines.length ?? 0} line(s)
         </p>
         {billPanel}
       </aside>
@@ -159,7 +194,7 @@ export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack:
           <button className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-3 border-t border-navy-soft/40 bg-navy px-4 py-3 text-navy-foreground xl:hidden">
             <span className="flex min-w-0 items-center gap-2">
               <Receipt className="size-5 shrink-0" />
-              <span className="truncate text-sm">{qty} item{qty === 1 ? "" : "s"} · {tableLabel}</span>
+              <span className="truncate text-sm">{qty} item{qty === 1 ? "" : "s"} · {headerLabel}</span>
             </span>
             <span className="flex shrink-0 items-center gap-2">
               <span className="font-display text-lg">{NPR(totals.total)}</span>
@@ -169,7 +204,7 @@ export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack:
         </DrawerTrigger>
         <DrawerContent className="max-h-[92vh]">
           <DrawerHeader className="pb-2">
-            <DrawerTitle className="font-display text-lg">Running bill · {tableLabel}</DrawerTitle>
+            <DrawerTitle className="truncate font-display text-lg">Running bill · {headerLabel}</DrawerTitle>
           </DrawerHeader>
           <div className="overflow-y-auto px-4 pb-6">{billPanel}</div>
         </DrawerContent>
@@ -199,18 +234,30 @@ export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack:
         </DialogContent>
       </Dialog>
 
-      <Dialog open={payOpen} onOpenChange={setPayOpen}>
+      <Dialog
+        open={payOpen}
+        onOpenChange={(o) => {
+          setPayOpen(o);
+          if (!o) {
+            setMethod("cash");
+            setKhataCustomerId(null);
+          }
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="font-display text-lg">Payment · {NPR(totals.total)}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-3 gap-2">
-            {(["cash", "qr", "card"] as const).map((m) => (
+            {(["cash", "qr", "khata"] as const).map((m) => (
               <Button
                 key={m}
                 variant={method === m ? "default" : "outline"}
                 className="h-14 text-sm uppercase"
-                onClick={() => setMethod(m)}
+                onClick={() => {
+                  setMethod(m);
+                  if (m !== "khata") setKhataCustomerId(null);
+                }}
               >
                 {m}
               </Button>
@@ -225,6 +272,15 @@ export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack:
               )}
             </div>
           )}
+          {method === "khata" && (
+            <KhataCustomerStep
+              existingCustomer={order?.customer ?? null}
+              pickedId={khataCustomerId}
+              onPick={(id) => setKhataCustomerId(id)}
+              onClear={() => setKhataCustomerId(null)}
+              totalAmount={totals.total}
+            />
+          )}
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
@@ -236,13 +292,25 @@ export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack:
             </Button>
             <Button
               className="h-12 w-full"
+              disabled={
+                method === "khata" && !khataCustomerId && !order?.customer
+              }
               onClick={() => {
-                if (order) markPaid(order.id, method);
+                if (!order) return;
+                // For khata: prefer the just-picked customer, but fall back
+                // to whatever's attached to the order (delivery flow).
+                const cid =
+                  method === "khata"
+                    ? khataCustomerId ?? order.customer?.id ?? undefined
+                    : undefined;
+                markPaid(order.id, method, cid);
                 setPayOpen(false);
-                onBack();
+                setMethod("cash");
+                setKhataCustomerId(null);
+                props.onBack();
               }}
             >
-              Confirm payment
+              {method === "khata" ? "Add to Khata" : "Confirm payment"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -251,13 +319,66 @@ export function OrderScreen({ table, onBack }: { table: RestaurantTable; onBack:
       {order && (
         <>
           <PrintDialog open={kotOpen} onOpenChange={setKotOpen} title="Print KOT">
-            <KotReceipt order={order} tableLabel={tableLabel} settings={settings} />
+            <KotReceipt order={order} tableLabel={headerLabel} settings={settings} />
           </PrintDialog>
           <PrintDialog open={printBillOpen} onOpenChange={setPrintBillOpen} title="Print Bill">
-            <BillReceipt order={order} tableLabel={tableLabel} settings={settings} totals={totals} />
+            <BillReceipt order={order} tableLabel={headerLabel} settings={settings} totals={totals} />
           </PrintDialog>
         </>
       )}
+    </div>
+  );
+}
+
+// Sub-step shown inside the payment dialog when the waiter picks "khata".
+// If the order already has a customer attached (delivery flow), we just
+// show a confirmation card. Otherwise we show the CustomerPicker.
+function KhataCustomerStep({
+  existingCustomer,
+  pickedId,
+  onPick,
+  onClear,
+  totalAmount,
+}: {
+  existingCustomer: OrderCustomerRef | null;
+  pickedId: string | null;
+  onPick: (id: string) => void;
+  onClear: () => void;
+  totalAmount: number;
+}) {
+  const { customers } = usePos();
+  const pickedCustomer = pickedId ? customers.find((c) => c.id === pickedId) : null;
+  const displayCustomer = pickedCustomer ?? existingCustomer;
+
+  if (displayCustomer) {
+    return (
+      <div className="rounded-xl border-2 border-primary bg-primary/5 p-3">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-primary">
+          Adding {NPR(totalAmount)} to khata
+        </p>
+        <p className="mt-1 truncate font-medium">{displayCustomer.name}</p>
+        {displayCustomer.phone && (
+          <p className="truncate text-xs text-muted-foreground">{displayCustomer.phone}</p>
+        )}
+        {pickedCustomer && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="mt-2 text-xs font-medium text-primary hover:underline"
+          >
+            Pick a different customer
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-muted-foreground">
+        Pick the customer taking this on tab, or add a new one.
+      </p>
+      <CustomerPicker onPick={(c) => onPick(c.id)} autoFocus={false} />
     </div>
   );
 }

@@ -41,7 +41,7 @@ export function OrdersView({ showControls = false }: { showControls?: boolean })
   const [table, setTable] = useState<RestaurantTable | null>(null);
   const live = table ? (tables.find((t) => t.id === table.id) ?? table) : null;
 
-  if (live) return <OrderScreen table={live} onBack={() => setTable(null)} />;
+  if (live) return <OrderScreen mode="dine-in" table={live} onBack={() => setTable(null)} />;
 
   return (
     <div className="space-y-3">
@@ -137,7 +137,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
 
   const label = (o: OrderDto) =>
     o.type === "delivery"
-      ? (o.delivery_customer_name ?? "Delivery")
+      ? (o.customer?.name ?? "Delivery")
       : (tables.find((t) => t.id === o.table_id)?.label ?? "Walk-in");
 
   // Convert a DTO order → the client-side `Order` shape that BillReceipt +
@@ -146,16 +146,18 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
     id: o.id,
     tableId: o.table_id ?? "",
     type: o.type,
-    ...(o.type === "delivery" && o.delivery_customer_name && o.delivery_address && o.delivery_status
+    ...(o.customer
       ? {
-          delivery: {
-            customerName: o.delivery_customer_name,
-            phone: o.delivery_phone ?? "",
-            address: o.delivery_address,
-            status: o.delivery_status,
+          customerId: o.customer.id,
+          customer: {
+            id: o.customer.id,
+            name: o.customer.name,
+            phone: o.customer.phone ?? "",
+            address: o.customer.address ?? "",
           },
         }
       : {}),
+    ...(o.delivery_status ? { deliveryStatus: o.delivery_status } : {}),
     lines: o.lines
       .filter((l) => !l.is_voided)
       .map((l) => ({
@@ -373,7 +375,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
         <PrintDialog open onOpenChange={(o) => !o && setPrint(null)} title="Print Bill">
           <BillReceipt
             order={print}
-            tableLabel={print.type === "delivery" ? (print.delivery?.customerName ?? "Delivery") : (tables.find((t) => t.id === print.tableId)?.label ?? "Walk-in")}
+            tableLabel={print.type === "delivery" ? (print.customer?.name ?? "Delivery") : (tables.find((t) => t.id === print.tableId)?.label ?? "Walk-in")}
             settings={settings}
             totals={billTotals(print, settings.vatEnabled, settings.vatRate)}
           />
