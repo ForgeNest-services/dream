@@ -127,26 +127,29 @@ export function DeliveryView() {
                 <span className="shrink-0 font-display text-lg font-semibold text-primary">{NPR(totals.total)}</span>
               </div>
 
-              {o.status === "draft" ? (
+              {/* Status pillbar is always available — the delivery guy can be
+                  on-the-way before the customer pays (COD is the norm). */}
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {STATUS_ORDER.map((s) => (
+                  <Button
+                    key={s}
+                    variant={d.status === s ? "default" : "outline"}
+                    className="min-h-11 px-1 text-xs"
+                    onClick={() => setDeliveryStatus(o.id, s)}
+                  >
+                    {DELIVERY_STATUS_LABEL[s]}
+                  </Button>
+                ))}
+              </div>
+
+              {o.status === "draft" && (
                 <Button
-                  className="mt-3 w-full"
+                  variant="outline"
+                  className="mt-2 w-full"
                   onClick={() => setDraftOrderId(o.id)}
                 >
-                  Continue order
+                  Continue order · add items / mark paid
                 </Button>
-              ) : (
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  {STATUS_ORDER.map((s) => (
-                    <Button
-                      key={s}
-                      variant={d.status === s ? "default" : "outline"}
-                      className="min-h-11 px-1 text-xs"
-                      onClick={() => setDeliveryStatus(o.id, s)}
-                    >
-                      {DELIVERY_STATUS_LABEL[s]}
-                    </Button>
-                  ))}
-                </div>
               )}
             </article>
           );
