@@ -41,7 +41,7 @@ export function OrdersView({ showControls = false }: { showControls?: boolean })
   const [table, setTable] = useState<RestaurantTable | null>(null);
   const live = table ? (tables.find((t) => t.id === table.id) ?? table) : null;
 
-  if (live) return <OrderScreen table={live} onBack={() => setTable(null)} />;
+  if (live) return <OrderScreen mode="dine-in" table={live} onBack={() => setTable(null)} />;
 
   return (
     <div className="space-y-3">

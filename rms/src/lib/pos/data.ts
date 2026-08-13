@@ -204,15 +204,6 @@ export const MENU_ITEMS: MenuItem[] = [
   { id: "m20", name: "Bara", categoryId: "c7", hasVariants: false, price: 150, variants: [], soldOut: false },
 ];
 
-export const EMPLOYEES: Employee[] = [
-  { id: "e1", name: "Suman Shrestha", designation: "Manager", phone: "9801234567", salary: 45000, shift: "9:00 AM - 6:00 PM", active: true },
-  { id: "e2", name: "Bina Tamang", designation: "Waiter", phone: "9812345678", salary: 22000, shift: "11:00 AM - 9:00 PM", active: true },
-  { id: "e3", name: "Ramesh Gurung", designation: "Waiter", phone: "9843211234", salary: 21000, shift: "2:00 PM - 11:00 PM", active: true },
-  { id: "e4", name: "Kiran Magar", designation: "Chef", phone: "9856781234", salary: 38000, shift: "10:00 AM - 8:00 PM", active: true },
-  { id: "e5", name: "Anita Rai", designation: "Cashier", phone: "9800011223", salary: 25000, shift: "12:00 PM - 9:00 PM", active: false },
-];
-
-
 export const SALES_TREND = [
   { day: "Sun", sales: 42500 },
   { day: "Mon", sales: 38900 },

@@ -21,8 +21,8 @@ import {
   type InventoryItemDto,
   type StockMovementDto,
 } from "../inventory-api";
+import { employeesApi, type EmployeeDto } from "../employees-api";
 import {
-  EMPLOYEES,
   EXPENSES,
   type Category,
   type DeliveryInfo,
@@ -162,6 +162,20 @@ function toStockMovement(dto: StockMovementDto): StockMovement {
   return movement;
 }
 
+function toEmployee(dto: EmployeeDto): Employee {
+  const emp: Employee = {
+    id: dto.id,
+    name: dto.name,
+    designation: dto.designation,
+    phone: dto.phone,
+    salary: Number(dto.salary),
+    shift: dto.shift ?? "",
+    active: dto.is_active,
+  };
+  if (dto.email) emp.email = dto.email;
+  return emp;
+}
+
 function toMenuItem(m: MenuItemDto): MenuItem {
   return {
     id: m.id,
@@ -230,7 +244,16 @@ type Ctx = {
   orders: Order[];
   ordersLoading: boolean;
   orderForTable: (tableId: string) => Order | undefined;
+  orderById: (id: string) => Order | undefined;
   addLine: (tableId: string, line: Omit<OrderLine, "id" | "sent">) => Promise<void>;
+  // Direct add — caller already has the order id (used by delivery, where
+  // there's no table to look up by).
+  addLineToOrder: (orderId: string, line: Omit<OrderLine, "id" | "sent">) => Promise<void>;
+  // Create an empty delivery order (customer info required). Returns the
+  // new order id so the caller can switch into the order-taking screen for
+  // it. Kitchen doesn't see the order until Send-to-Kitchen fires, exactly
+  // like a dine-in draft.
+  createDeliveryOrder: (info: DeliveryInfo) => Promise<string | null>;
   updateLine: (
     orderId: string,
     lineId: string,
@@ -242,10 +265,6 @@ type Ctx = {
   markPaid: (orderId: string, method: "cash" | "qr" | "card") => Promise<void>;
   setKitchenStatus: (orderId: string, status: KitchenStatus) => Promise<void>;
 
-  addDeliveryOrder: (
-    info: DeliveryInfo,
-    lines: Omit<OrderLine, "id" | "sent">[],
-  ) => Promise<void>;
   setDeliveryStatus: (orderId: string, status: DeliveryStatus) => Promise<void>;
 
   inventory: InventoryItem[];
@@ -258,8 +277,9 @@ type Ctx = {
   adjustStock: (itemId: string, delta: number, reason: string, note: string) => Promise<void>;
 
   employees: Employee[];
-  saveEmployee: (emp: Employee) => void;
-  deleteEmployee: (id: string) => void;
+  employeesLoading: boolean;
+  saveEmployee: (emp: Employee) => Promise<void>;
+  deleteEmployee: (id: string) => Promise<void>;
 
   expenses: Expense[];
   saveExpense: (expense: Expense) => void;
@@ -497,7 +517,8 @@ export function PosProvider({ children }: { children: ReactNode }) {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [movements, setMovements] = useState<StockMovement[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>(EMPLOYEES);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employeesLoading, setEmployeesLoading] = useState(false);
   const [expenses, setExpenses] = useState<Expense[]>(EXPENSES);
 
   const settings = settingsMap[branchId] ?? defaultSettings(branch);
@@ -521,6 +542,27 @@ export function PosProvider({ children }: { children: ReactNode }) {
       })
       .finally(() => {
         if (!cancelled) setInventoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, branchId]);
+
+  useEffect(() => {
+    if (!session || !branchId) {
+      setEmployees([]);
+      return;
+    }
+    let cancelled = false;
+    setEmployeesLoading(true);
+    employeesApi
+      .list(branchId)
+      .then((response) => {
+        if (cancelled) return;
+        setEmployees((response.data ?? []).map(toEmployee));
+      })
+      .finally(() => {
+        if (!cancelled) setEmployeesLoading(false);
       });
     return () => {
       cancelled = true;
@@ -821,6 +863,45 @@ export function PosProvider({ children }: { children: ReactNode }) {
         : [tableId];
       return orders.find((o) => ids.includes(o.tableId) && o.status === "draft");
     },
+    orderById: (id) => orders.find((o) => o.id === id),
+    addLineToOrder: async (orderId, line) => {
+      if (!branchId) return;
+      try {
+        const linePayload = {
+          menu_item_id: line.menuItemId || null,
+          variant_name: line.variantName ?? null,
+          name: line.menuItemId ? undefined : line.name,
+          price: line.menuItemId ? undefined : line.price,
+          qty: line.qty,
+          note: line.note || null,
+        };
+        const response = await ordersApi.addLine(branchId, orderId, linePayload);
+        if (response.data) {
+          const updated = toOrder(response.data);
+          setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to add item");
+      }
+    },
+    createDeliveryOrder: async (info) => {
+      if (!branchId) return null;
+      try {
+        const created = await ordersApi.create(branchId, {
+          type: "delivery",
+          delivery_customer_name: info.customerName,
+          delivery_phone: info.phone,
+          delivery_address: info.address,
+        });
+        if (!created.data) return null;
+        const fresh = toOrder(created.data);
+        setOrders((p) => [...p, fresh]);
+        return fresh.id;
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to start delivery");
+        return null;
+      }
+    },
     addLine: async (tableId, line) => {
       if (!branchId) return;
       try {
@@ -954,45 +1035,6 @@ export function PosProvider({ children }: { children: ReactNode }) {
         toast.error(err instanceof Error ? err.message : "Failed to update kitchen status");
       }
     },
-    addDeliveryOrder: async (info, lines) => {
-      if (!branchId) return;
-      try {
-        const created = await ordersApi.create(branchId, {
-          type: "delivery",
-          delivery_customer_name: info.customerName,
-          delivery_phone: info.phone,
-          delivery_address: info.address,
-        });
-        if (!created.data) return;
-        let currentOrder: Order = toOrder(created.data);
-        setOrders((p) => [...p, currentOrder]);
-        // Sequential line adds — a delivery order rarely has more than 5–10
-        // items so 1 + N round-trips is fine, and it lets the server reject
-        // individual bad lines cleanly.
-        for (const line of lines) {
-          const response = await ordersApi.addLine(branchId, currentOrder.id, {
-            menu_item_id: line.menuItemId || null,
-            variant_name: line.variantName ?? null,
-            name: line.menuItemId ? undefined : line.name,
-            price: line.menuItemId ? undefined : line.price,
-            qty: line.qty,
-            note: line.note || null,
-          });
-          if (response.data) {
-            currentOrder = toOrder(response.data);
-            setOrders((p) => p.map((o) => (o.id === currentOrder.id ? currentOrder : o)));
-          }
-        }
-        // Fire the KOT so the kitchen sees the delivery order immediately.
-        const sent = await ordersApi.sendToKitchen(branchId, currentOrder.id);
-        if (sent.data) {
-          const updated = toOrder(sent.data);
-          setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));
-        }
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to add delivery order");
-      }
-    },
     setDeliveryStatus: async (orderId, status) => {
       if (!branchId) return;
       try {
@@ -1098,11 +1140,55 @@ export function PosProvider({ children }: { children: ReactNode }) {
     },
 
     employees,
-    saveEmployee: (emp) =>
-      setEmployees((p) =>
-        p.some((e) => e.id === emp.id) ? p.map((e) => (e.id === emp.id ? emp : e)) : [...p, emp],
-      ),
-    deleteEmployee: (id) => setEmployees((p) => p.filter((e) => e.id !== id)),
+    employeesLoading,
+    saveEmployee: async (emp) => {
+      if (!branchId) return;
+      try {
+        const existing = employees.some((e) => e.id === emp.id);
+        // Blank string in the UI means "clear this field". Backend needs the
+        // explicit clear_* flag since PATCH treats omitted keys as unchanged.
+        const clearEmail = existing && !emp.email;
+        const clearShift = existing && !emp.shift;
+        if (existing) {
+          const response = await employeesApi.update(branchId, emp.id, {
+            name: emp.name,
+            designation: emp.designation,
+            phone: emp.phone,
+            email: emp.email ?? null,
+            salary: emp.salary,
+            shift: emp.shift || null,
+            is_active: emp.active,
+            clear_email: clearEmail,
+            clear_shift: clearShift,
+          });
+          if (response.data) {
+            const updated = toEmployee(response.data);
+            setEmployees((p) => p.map((e) => (e.id === emp.id ? updated : e)));
+          }
+        } else {
+          const response = await employeesApi.create(branchId, {
+            name: emp.name,
+            designation: emp.designation,
+            phone: emp.phone,
+            email: emp.email || null,
+            salary: emp.salary,
+            shift: emp.shift || null,
+          });
+          if (response.data) setEmployees((p) => [...p, toEmployee(response.data!)]);
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to save employee");
+      }
+    },
+    deleteEmployee: async (id) => {
+      if (!branchId) return;
+      try {
+        await employeesApi.remove(branchId, id);
+        setEmployees((p) => p.filter((e) => e.id !== id));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete employee");
+      }
+    },
 
     expenses,
     saveExpense: (expense) =>
