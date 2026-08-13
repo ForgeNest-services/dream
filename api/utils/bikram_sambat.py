@@ -2,7 +2,7 @@
 
 Anchor: 2075-01-01 BS === 2018-04-14 AD.
 
-Kept in sync with restro/src/lib/pos/nepali-date.ts — same anchor, same
+Kept in sync with rms/src/lib/pos/nepali-date.ts — same anchor, same
 month-length table. When you extend the calendar past 2090 BS on either side,
 update both files together.
 
