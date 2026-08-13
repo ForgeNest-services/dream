@@ -40,6 +40,9 @@ from features.restro.schemas import (
     UpdateInventoryItemRequest,
     RestockRequest,
     AdjustStockRequest,
+    EmployeeData,
+    CreateEmployeeRequest,
+    UpdateEmployeeRequest,
 )
 from features.restro.service import RestroCredentialService, RestroAuthService
 from features.restro.category_service import CategoryService
@@ -48,6 +51,7 @@ from features.restro.zone_service import ZoneService
 from features.restro.table_service import TableService
 from features.restro.order_service import OrderService
 from features.restro.inventory_service import InventoryService
+from features.restro.employee_service import EmployeeService
 from features.restro.repository import RestroCredentialRepository
 
 
@@ -1226,6 +1230,11 @@ def set_order_delivery_status(
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
+    # Delivery is an owner/manager workflow — waiters and chefs don't get
+    # nav access to the Delivery page in the UI, but gate it here too so a
+    # rogue token can't backdoor it.
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can update delivery status")
     _assert_branch_scope(staff, branch_id)
     result = OrderService.set_delivery_status(
         db,
@@ -1451,3 +1460,116 @@ def list_inventory_movements(
             for m in result["movements"]
         ]
     )
+
+
+# ---------------------------------------------------------------------------
+# Employees (branch-scoped staff directory — Owner/Manager only, all mutations)
+# ---------------------------------------------------------------------------
+
+_EMPLOYEE_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "EMPLOYEE_NOT_FOUND": ("EMPLOYEE_NOT_FOUND", "Employee not found.", 404),
+    "INVALID_SALARY": ("INVALID_SALARY", "Salary can't be negative.", 422),
+}
+
+
+def _employee_error(code: str):
+    mapped = _EMPLOYEE_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to save employee.", 500))
+    return error_response(*mapped)
+
+
+@router.get("/branches/{branch_id}/employees")
+def list_employees(
+    branch_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    # Any staff role can READ — waiters may want to see who's on shift. Only
+    # owner/manager can create/edit/delete below.
+    _assert_branch_scope(staff, branch_id)
+    result = EmployeeService.list_for_branch(db, staff["tenant_id"], branch_id)
+    if not result["success"]:
+        return _employee_error(result["error_code"])
+    return success_response(
+        data=[EmployeeData.model_validate(e).model_dump(mode="json") for e in result["employees"]]
+    )
+
+
+@router.post("/branches/{branch_id}/employees")
+def create_employee(
+    branch_id: str,
+    data: CreateEmployeeRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can add employees")
+    _assert_branch_scope(staff, branch_id)
+    result = EmployeeService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        name=data.name,
+        designation=data.designation,
+        phone=data.phone,
+        email=data.email,
+        salary=data.salary,
+        shift=data.shift,
+    )
+    if not result["success"]:
+        return _employee_error(result["error_code"])
+    return success_response(
+        data=EmployeeData.model_validate(result["employee"]).model_dump(mode="json"),
+        message="Employee added",
+        status_code=201,
+    )
+
+
+@router.patch("/branches/{branch_id}/employees/{employee_id}")
+def update_employee(
+    branch_id: str,
+    employee_id: str,
+    data: UpdateEmployeeRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can edit employees")
+    _assert_branch_scope(staff, branch_id)
+    result = EmployeeService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        employee_id=employee_id,
+        name=data.name,
+        designation=data.designation,
+        phone=data.phone,
+        email=data.email,
+        salary=data.salary,
+        shift=data.shift,
+        is_active=data.is_active,
+        clear_email=data.clear_email,
+        clear_shift=data.clear_shift,
+    )
+    if not result["success"]:
+        return _employee_error(result["error_code"])
+    return success_response(
+        data=EmployeeData.model_validate(result["employee"]).model_dump(mode="json"),
+        message="Employee updated",
+    )
+
+
+@router.delete("/branches/{branch_id}/employees/{employee_id}")
+def delete_employee(
+    branch_id: str,
+    employee_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can delete employees")
+    _assert_branch_scope(staff, branch_id)
+    result = EmployeeService.delete(db, staff["tenant_id"], branch_id, employee_id)
+    if not result["success"]:
+        return _employee_error(result["error_code"])
+    return success_response(data={"deleted": True}, message="Employee removed")

@@ -542,3 +542,62 @@ class AdjustStockRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError("Reason is required")
         return v
+
+
+# ---------------------------------------------------------------------------
+# Employees (branch-scoped staff directory, separate from login credentials)
+# ---------------------------------------------------------------------------
+
+class EmployeeData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    name: str
+    designation: str
+    phone: str
+    email: str | None
+    salary: Decimal
+    shift: str | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateEmployeeRequest(BaseModel):
+    name: str
+    designation: str = "Waiter"
+    phone: str = ""
+    email: str | None = None
+    salary: Decimal = Decimal("0")
+    shift: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Name is required")
+        return v
+
+
+class UpdateEmployeeRequest(BaseModel):
+    name: str | None = None
+    designation: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    salary: Decimal | None = None
+    shift: str | None = None
+    is_active: bool | None = None
+    # PATCH semantics: an omitted key means "unchanged", NOT "clear". To
+    # explicitly null out email/shift the caller sets the corresponding
+    # clear_* flag.
+    clear_email: bool = False
+    clear_shift: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str | None) -> str | None:
+        if v is not None and not v.strip():
+            raise ValueError("Name is required")
+        return v
