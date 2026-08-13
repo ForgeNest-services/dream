@@ -77,13 +77,6 @@ export const DELIVERY_STATUS_LABEL: Record<DeliveryStatus, string> = {
   delivered: "Delivered",
 };
 
-export type DeliveryInfo = {
-  customerName: string;
-  phone: string;
-  address: string;
-  status: DeliveryStatus;
-};
-
 export type OrderLine = {
   id: string;
   menuItemId: string;
@@ -97,11 +90,26 @@ export type OrderLine = {
 
 export type KitchenStatus = "new" | "cooking" | "ready" | "served";
 
+// Slim customer view carried on an Order — matches OrderCustomerRef on the
+// server. Enough to render receipts and delivery cards without a second
+// fetch. Full Customer (with balance) still lives in the Customers list.
+export type OrderCustomerRef = {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+};
+
 export type Order = {
   id: string;
   tableId: string;
   type: "dine-in" | "delivery";
-  delivery?: DeliveryInfo;
+  // Present when customer_id is set on the order — always for delivery,
+  // whenever the waiter attached a customer at pay time (khata) for dine-in.
+  customerId?: string;
+  customer?: OrderCustomerRef;
+  // Only meaningful for type='delivery'.
+  deliveryStatus?: DeliveryStatus;
   lines: OrderLine[];
   status: "draft" | "paid";
   kitchenStatus: KitchenStatus;
@@ -112,9 +120,12 @@ export type Order = {
   // with — not one recomputed on read.
   placedAtBs: string;
   paidAtBs?: string;
+  // Only NULL for unsettled khata orders. For cash/qr this equals paidAt.
+  settledAt?: number;
+  settledAtBs?: string;
   discountType: "percent" | "flat";
   discountValue: number;
-  paymentMethod?: "cash" | "qr" | "card";
+  paymentMethod?: "cash" | "qr" | "khata";
   waiter: string;
 };
 
@@ -148,6 +159,17 @@ export type Employee = {
   salary: number;
   shift: string;
   active: boolean;
+};
+
+// Khata / recurring customer. `outstandingBalance` = sum of unsettled khata
+// order totals (returned by the server on customer list / detail responses).
+export type Customer = {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  notes: string;
+  outstandingBalance: number;
 };
 
 export type Settings = {

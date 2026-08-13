@@ -335,6 +335,19 @@ class OrderLineData(BaseModel):
     updated_at: datetime
 
 
+class OrderCustomerRef(BaseModel):
+    """Slim customer view embedded in Order responses — enough to show a
+    label without a second round-trip, without dragging full CustomerData
+    everywhere."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    phone: str | None
+    address: str | None
+
+
 class OrderData(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -342,6 +355,7 @@ class OrderData(BaseModel):
     tenant_id: str
     branch_id: str
     table_id: str | None
+    customer_id: str | None
     type: str
     status: str
     kitchen_status: str
@@ -349,15 +363,15 @@ class OrderData(BaseModel):
     placed_at_bs: str
     paid_at: datetime | None
     paid_at_bs: str | None
+    settled_at: datetime | None
+    settled_at_bs: str | None
     discount_type: str
     discount_value: Decimal
     payment_method: str | None
     waiter_name: str
     waiter_cred_id: str | None
-    delivery_customer_name: str | None
-    delivery_phone: str | None
-    delivery_address: str | None
     delivery_status: str | None
+    customer: OrderCustomerRef | None = None
     created_at: datetime
     updated_at: datetime
     lines: list[OrderLineData] = []
@@ -366,9 +380,8 @@ class OrderData(BaseModel):
 class CreateOrderRequest(BaseModel):
     type: str
     table_id: str | None = None
-    delivery_customer_name: str | None = None
-    delivery_phone: str | None = None
-    delivery_address: str | None = None
+    # Required for delivery, optional for dine-in.
+    customer_id: str | None = None
 
     @field_validator("type")
     @classmethod
@@ -437,12 +450,28 @@ class SetDiscountRequest(BaseModel):
 
 class MarkPaidRequest(BaseModel):
     payment_method: str
+    # Required when payment_method == 'khata' and the order doesn't already
+    # have customer_id attached (delivery orders do). Ignored for cash/qr.
+    customer_id: str | None = None
 
     @field_validator("payment_method")
     @classmethod
     def valid(cls, v: str) -> str:
-        if v not in ("cash", "qr", "card"):
-            raise ValueError("payment_method must be one of: cash, qr, card")
+        if v not in ("cash", "qr", "khata"):
+            raise ValueError("payment_method must be one of: cash, qr, khata")
+        return v
+
+
+class SettleKhataRequest(BaseModel):
+    # cash | qr — how the customer actually paid down their tab. Khata itself
+    # isn't a valid settlement (that'd be circular).
+    settlement_method: str
+
+    @field_validator("settlement_method")
+    @classmethod
+    def valid(cls, v: str) -> str:
+        if v not in ("cash", "qr"):
+            raise ValueError("settlement_method must be 'cash' or 'qr'")
         return v
 
 
@@ -600,4 +629,59 @@ class UpdateEmployeeRequest(BaseModel):
     def name_not_blank(cls, v: str | None) -> str | None:
         if v is not None and not v.strip():
             raise ValueError("Name is required")
+        return v
+
+
+# ---------------------------------------------------------------------------
+# Customers (khata / recurring customer directory)
+# ---------------------------------------------------------------------------
+
+class CustomerData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    name: str
+    phone: str | None
+    address: str | None
+    notes: str | None
+    is_active: bool
+    # Sum of unsettled khata order totals for this customer. Populated by
+    # the router when returning single-customer / list responses (defaults
+    # to 0 for freshly-created rows).
+    outstanding_balance: Decimal = Decimal("0")
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateCustomerRequest(BaseModel):
+    name: str
+    phone: str | None = None
+    address: str | None = None
+    notes: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Customer name is required")
+        return v
+
+
+class UpdateCustomerRequest(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    notes: str | None = None
+    is_active: bool | None = None
+    clear_phone: bool = False
+    clear_address: bool = False
+    clear_notes: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str | None) -> str | None:
+        if v is not None and not v.strip():
+            raise ValueError("Customer name is required")
         return v

@@ -1,26 +1,22 @@
 import { useState } from "react";
 import { Bike, Phone, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
   DELIVERY_STATUS_LABEL,
   NPR,
-  type DeliveryInfo,
   type DeliveryStatus,
 } from "@/lib/pos/data";
 import { billTotals, usePos } from "@/lib/pos/store";
 import { formatDateWithStoredBs } from "@/lib/pos/nepali-date";
 import { OrderScreen } from "./OrderScreen";
+import { CustomerPicker } from "./CustomerPicker";
 
 const STATUS_ORDER: DeliveryStatus[] = ["pending", "out", "delivered"];
 
@@ -33,14 +29,11 @@ const STATUS_STYLE: Record<DeliveryStatus, string> = {
 export function DeliveryView() {
   const { orders, setDeliveryStatus, settings, createDeliveryOrder } = usePos();
   const [filter, setFilter] = useState<"all" | DeliveryStatus>("all");
-  const [customerOpen, setCustomerOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   // When set, we render the same order-taking screen used for dine-in,
   // scoped to this delivery order id. Back returns to the list.
   const [draftOrderId, setDraftOrderId] = useState<string | null>(null);
 
-  // If the user has an in-progress delivery draft, swap the whole view for
-  // the order screen — mirrors how OrdersView swaps to OrderScreen when a
-  // table is opened.
   if (draftOrderId) {
     return (
       <OrderScreen
@@ -52,8 +45,8 @@ export function DeliveryView() {
   }
 
   const list = orders
-    .filter((o) => o.type === "delivery" && o.delivery)
-    .filter((o) => filter === "all" || o.delivery!.status === filter)
+    .filter((o) => o.type === "delivery" && o.customer)
+    .filter((o) => filter === "all" || o.deliveryStatus === filter)
     .sort((a, b) => b.placedAt - a.placedAt);
 
   return (
@@ -63,7 +56,7 @@ export function DeliveryView() {
           <h2 className="truncate font-display text-2xl">Delivery orders</h2>
           <p className="text-xs text-muted-foreground">Track and update delivery progress</p>
         </div>
-        <Button size="lg" className="h-12 shrink-0" onClick={() => setCustomerOpen(true)}>
+        <Button size="lg" className="h-12 shrink-0" onClick={() => setPickerOpen(true)}>
           <Plus className="size-5" />
           New delivery
         </Button>
@@ -85,26 +78,30 @@ export function DeliveryView() {
       <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
         {list.map((o) => {
           const totals = billTotals(o, settings.vatEnabled, settings.vatRate);
-          const d = o.delivery!;
+          const c = o.customer!;
+          const status = o.deliveryStatus ?? "pending";
+          const isKhata = o.paymentMethod === "khata";
           return (
             <article key={o.id} className="pos-card p-4">
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
                 <div className="min-w-0">
-                  <p className="truncate font-medium">{d.customerName}</p>
-                  <a
-                    href={`tel:${d.phone}`}
-                    className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground"
-                  >
-                    <Phone className="size-3.5 shrink-0" />
-                    {d.phone}
-                  </a>
+                  <p className="truncate font-medium">{c.name}</p>
+                  {c.phone && (
+                    <a
+                      href={`tel:${c.phone}`}
+                      className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground"
+                    >
+                      <Phone className="size-3.5 shrink-0" />
+                      {c.phone}
+                    </a>
+                  )}
                 </div>
-                <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] ${STATUS_STYLE[d.status]}`}>
-                  {DELIVERY_STATUS_LABEL[d.status]}
+                <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] ${STATUS_STYLE[status]}`}>
+                  {DELIVERY_STATUS_LABEL[status]}
                 </span>
               </div>
 
-              <p className="mt-2 text-sm text-muted-foreground">{d.address}</p>
+              {c.address && <p className="mt-2 text-sm text-muted-foreground">{c.address}</p>}
 
               {o.lines.length > 0 && (
                 <ul className="mt-3 space-y-1 rounded-xl bg-secondary p-3 text-sm">
@@ -124,16 +121,23 @@ export function DeliveryView() {
                 <span className="min-w-0 truncate text-xs text-muted-foreground">
                   {formatDateWithStoredBs(o.placedAt, o.placedAtBs)}
                 </span>
-                <span className="shrink-0 font-display text-lg font-semibold text-primary">{NPR(totals.total)}</span>
+                <span className="shrink-0 font-display text-lg font-semibold text-primary">
+                  {NPR(totals.total)}
+                  {isKhata && (
+                    <span className="ml-1.5 rounded-md bg-warning px-1.5 py-0.5 text-[10px] font-semibold uppercase text-navy">
+                      Khata
+                    </span>
+                  )}
+                </span>
               </div>
 
-              {/* Status pillbar is always available — the delivery guy can be
-                  on-the-way before the customer pays (COD is the norm). */}
+              {/* Status pillbar is always available — the delivery guy can
+                  be on-the-way before the customer pays (COD is the norm). */}
               <div className="mt-3 grid grid-cols-3 gap-2">
                 {STATUS_ORDER.map((s) => (
                   <Button
                     key={s}
-                    variant={d.status === s ? "default" : "outline"}
+                    variant={status === s ? "default" : "outline"}
                     className="min-h-11 px-1 text-xs"
                     onClick={() => setDeliveryStatus(o.id, s)}
                   >
@@ -162,118 +166,26 @@ export function DeliveryView() {
         )}
       </div>
 
-      <NewDeliveryDialog
-        open={customerOpen}
-        onOpenChange={setCustomerOpen}
-        onCreate={async (info) => {
-          const id = await createDeliveryOrder(info);
-          if (id) {
-            setCustomerOpen(false);
-            setDraftOrderId(id);
-          }
-        }}
-      />
-    </div>
-  );
-}
-
-function NewDeliveryDialog({
-  open,
-  onOpenChange,
-  onCreate,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onCreate: (info: DeliveryInfo) => Promise<void>;
-}) {
-  const [customerName, setCustomerName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const canSubmit = customerName.trim() && phone.trim() && address.trim() && !isSubmitting;
-
-  const reset = () => {
-    setCustomerName("");
-    setPhone("");
-    setAddress("");
-    setIsSubmitting(false);
-  };
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        if (isSubmitting) return;
-        onOpenChange(o);
-        if (!o) reset();
-      }}
-    >
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="font-display text-lg">New delivery</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>Customer name</Label>
-            <Input
-              className="h-12"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              autoFocus
-              disabled={isSubmitting}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Phone</Label>
-            <Input
-              className="h-12"
-              inputMode="tel"
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              disabled={isSubmitting}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Delivery address</Label>
-            <Textarea
-              rows={3}
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              disabled={isSubmitting}
-            />
-          </div>
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">New delivery</DialogTitle>
+          </DialogHeader>
           <p className="text-xs text-muted-foreground">
-            After Continue you'll pick items — send to kitchen and mark paid work the
-            same as a dine-in order. Delivery status becomes editable once the bill is closed.
+            Pick the customer this delivery is for, or add a new one. After you continue you'll
+            pick items — send-to-kitchen and mark-paid work the same as a dine-in order.
           </p>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" className="h-12" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
-            Cancel
-          </Button>
-          <Button
-            className="h-12"
-            disabled={!canSubmit}
-            onClick={async () => {
-              setIsSubmitting(true);
-              try {
-                await onCreate({
-                  customerName: customerName.trim(),
-                  phone: phone.trim(),
-                  address: address.trim(),
-                  status: "pending",
-                });
-              } finally {
-                setIsSubmitting(false);
+          <CustomerPicker
+            onPick={async (customer) => {
+              const id = await createDeliveryOrder(customer.id);
+              if (id) {
+                setPickerOpen(false);
+                setDraftOrderId(id);
               }
             }}
-          >
-            {isSubmitting ? "Starting…" : "Continue"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          />
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

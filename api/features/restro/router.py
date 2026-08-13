@@ -43,6 +43,10 @@ from features.restro.schemas import (
     EmployeeData,
     CreateEmployeeRequest,
     UpdateEmployeeRequest,
+    CustomerData,
+    CreateCustomerRequest,
+    UpdateCustomerRequest,
+    SettleKhataRequest,
 )
 from features.restro.service import RestroCredentialService, RestroAuthService
 from features.restro.category_service import CategoryService
@@ -52,6 +56,7 @@ from features.restro.table_service import TableService
 from features.restro.order_service import OrderService
 from features.restro.inventory_service import InventoryService
 from features.restro.employee_service import EmployeeService
+from features.restro.customer_service import CustomerService
 from features.restro.repository import RestroCredentialRepository
 
 
@@ -785,6 +790,17 @@ _ORDER_ERROR_MAP = {
     "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
     "TABLE_NOT_FOUND": ("TABLE_NOT_FOUND", "Table not found in this branch.", 404),
     "ORDER_NOT_FOUND": ("ORDER_NOT_FOUND", "Order not found.", 404),
+    "CUSTOMER_NOT_FOUND": ("CUSTOMER_NOT_FOUND", "Customer not found.", 404),
+    "CUSTOMER_REQUIRED": (
+        "CUSTOMER_REQUIRED",
+        "Delivery orders need a customer — pick one or add a new one.",
+        422,
+    ),
+    "CUSTOMER_REQUIRED_FOR_KHATA": (
+        "CUSTOMER_REQUIRED_FOR_KHATA",
+        "Khata payments need a customer — pick one or add a new one.",
+        422,
+    ),
     "LINE_NOT_FOUND": ("LINE_NOT_FOUND", "Order line not found.", 404),
     "MENU_ITEM_NOT_FOUND": (
         "MENU_ITEM_NOT_FOUND",
@@ -804,11 +820,6 @@ _ORDER_ERROR_MAP = {
     "ITEM_SOLD_OUT": ("ITEM_SOLD_OUT", "This item is sold out right now.", 409),
     "INVALID_TYPE": ("INVALID_TYPE", "type must be 'dine-in' or 'delivery'.", 422),
     "TABLE_REQUIRED": ("TABLE_REQUIRED", "table_id is required for a dine-in order.", 422),
-    "DELIVERY_INFO_REQUIRED": (
-        "DELIVERY_INFO_REQUIRED",
-        "Delivery orders need customer name, phone and address.",
-        422,
-    ),
     "TABLE_ALREADY_HAS_DRAFT": (
         "TABLE_ALREADY_HAS_DRAFT",
         "This table already has an open bill. Open the existing order instead.",
@@ -848,8 +859,18 @@ _ORDER_ERROR_MAP = {
     ),
     "INVALID_PAYMENT_METHOD": (
         "INVALID_PAYMENT_METHOD",
-        "Payment method must be one of: cash, qr, card.",
+        "Payment method must be one of: cash, qr, khata.",
         422,
+    ),
+    "INVALID_SETTLEMENT_METHOD": (
+        "INVALID_SETTLEMENT_METHOD",
+        "Settlement method must be 'cash' or 'qr'.",
+        422,
+    ),
+    "NO_BALANCE_TO_SETTLE": (
+        "NO_BALANCE_TO_SETTLE",
+        "This customer has no outstanding khata balance.",
+        409,
     ),
     "INVALID_DELIVERY_STATUS": (
         "INVALID_DELIVERY_STATUS",
@@ -1005,9 +1026,7 @@ def create_order(
         branch_id=branch_id,
         type=data.type,
         table_id=data.table_id,
-        delivery_customer_name=data.delivery_customer_name,
-        delivery_phone=data.delivery_phone,
-        delivery_address=data.delivery_address,
+        customer_id=data.customer_id,
         waiter_name=waiter_name,
         waiter_cred_id=cred_id,
     )
@@ -1198,6 +1217,7 @@ def mark_order_paid(
         branch_id=branch_id,
         order_id=order_id,
         payment_method=data.payment_method,
+        customer_id=data.customer_id,
     )
     if not result["success"]:
         return _order_error(result["error_code"])
@@ -1573,3 +1593,179 @@ def delete_employee(
     if not result["success"]:
         return _employee_error(result["error_code"])
     return success_response(data={"deleted": True}, message="Employee removed")
+
+
+# ---------------------------------------------------------------------------
+# Customers (khata / recurring customer directory)
+# Waiters CAN create + read (they need to pick a customer during payment).
+# Only owner/manager can edit + delete.
+# ---------------------------------------------------------------------------
+
+_CUSTOMER_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "CUSTOMER_NOT_FOUND": ("CUSTOMER_NOT_FOUND", "Customer not found.", 404),
+    "PHONE_TAKEN": (
+        "PHONE_TAKEN",
+        "A customer with this phone number already exists in this branch.",
+        409,
+    ),
+}
+
+
+def _customer_error(code: str):
+    mapped = _CUSTOMER_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to save customer.", 500))
+    return error_response(*mapped)
+
+
+def _customer_payload(db: Session, tenant_id: str, customer) -> dict:
+    """Serialize a customer with computed outstanding_balance. Kept in the
+    router so the service layer stays balance-computation-agnostic."""
+    payload = CustomerData.model_validate(customer).model_dump(mode="json")
+    payload["outstanding_balance"] = str(
+        OrderService.outstanding_balance(db, tenant_id, customer.id)
+    )
+    return payload
+
+
+@router.get("/branches/{branch_id}/customers")
+def list_customers(
+    branch_id: str,
+    q: str | None = None,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = CustomerService.list_for_branch(db, staff["tenant_id"], branch_id, q)
+    if not result["success"]:
+        return _customer_error(result["error_code"])
+    # N+1 for now — each customer runs a balance query. Fine for MVP scale
+    # (<100 customers/branch). If it becomes hot, replace with a single
+    # aggregate JOIN query in the repo.
+    return success_response(
+        data=[_customer_payload(db, staff["tenant_id"], c) for c in result["customers"]]
+    )
+
+
+@router.post("/branches/{branch_id}/customers")
+def create_customer(
+    branch_id: str,
+    data: CreateCustomerRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    # Any staff (incl. waiter) can create — they may need to add a fresh
+    # customer inline while closing an order as khata.
+    _assert_branch_scope(staff, branch_id)
+    result = CustomerService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        name=data.name,
+        phone=data.phone,
+        address=data.address,
+        notes=data.notes,
+    )
+    if not result["success"]:
+        # Return the existing customer alongside the error so the client can
+        # offer "use existing" instead of forcing a retry with a new phone.
+        if result["error_code"] == "PHONE_TAKEN" and result.get("existing_customer"):
+            existing = CustomerData.model_validate(result["existing_customer"]).model_dump(mode="json")
+            return error_response(
+                "PHONE_TAKEN",
+                "A customer with this phone number already exists in this branch.",
+                409,
+                details={"existing_customer": existing},
+            )
+        return _customer_error(result["error_code"])
+    return success_response(
+        data=_customer_payload(db, staff["tenant_id"], result["customer"]),
+        message="Customer added",
+        status_code=201,
+    )
+
+
+@router.patch("/branches/{branch_id}/customers/{customer_id}")
+def update_customer(
+    branch_id: str,
+    customer_id: str,
+    data: UpdateCustomerRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can edit customers")
+    _assert_branch_scope(staff, branch_id)
+    result = CustomerService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        customer_id=customer_id,
+        name=data.name,
+        phone=data.phone,
+        address=data.address,
+        notes=data.notes,
+        is_active=data.is_active,
+        clear_phone=data.clear_phone,
+        clear_address=data.clear_address,
+        clear_notes=data.clear_notes,
+    )
+    if not result["success"]:
+        return _customer_error(result["error_code"])
+    return success_response(
+        data=_customer_payload(db, staff["tenant_id"], result["customer"]),
+        message="Customer updated",
+    )
+
+
+@router.delete("/branches/{branch_id}/customers/{customer_id}")
+def delete_customer(
+    branch_id: str,
+    customer_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can delete customers")
+    _assert_branch_scope(staff, branch_id)
+    result = CustomerService.delete(db, staff["tenant_id"], branch_id, customer_id)
+    if not result["success"]:
+        return _customer_error(result["error_code"])
+    return success_response(data={"deleted": True}, message="Customer removed")
+
+
+@router.post("/branches/{branch_id}/customers/{customer_id}/settle-khata")
+def settle_khata(
+    branch_id: str,
+    customer_id: str,
+    data: SettleKhataRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    # Settlement is an owner/manager action — it's the cash-drawer moment.
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can settle khata balances")
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.settle_khata(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        customer_id=customer_id,
+        settlement_method=data.settlement_method,
+    )
+    if not result["success"]:
+        # Reuse the order error map for settlement-specific codes; fall back
+        # to a generic message otherwise.
+        return _order_error(result["error_code"])
+    # After settlement, fetch the customer fresh so the response includes the
+    # now-zero balance — callers use this to update their UI in one round-trip.
+    from features.restro.customer_repository import CustomerRepository
+    customer = CustomerRepository.get_by_id(db, staff["tenant_id"], customer_id)
+    return success_response(
+        data={
+            "orders_settled": result["orders_settled"],
+            "amount_settled": str(result["amount_settled"]),
+            "settlement_method": result["settlement_method"],
+            "customer": _customer_payload(db, staff["tenant_id"], customer),
+        },
+        message=f"Settled {result['orders_settled']} order(s) via {result['settlement_method']}",
+    )

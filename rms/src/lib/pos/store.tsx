@@ -22,10 +22,11 @@ import {
   type StockMovementDto,
 } from "../inventory-api";
 import { employeesApi, type EmployeeDto } from "../employees-api";
+import { customersApi, type CustomerDto } from "../customers-api";
 import {
   EXPENSES,
   type Category,
-  type DeliveryInfo,
+  type Customer,
   type DeliveryStatus,
   type Employee,
   type Expense,
@@ -111,21 +112,19 @@ function toOrder(o: OrderDto): Order {
     waiter: o.waiter_name,
   };
   if (o.paid_at_bs) order.paidAtBs = o.paid_at_bs;
+  if (o.settled_at) order.settledAt = new Date(o.settled_at).getTime();
+  if (o.settled_at_bs) order.settledAtBs = o.settled_at_bs;
   if (o.payment_method) order.paymentMethod = o.payment_method;
-  if (
-    o.type === "delivery" &&
-    o.delivery_customer_name &&
-    o.delivery_phone !== null &&
-    o.delivery_address &&
-    o.delivery_status
-  ) {
-    order.delivery = {
-      customerName: o.delivery_customer_name,
-      phone: o.delivery_phone,
-      address: o.delivery_address,
-      status: o.delivery_status,
+  if (o.customer_id) order.customerId = o.customer_id;
+  if (o.customer) {
+    order.customer = {
+      id: o.customer.id,
+      name: o.customer.name,
+      phone: o.customer.phone ?? "",
+      address: o.customer.address ?? "",
     };
   }
+  if (o.delivery_status) order.deliveryStatus = o.delivery_status;
   return order;
 }
 
@@ -174,6 +173,17 @@ function toEmployee(dto: EmployeeDto): Employee {
   };
   if (dto.email) emp.email = dto.email;
   return emp;
+}
+
+function toCustomer(dto: CustomerDto): Customer {
+  return {
+    id: dto.id,
+    name: dto.name,
+    phone: dto.phone ?? "",
+    address: dto.address ?? "",
+    notes: dto.notes ?? "",
+    outstandingBalance: Number(dto.outstanding_balance ?? 0),
+  };
 }
 
 function toMenuItem(m: MenuItemDto): MenuItem {
@@ -253,7 +263,10 @@ type Ctx = {
   // new order id so the caller can switch into the order-taking screen for
   // it. Kitchen doesn't see the order until Send-to-Kitchen fires, exactly
   // like a dine-in draft.
-  createDeliveryOrder: (info: DeliveryInfo) => Promise<string | null>;
+  // Creates an empty delivery order attached to the given (existing)
+  // customer. Returns the new order id so the caller can immediately switch
+  // into the order-taking screen for it.
+  createDeliveryOrder: (customerId: string) => Promise<string | null>;
   updateLine: (
     orderId: string,
     lineId: string,
@@ -262,7 +275,14 @@ type Ctx = {
   removeLine: (orderId: string, lineId: string) => Promise<void>;
   sendToKitchen: (orderId: string) => Promise<void>;
   setDiscount: (orderId: string, type: "percent" | "flat", value: number) => Promise<void>;
-  markPaid: (orderId: string, method: "cash" | "qr" | "card") => Promise<void>;
+  // For khata, pass a customerId — if omitted, uses the customer already
+  // attached to the order (delivery orders always have one). For cash/qr,
+  // customerId is ignored.
+  markPaid: (
+    orderId: string,
+    method: "cash" | "qr" | "khata",
+    customerId?: string,
+  ) => Promise<void>;
   setKitchenStatus: (orderId: string, status: KitchenStatus) => Promise<void>;
 
   setDeliveryStatus: (orderId: string, status: DeliveryStatus) => Promise<void>;
@@ -280,6 +300,22 @@ type Ctx = {
   employeesLoading: boolean;
   saveEmployee: (emp: Employee) => Promise<void>;
   deleteEmployee: (id: string) => Promise<void>;
+
+  customers: Customer[];
+  customersLoading: boolean;
+  // Returns the saved customer so callers (e.g. inline "add during payment"
+  // pickers) can immediately select the just-created row without waiting for
+  // the next list refresh.
+  saveCustomer: (customer: Customer) => Promise<Customer | null>;
+  deleteCustomer: (id: string) => Promise<void>;
+  refreshCustomers: () => Promise<void>;
+  // Settles the customer's entire outstanding khata via cash or qr. Returns
+  // { orders_settled, amount_settled } for a toast; refreshes the customer
+  // (balance goes to 0) in the store.
+  settleKhata: (
+    customerId: string,
+    method: "cash" | "qr",
+  ) => Promise<{ ordersSettled: number; amountSettled: number } | null>;
 
   expenses: Expense[];
   saveExpense: (expense: Expense) => void;
@@ -519,6 +555,8 @@ export function PosProvider({ children }: { children: ReactNode }) {
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeesLoading, setEmployeesLoading] = useState(false);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(false);
   const [expenses, setExpenses] = useState<Expense[]>(EXPENSES);
 
   const settings = settingsMap[branchId] ?? defaultSettings(branch);
@@ -563,6 +601,27 @@ export function PosProvider({ children }: { children: ReactNode }) {
       })
       .finally(() => {
         if (!cancelled) setEmployeesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, branchId]);
+
+  useEffect(() => {
+    if (!session || !branchId) {
+      setCustomers([]);
+      return;
+    }
+    let cancelled = false;
+    setCustomersLoading(true);
+    customersApi
+      .list(branchId)
+      .then((response) => {
+        if (cancelled) return;
+        setCustomers((response.data ?? []).map(toCustomer));
+      })
+      .finally(() => {
+        if (!cancelled) setCustomersLoading(false);
       });
     return () => {
       cancelled = true;
@@ -884,14 +943,12 @@ export function PosProvider({ children }: { children: ReactNode }) {
         toast.error(err instanceof Error ? err.message : "Failed to add item");
       }
     },
-    createDeliveryOrder: async (info) => {
+    createDeliveryOrder: async (customerId) => {
       if (!branchId) return null;
       try {
         const created = await ordersApi.create(branchId, {
           type: "delivery",
-          delivery_customer_name: info.customerName,
-          delivery_phone: info.phone,
-          delivery_address: info.address,
+          customer_id: customerId,
         });
         if (!created.data) return null;
         const fresh = toOrder(created.data);
@@ -1008,17 +1065,25 @@ export function PosProvider({ children }: { children: ReactNode }) {
         toast.error(err instanceof Error ? err.message : "Failed to set discount");
       }
     },
-    markPaid: async (orderId, method) => {
+    markPaid: async (orderId, method, customerId) => {
       if (!branchId) return;
       try {
         const current = orders.find((o) => o.id === orderId);
-        const response = await ordersApi.markPaid(branchId, orderId, method);
+        const response = await ordersApi.markPaid(branchId, orderId, method, customerId);
         if (response.data) {
           const updated = toOrder(response.data);
           setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));
         }
         // Backend frees the table (whole merge group). Mirror locally.
         if (current?.tableId) setTableStatus(current.tableId, "empty");
+        // A new khata order just accrued balance for the customer — refresh
+        // the customer list so the outstanding badge updates without a page
+        // reload.
+        if (method === "khata") {
+          void customersApi.list(branchId).then((r) => {
+            setCustomers((r.data ?? []).map(toCustomer));
+          });
+        }
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to mark paid");
       }
@@ -1187,6 +1252,86 @@ export function PosProvider({ children }: { children: ReactNode }) {
         setEmployees((p) => p.filter((e) => e.id !== id));
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to delete employee");
+      }
+    },
+
+    customers,
+    customersLoading,
+    saveCustomer: async (c) => {
+      if (!branchId) return null;
+      try {
+        const existing = customers.some((x) => x.id === c.id);
+        if (existing) {
+          const response = await customersApi.update(branchId, c.id, {
+            name: c.name,
+            phone: c.phone || null,
+            address: c.address || null,
+            notes: c.notes || null,
+            clear_phone: !c.phone,
+            clear_address: !c.address,
+            clear_notes: !c.notes,
+          });
+          if (response.data) {
+            const updated = toCustomer(response.data);
+            setCustomers((p) => p.map((x) => (x.id === c.id ? updated : x)));
+            return updated;
+          }
+        } else {
+          const response = await customersApi.create(branchId, {
+            name: c.name,
+            phone: c.phone || null,
+            address: c.address || null,
+            notes: c.notes || null,
+          });
+          if (response.data) {
+            const created = toCustomer(response.data);
+            setCustomers((p) => [...p, created].sort((a, b) => a.name.localeCompare(b.name)));
+            return created;
+          }
+        }
+        return null;
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to save customer");
+        return null;
+      }
+    },
+    deleteCustomer: async (id) => {
+      if (!branchId) return;
+      try {
+        await customersApi.remove(branchId, id);
+        setCustomers((p) => p.filter((x) => x.id !== id));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete customer");
+      }
+    },
+    refreshCustomers: async () => {
+      if (!branchId) return;
+      const response = await customersApi.list(branchId);
+      setCustomers((response.data ?? []).map(toCustomer));
+    },
+    settleKhata: async (customerId, method) => {
+      if (!branchId) return null;
+      try {
+        const response = await customersApi.settleKhata(branchId, customerId, method);
+        if (!response.data) return null;
+        // Splice the freshly-zeroed customer in place so the UI updates without
+        // a full refetch.
+        const updated = toCustomer(response.data.customer);
+        setCustomers((p) => p.map((x) => (x.id === customerId ? updated : x)));
+        // Also patch any orders in-cache — settled_at just got populated.
+        void ordersApi.list(branchId, { limit: 200 }).then((r) => {
+          const fetched = (r.data ?? [])
+            .filter((o) => o.status !== "cancelled")
+            .map(toOrder);
+          setOrders(fetched);
+        });
+        return {
+          ordersSettled: response.data.orders_settled,
+          amountSettled: Number(response.data.amount_settled),
+        };
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to settle khata");
+        return null;
       }
     },
 

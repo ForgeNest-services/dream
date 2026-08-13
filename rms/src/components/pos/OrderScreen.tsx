@@ -19,9 +19,10 @@ import {
   DrawerTrigger,
 } from "@/components/ui/drawer";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { NPR, type MenuItem, type Order, type RestaurantTable } from "@/lib/pos/data";
+import { NPR, type MenuItem, type Order, type OrderCustomerRef, type RestaurantTable } from "@/lib/pos/data";
 import { useBillTotals, usePos } from "@/lib/pos/store";
 import { BillReceipt, KotReceipt, PrintDialog } from "./ThermalPrint";
+import { CustomerPicker } from "./CustomerPicker";
 
 // Frontend-only pseudo-category. "All" shows every menu item across every
 // real category — never sent to the backend.
@@ -56,7 +57,11 @@ export function OrderScreen(props: OrderScreenProps) {
   const [billOpen, setBillOpen] = useState(false);
   const [kotOpen, setKotOpen] = useState(false);
   const [printBillOpen, setPrintBillOpen] = useState(false);
-  const [method, setMethod] = useState<"cash" | "qr" | "card">("cash");
+  const [method, setMethod] = useState<"cash" | "qr" | "khata">("cash");
+  // For khata payments the caller must attach a customer. Cleared each time
+  // the dialog re-opens. Delivery orders already have a customer attached
+  // from creation — in that case we skip the picker entirely and reuse it.
+  const [khataCustomerId, setKhataCustomerId] = useState<string | null>(null);
 
   const order =
     props.mode === "dine-in" ? orderForTable(props.table.id) : orderById(props.orderId);
@@ -68,15 +73,15 @@ export function OrderScreen(props: OrderScreenProps) {
   const headerLabel =
     props.mode === "dine-in"
       ? mergedGroup(props.table).map((t) => t.label).join(" + ")
-      : order?.delivery
-        ? `Delivery · ${order.delivery.customerName}`
+      : order?.customer
+        ? `Delivery · ${order.customer.name}`
         : "Delivery";
   const subLabel =
     props.mode === "dine-in"
       ? order?.lines.length
         ? "Draft order"
         : "New order"
-      : order?.delivery?.phone || "New delivery";
+      : order?.customer?.phone || "New delivery";
 
   const add = (item: MenuItem, variantName?: string, price?: number) => {
     const line = {
@@ -229,18 +234,30 @@ export function OrderScreen(props: OrderScreenProps) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={payOpen} onOpenChange={setPayOpen}>
+      <Dialog
+        open={payOpen}
+        onOpenChange={(o) => {
+          setPayOpen(o);
+          if (!o) {
+            setMethod("cash");
+            setKhataCustomerId(null);
+          }
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="font-display text-lg">Payment · {NPR(totals.total)}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-3 gap-2">
-            {(["cash", "qr", "card"] as const).map((m) => (
+            {(["cash", "qr", "khata"] as const).map((m) => (
               <Button
                 key={m}
                 variant={method === m ? "default" : "outline"}
                 className="h-14 text-sm uppercase"
-                onClick={() => setMethod(m)}
+                onClick={() => {
+                  setMethod(m);
+                  if (m !== "khata") setKhataCustomerId(null);
+                }}
               >
                 {m}
               </Button>
@@ -255,6 +272,15 @@ export function OrderScreen(props: OrderScreenProps) {
               )}
             </div>
           )}
+          {method === "khata" && (
+            <KhataCustomerStep
+              existingCustomer={order?.customer ?? null}
+              pickedId={khataCustomerId}
+              onPick={(id) => setKhataCustomerId(id)}
+              onClear={() => setKhataCustomerId(null)}
+              totalAmount={totals.total}
+            />
+          )}
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
@@ -266,13 +292,25 @@ export function OrderScreen(props: OrderScreenProps) {
             </Button>
             <Button
               className="h-12 w-full"
+              disabled={
+                method === "khata" && !khataCustomerId && !order?.customer
+              }
               onClick={() => {
-                if (order) markPaid(order.id, method);
+                if (!order) return;
+                // For khata: prefer the just-picked customer, but fall back
+                // to whatever's attached to the order (delivery flow).
+                const cid =
+                  method === "khata"
+                    ? khataCustomerId ?? order.customer?.id ?? undefined
+                    : undefined;
+                markPaid(order.id, method, cid);
                 setPayOpen(false);
+                setMethod("cash");
+                setKhataCustomerId(null);
                 props.onBack();
               }}
             >
-              Confirm payment
+              {method === "khata" ? "Add to Khata" : "Confirm payment"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -288,6 +326,59 @@ export function OrderScreen(props: OrderScreenProps) {
           </PrintDialog>
         </>
       )}
+    </div>
+  );
+}
+
+// Sub-step shown inside the payment dialog when the waiter picks "khata".
+// If the order already has a customer attached (delivery flow), we just
+// show a confirmation card. Otherwise we show the CustomerPicker.
+function KhataCustomerStep({
+  existingCustomer,
+  pickedId,
+  onPick,
+  onClear,
+  totalAmount,
+}: {
+  existingCustomer: OrderCustomerRef | null;
+  pickedId: string | null;
+  onPick: (id: string) => void;
+  onClear: () => void;
+  totalAmount: number;
+}) {
+  const { customers } = usePos();
+  const pickedCustomer = pickedId ? customers.find((c) => c.id === pickedId) : null;
+  const displayCustomer = pickedCustomer ?? existingCustomer;
+
+  if (displayCustomer) {
+    return (
+      <div className="rounded-xl border-2 border-primary bg-primary/5 p-3">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-primary">
+          Adding {NPR(totalAmount)} to khata
+        </p>
+        <p className="mt-1 truncate font-medium">{displayCustomer.name}</p>
+        {displayCustomer.phone && (
+          <p className="truncate text-xs text-muted-foreground">{displayCustomer.phone}</p>
+        )}
+        {pickedCustomer && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="mt-2 text-xs font-medium text-primary hover:underline"
+          >
+            Pick a different customer
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-muted-foreground">
+        Pick the customer taking this on tab, or add a new one.
+      </p>
+      <CustomerPicker onPick={(c) => onPick(c.id)} autoFocus={false} />
     </div>
   );
 }

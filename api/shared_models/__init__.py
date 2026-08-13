@@ -18,6 +18,7 @@ from .restro_order_line import RestroOrderLine
 from .restro_inventory_item import RestroInventoryItem
 from .restro_stock_movement import RestroStockMovement
 from .restro_employee import RestroEmployee
+from .restro_customer import RestroCustomer
 from .app import App
 
 __all__ = [
@@ -41,5 +42,6 @@ __all__ = [
     "RestroInventoryItem",
     "RestroStockMovement",
     "RestroEmployee",
+    "RestroCustomer",
     "App",
 ]

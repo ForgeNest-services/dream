@@ -46,7 +46,7 @@ export function ReportsView() {
 
   const label = (o: (typeof orders)[number]) =>
     o.type === "delivery"
-      ? (o.delivery?.customerName ?? "Delivery")
+      ? (o.customer?.name ?? "Delivery")
       : (tables.find((t) => t.id === o.tableId)?.label ?? "Walk-in");
 
   const totalSales = filtered

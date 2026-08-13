@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from sqlalchemy import and_, or_, func
 from sqlalchemy.orm import Session
-from shared_models import RestroOrder, RestroOrderLine, RestroTable
+from shared_models import RestroOrder, RestroOrderLine, RestroTable, RestroCustomer
 from utils.bikram_sambat import to_bs_iso
 
 
@@ -10,7 +10,13 @@ ORDER_TYPES = {"dine-in", "delivery"}
 ORDER_STATUSES = {"draft", "paid", "cancelled"}
 KITCHEN_STATUSES = {"new", "cooking", "ready", "served"}
 DELIVERY_STATUSES = {"pending", "out", "delivered"}
-PAYMENT_METHODS = {"cash", "qr", "card"}
+# `card` was dropped when we replaced it with `khata` (running tab) — Nepal
+# doesn't have widespread card infra anyway and khata is what shopkeepers
+# actually use.
+PAYMENT_METHODS = {"cash", "qr", "khata"}
+# Only these two are valid when *settling* a khata balance (customer paying
+# down their tab). Khata itself isn't a valid settlement — that'd be circular.
+KHATA_SETTLEMENT_METHODS = {"cash", "qr"}
 DISCOUNT_TYPES = {"percent", "flat"}
 
 
@@ -28,9 +34,7 @@ class OrderRepository:
         waiter_name: str,
         waiter_cred_id: str | None,
         table_id: str | None = None,
-        delivery_customer_name: str | None = None,
-        delivery_phone: str | None = None,
-        delivery_address: str | None = None,
+        customer_id: str | None = None,
     ) -> RestroOrder:
         # Snapshot placed_at + its BS equivalent together. Using an explicit
         # timestamp (instead of relying on the model default) so both columns
@@ -44,13 +48,11 @@ class OrderRepository:
             status="draft",
             kitchen_status="new",
             table_id=table_id,
+            customer_id=customer_id,
             placed_at=now,
             placed_at_bs=to_bs_iso(now) or "",
             waiter_name=waiter_name,
             waiter_cred_id=waiter_cred_id,
-            delivery_customer_name=delivery_customer_name,
-            delivery_phone=delivery_phone,
-            delivery_address=delivery_address,
             delivery_status="pending" if type == "delivery" else None,
         )
         db.add(order)
@@ -101,18 +103,22 @@ class OrderRepository:
             query = query.filter(RestroOrder.placed_at_bs >= bs_from)
         if bs_to:
             query = query.filter(RestroOrder.placed_at_bs <= bs_to)
-        # Search across waiter, delivery customer/phone, table label, and
-        # short id slice. Only outer-joins when actually searching so the
-        # store's plain "give me last N" fetch stays cheap.
+        # Search across waiter, customer name/phone, table label, and short
+        # id slice. Only outer-joins when actually searching so the store's
+        # plain "give me last N" fetch stays cheap.
         if search:
             term = f"%{search.lower()}%"
-            query = query.outerjoin(RestroTable, RestroOrder.table_id == RestroTable.id).filter(
-                or_(
-                    func.lower(RestroOrder.waiter_name).like(term),
-                    func.lower(RestroOrder.delivery_customer_name).like(term),
-                    func.lower(RestroOrder.delivery_phone).like(term),
-                    func.lower(RestroTable.label).like(term),
-                    func.lower(RestroOrder.id).like(term),
+            query = (
+                query.outerjoin(RestroTable, RestroOrder.table_id == RestroTable.id)
+                .outerjoin(RestroCustomer, RestroOrder.customer_id == RestroCustomer.id)
+                .filter(
+                    or_(
+                        func.lower(RestroOrder.waiter_name).like(term),
+                        func.lower(RestroCustomer.name).like(term),
+                        func.lower(RestroCustomer.phone).like(term),
+                        func.lower(RestroTable.label).like(term),
+                        func.lower(RestroOrder.id).like(term),
+                    )
                 )
             )
         return query
@@ -230,6 +236,9 @@ class OrderRepository:
         kitchen_status: str | None = None,
         paid_at: datetime | None = None,
         payment_method: str | None = None,
+        customer_id: str | None = None,
+        settled_at: datetime | None = None,
+        clear_settled_at: bool = False,
     ) -> RestroOrder:
         if status is not None:
             order.status = status
@@ -241,9 +250,55 @@ class OrderRepository:
             order.paid_at_bs = to_bs_iso(paid_at)
         if payment_method is not None:
             order.payment_method = payment_method
+        if customer_id is not None:
+            order.customer_id = customer_id
+        # clear_settled_at wins over settled_at so a khata mark-paid can
+        # explicitly null it in the same call that also sets paid_at.
+        if clear_settled_at:
+            order.settled_at = None
+            order.settled_at_bs = None
+        elif settled_at is not None:
+            order.settled_at = settled_at
+            order.settled_at_bs = to_bs_iso(settled_at)
         db.commit()
         db.refresh(order)
         return order
+
+    @staticmethod
+    def list_unsettled_khata_for_customer(
+        db: Session, tenant_id: str, customer_id: str
+    ) -> list[RestroOrder]:
+        """Every khata order that hasn't been paid off yet. Used both by
+        balance-computation and by the settle endpoint (which flips each
+        row's settled_at to now())."""
+        return (
+            db.query(RestroOrder)
+            .filter(
+                RestroOrder.tenant_id == tenant_id,
+                RestroOrder.customer_id == customer_id,
+                RestroOrder.payment_method == "khata",
+                RestroOrder.settled_at.is_(None),
+                RestroOrder.status == "paid",
+            )
+            .order_by(RestroOrder.placed_at.asc())
+            .all()
+        )
+
+    @staticmethod
+    def settle_khata_for_customer(
+        db: Session, tenant_id: str, customer_id: str
+    ) -> int:
+        """Flips settled_at = now() on every unsettled khata order for the
+        given customer. Returns the count of rows updated. Idempotent — a
+        second call finds nothing to settle and returns 0."""
+        rows = OrderRepository.list_unsettled_khata_for_customer(db, tenant_id, customer_id)
+        now = datetime.now(timezone.utc)
+        bs = to_bs_iso(now)
+        for order in rows:
+            order.settled_at = now
+            order.settled_at_bs = bs
+        db.commit()
+        return len(rows)
 
     @staticmethod
     def set_discount(
