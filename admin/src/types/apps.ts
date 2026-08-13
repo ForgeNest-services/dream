@@ -73,12 +73,16 @@ export const RESTRO_ROLES = [
   { code: 'chef', label: 'Chef' },
 ] as const;
 
+// Keyed on the display `code` stored in the apps catalog row (renamed to
+// srota_pms / srota_rms during the Srota rebrand). The backend API prefixes
+// intentionally stay /hotel-pms and /restro — those are the actual FastAPI
+// router prefixes, unrelated to the display code.
 export const APP_CODE_TO_API_PREFIX: Record<string, string> = {
-  hotel_pms: '/hotel-pms',
-  restro: '/restro',
+  srota_pms: '/hotel-pms',
+  srota_rms: '/restro',
 };
 
 export const APP_CODE_TO_ROLES: Record<string, ReadonlyArray<{ code: string; label: string }>> = {
-  hotel_pms: HOTEL_PMS_ROLES,
-  restro: RESTRO_ROLES,
+  srota_pms: HOTEL_PMS_ROLES,
+  srota_rms: RESTRO_ROLES,
 };
