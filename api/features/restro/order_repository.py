@@ -133,23 +133,29 @@ class OrderRepository:
             query = query.filter(RestroOrder.placed_at_bs >= bs_from)
         if bs_to:
             query = query.filter(RestroOrder.placed_at_bs <= bs_to)
-        # Search across waiter, customer name/phone, table label, and short
-        # id slice. Only outer-joins when actually searching so the store's
-        # plain "give me last N" fetch stays cheap.
+        # Search across waiter, customer name/phone, table label, and — for
+        # digit-only queries — the exact bill number. UUID matching was
+        # removed because UUIDs contain every digit and character; searching
+        # "1" matched most rows. Digit-only-as-bill-number is what a waiter
+        # actually types when they want "bill 42".
         if search:
-            term = f"%{search.lower()}%"
+            term_raw = search.strip()
+            term = f"%{term_raw.lower()}%"
+            conditions = [
+                func.lower(RestroOrder.waiter_name).like(term),
+                func.lower(RestroCustomer.name).like(term),
+                func.lower(RestroCustomer.phone).like(term),
+                func.lower(RestroTable.label).like(term),
+            ]
+            if term_raw.isdigit():
+                try:
+                    conditions.append(RestroOrder.bill_number == int(term_raw))
+                except ValueError:
+                    pass
             query = (
                 query.outerjoin(RestroTable, RestroOrder.table_id == RestroTable.id)
                 .outerjoin(RestroCustomer, RestroOrder.customer_id == RestroCustomer.id)
-                .filter(
-                    or_(
-                        func.lower(RestroOrder.waiter_name).like(term),
-                        func.lower(RestroCustomer.name).like(term),
-                        func.lower(RestroCustomer.phone).like(term),
-                        func.lower(RestroTable.label).like(term),
-                        func.lower(RestroOrder.id).like(term),
-                    )
-                )
+                .filter(or_(*conditions))
             )
         return query
 

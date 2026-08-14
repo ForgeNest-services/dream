@@ -87,7 +87,7 @@ export function OrdersView({ showControls = false }: { showControls?: boolean })
 const PER_PAGE_OPTIONS = [10, 25, 50, 100] as const;
 
 function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
-  const { tables, settings, branchId } = usePos();
+  const { tables, settings, branchId, customers } = usePos();
   const search = useSearch({ from: ORDERS_ROUTE });
   const navigate = useNavigate();
 
@@ -220,7 +220,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="h-12 pl-9"
-            placeholder="Search bill id, waiter, table, delivery name or phone"
+            placeholder="Bill #, waiter, table, customer name or phone"
             value={qInput}
             onChange={(e) => setQInput(e.target.value)}
           />
@@ -285,6 +285,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
               <th className="py-3 pr-3">Table / Customer</th>
               <th className="py-3 pr-3">Date</th>
               <th className="py-3 pr-3">Status</th>
+              <th className="py-3 pr-3">Paid via</th>
               <th className="py-3 pr-3">Total</th>
               <th className="py-3 text-right">Actions</th>
             </tr>
@@ -302,30 +303,47 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
                   </td>
                   <td className="py-3 pr-3">
                     {(() => {
-                      // Khata orders are technically status='paid' (closed at
-                      // the till) but the money hasn't landed yet — say so
-                      // explicitly instead of the ambiguous "Settled".
                       const isKhata =
                         o.status === "paid" && o.payment_method === "khata";
+                      // Khata order flips to "Settled" once the customer's
+                      // overall balance is zero (paid off via the ledger).
+                      // We do it at the customer level because settlements
+                      // aren't attributed to individual orders.
+                      const customerCleared =
+                        isKhata &&
+                        o.customer_id &&
+                        (customers.find((c) => c.id === o.customer_id)?.outstandingBalance ?? 0) === 0;
                       const label =
                         o.status === "draft"
                           ? "Active"
                           : o.status === "paid"
                             ? isKhata
-                              ? "Khata"
+                              ? customerCleared
+                                ? "Settled"
+                                : "Khata"
                               : "Settled"
                             : "Cancelled";
-                      const cls = isKhata
-                        ? "bg-warning text-navy"
-                        : o.status !== "draft"
-                          ? "bg-secondary text-foreground"
-                          : "bg-primary/15 text-primary";
+                      const cls =
+                        isKhata && !customerCleared
+                          ? "bg-warning text-navy"
+                          : o.status !== "draft"
+                            ? "bg-success/15 text-success"
+                            : "bg-primary/15 text-primary";
                       return (
                         <span className={`rounded-lg px-2 py-1 text-xs font-medium ${cls}`}>
                           {label}
                         </span>
                       );
                     })()}
+                  </td>
+                  <td className="py-3 pr-3">
+                    {o.payment_method ? (
+                      <span className="rounded-md bg-secondary px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {o.payment_method}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="py-3 pr-3 font-semibold">
                     {NPR(billTotals(mapped, settings.vatEnabled, settings.vatRate).total)}
@@ -353,7 +371,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
             })}
             {orders.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                <td colSpan={7} className="py-8 text-center text-muted-foreground">
                   {isLoading ? "Loading…" : anyFilterActive ? "No bills match your filters." : "No bills yet."}
                 </td>
               </tr>

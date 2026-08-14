@@ -206,6 +206,16 @@ export function BillReceipt({
         <img src={settings.qrImage} alt="Payment QR" className="mx-auto mt-2 size-24 object-contain" />
       )}
       <p className="mt-2 text-center">Thank you · Pheri aaunuhola!</p>
+      {/* Small "Powered By" branding at the very bottom. Kept tiny so it
+          doesn't compete with the restaurant's own branding at the top. */}
+      <div className="mt-2 flex flex-col items-center border-t border-dashed border-black pt-1.5">
+        <p className="text-[9px] uppercase tracking-widest opacity-60">Powered By</p>
+        <img
+          src="/RMS.png"
+          alt="Srota RMS"
+          className="mt-0.5 h-5 w-auto opacity-80"
+        />
+      </div>
     </div>
   );
 }
