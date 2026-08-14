@@ -215,7 +215,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
                   : "bg-secondary text-foreground"
               }`}
             >
-              {f === "draft" ? "Active" : f === "paid" ? "Settled" : "All"}
+              {f === "draft" ? "Active" : f === "paid" ? "Closed" : "All"}
             </button>
           ))}
         </div>
@@ -274,13 +274,31 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
                     {formatDateWithStoredBs(new Date(o.placed_at), o.placed_at_bs)}
                   </td>
                   <td className="py-3 pr-3">
-                    <span
-                      className={`rounded-lg px-2 py-1 text-xs ${
-                        o.status !== "draft" ? "bg-secondary text-foreground" : "bg-primary/15 text-primary"
-                      }`}
-                    >
-                      {o.status === "draft" ? "Active" : o.status === "paid" ? "Settled" : "Cancelled"}
-                    </span>
+                    {(() => {
+                      // Khata orders are technically status='paid' (closed at
+                      // the till) but the money hasn't landed yet — say so
+                      // explicitly instead of the ambiguous "Settled".
+                      const isKhata =
+                        o.status === "paid" && o.payment_method === "khata";
+                      const label =
+                        o.status === "draft"
+                          ? "Active"
+                          : o.status === "paid"
+                            ? isKhata
+                              ? "Khata"
+                              : "Settled"
+                            : "Cancelled";
+                      const cls = isKhata
+                        ? "bg-warning text-navy"
+                        : o.status !== "draft"
+                          ? "bg-secondary text-foreground"
+                          : "bg-primary/15 text-primary";
+                      return (
+                        <span className={`rounded-lg px-2 py-1 text-xs font-medium ${cls}`}>
+                          {label}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="py-3 pr-3 font-semibold">
                     {NPR(billTotals(mapped, settings.vatEnabled, settings.vatRate).total)}

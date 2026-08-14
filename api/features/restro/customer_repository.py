@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
-from shared_models import RestroCustomer
+from sqlalchemy import or_, desc
+from shared_models import RestroCustomer, RestroOrder
 
 
 class CustomerRepository:
@@ -77,6 +77,25 @@ class CustomerRepository:
                 )
             )
         return q.order_by(RestroCustomer.name).all()
+
+    @staticmethod
+    def list_khata_orders(
+        db: Session, tenant_id: str, customer_id: str, limit: int = 100
+    ) -> list[RestroOrder]:
+        """Every khata order for this customer (settled + unsettled), newest
+        first. Includes closed and cancelled — the log should show everything
+        that ever hit the tab, not just the live balance."""
+        return (
+            db.query(RestroOrder)
+            .filter(
+                RestroOrder.tenant_id == tenant_id,
+                RestroOrder.customer_id == customer_id,
+                RestroOrder.payment_method == "khata",
+            )
+            .order_by(desc(RestroOrder.placed_at))
+            .limit(limit)
+            .all()
+        )
 
     @staticmethod
     def update(

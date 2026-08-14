@@ -265,40 +265,24 @@ class OrderRepository:
         return order
 
     @staticmethod
-    def list_unsettled_khata_for_customer(
+    def list_khata_orders_for_customer(
         db: Session, tenant_id: str, customer_id: str
     ) -> list[RestroOrder]:
-        """Every khata order that hasn't been paid off yet. Used both by
-        balance-computation and by the settle endpoint (which flips each
-        row's settled_at to now())."""
+        """Every khata order for this customer (closed bills that hit their
+        tab). Used by balance-computation as the debit side of the ledger;
+        settlements are the credit side. Draft khata orders don't exist —
+        khata is only set at mark-paid time."""
         return (
             db.query(RestroOrder)
             .filter(
                 RestroOrder.tenant_id == tenant_id,
                 RestroOrder.customer_id == customer_id,
                 RestroOrder.payment_method == "khata",
-                RestroOrder.settled_at.is_(None),
                 RestroOrder.status == "paid",
             )
             .order_by(RestroOrder.placed_at.asc())
             .all()
         )
-
-    @staticmethod
-    def settle_khata_for_customer(
-        db: Session, tenant_id: str, customer_id: str
-    ) -> int:
-        """Flips settled_at = now() on every unsettled khata order for the
-        given customer. Returns the count of rows updated. Idempotent — a
-        second call finds nothing to settle and returns 0."""
-        rows = OrderRepository.list_unsettled_khata_for_customer(db, tenant_id, customer_id)
-        now = datetime.now(timezone.utc)
-        bs = to_bs_iso(now)
-        for order in rows:
-            order.settled_at = now
-            order.settled_at_bs = bs
-        db.commit()
-        return len(rows)
 
     @staticmethod
     def set_discount(

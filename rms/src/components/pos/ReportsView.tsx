@@ -90,7 +90,7 @@ export function ReportsView() {
 
   const stats = [
     { label: "Orders", value: String(filtered.length) },
-    { label: "Settled", value: String(filtered.filter((o) => o.status === "paid").length) },
+    { label: "Closed", value: String(filtered.filter((o) => o.status === "paid").length) },
     { label: "Items sold", value: String(filtered.reduce((s, o) => s + o.lines.reduce((n, l) => n + l.qty, 0), 0)) },
     { label: "Net sales", value: NPR(totalSales) },
   ];
@@ -186,7 +186,7 @@ export function ReportsView() {
                   <td className="py-3 pr-3 text-muted-foreground">
                     {o.lines.map((l) => `${l.qty}× ${l.name}${l.variantName ? ` (${l.variantName})` : ""}`).join(", ")}
                   </td>
-                  <td className="py-3 pr-3">{o.status === "paid" ? "Settled" : "Running"}</td>
+                  <td className="py-3 pr-3">{o.status === "paid" ? "Closed" : "Running"}</td>
                   <td className="py-3 text-right font-semibold">
                     {NPR(billTotals(o, settings.vatEnabled, settings.vatRate).total)}
                   </td>

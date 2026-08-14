@@ -309,13 +309,15 @@ type Ctx = {
   saveCustomer: (customer: Customer) => Promise<Customer | null>;
   deleteCustomer: (id: string) => Promise<void>;
   refreshCustomers: () => Promise<void>;
-  // Settles the customer's entire outstanding khata via cash or qr. Returns
-  // { orders_settled, amount_settled } for a toast; refreshes the customer
-  // (balance goes to 0) in the store.
-  settleKhata: (
+  // Records a partial or full payment against a customer's khata balance.
+  // amount can be less than the full outstanding — this is the whole point
+  // of the settlements ledger vs the older "settle all" model. Returns the
+  // new balance (0 if fully paid off) and refreshes the customer in the
+  // store.
+  addKhataSettlement: (
     customerId: string,
-    method: "cash" | "qr",
-  ) => Promise<{ ordersSettled: number; amountSettled: number } | null>;
+    payload: { amount: number; method: "cash" | "qr"; note?: string },
+  ) => Promise<{ newBalance: number; amount: number; method: "cash" | "qr" } | null>;
 
   expenses: Expense[];
   saveExpense: (expense: Expense) => void;
@@ -1309,28 +1311,25 @@ export function PosProvider({ children }: { children: ReactNode }) {
       const response = await customersApi.list(branchId);
       setCustomers((response.data ?? []).map(toCustomer));
     },
-    settleKhata: async (customerId, method) => {
+    addKhataSettlement: async (customerId, payload) => {
       if (!branchId) return null;
       try {
-        const response = await customersApi.settleKhata(branchId, customerId, method);
+        const response = await customersApi.addKhataSettlement(branchId, customerId, {
+          amount: payload.amount,
+          method: payload.method,
+          note: payload.note || null,
+        });
         if (!response.data) return null;
-        // Splice the freshly-zeroed customer in place so the UI updates without
-        // a full refetch.
+        // Splice the customer's fresh balance in without a full refetch.
         const updated = toCustomer(response.data.customer);
         setCustomers((p) => p.map((x) => (x.id === customerId ? updated : x)));
-        // Also patch any orders in-cache — settled_at just got populated.
-        void ordersApi.list(branchId, { limit: 200 }).then((r) => {
-          const fetched = (r.data ?? [])
-            .filter((o) => o.status !== "cancelled")
-            .map(toOrder);
-          setOrders(fetched);
-        });
         return {
-          ordersSettled: response.data.orders_settled,
-          amountSettled: Number(response.data.amount_settled),
+          newBalance: Number(response.data.new_balance),
+          amount: Number(response.data.settlement.amount),
+          method: response.data.settlement.method,
         };
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to settle khata");
+        toast.error(err instanceof Error ? err.message : "Failed to record settlement");
         return null;
       }
     },

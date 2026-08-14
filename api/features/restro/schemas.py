@@ -462,17 +462,67 @@ class MarkPaidRequest(BaseModel):
         return v
 
 
-class SettleKhataRequest(BaseModel):
-    # cash | qr — how the customer actually paid down their tab. Khata itself
-    # isn't a valid settlement (that'd be circular).
-    settlement_method: str
+class CreateKhataSettlementRequest(BaseModel):
+    """A partial or full payment against a customer's khata balance."""
 
-    @field_validator("settlement_method")
+    amount: Decimal
+    # cash | qr — how the customer handed over the money. Khata isn't valid
+    # (that'd be circular).
+    method: str
+    note: str | None = None
+
+    @field_validator("method")
     @classmethod
-    def valid(cls, v: str) -> str:
+    def method_valid(cls, v: str) -> str:
         if v not in ("cash", "qr"):
-            raise ValueError("settlement_method must be 'cash' or 'qr'")
+            raise ValueError("method must be 'cash' or 'qr'")
         return v
+
+    @field_validator("amount")
+    @classmethod
+    def amount_positive(cls, v: Decimal) -> Decimal:
+        if v <= 0:
+            raise ValueError("amount must be greater than zero")
+        return v
+
+
+class KhataSettlementData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    customer_id: str
+    amount: Decimal
+    method: str
+    note: str | None
+    actor_name: str
+    actor_cred_id: str | None
+    created_at: datetime
+    created_at_bs: str
+
+
+class KhataOrderEntry(BaseModel):
+    """A khata order (debit side of the ledger). `total` is the server-computed
+    final amount, matching what the customer was shown at bill time."""
+
+    id: str
+    type: str
+    placed_at: datetime
+    placed_at_bs: str
+    total: Decimal
+    line_count: int
+
+
+class KhataHistoryResponse(BaseModel):
+    """Full khata log for a customer: orders they racked up + settlements
+    they've paid, plus a live balance snapshot."""
+
+    balance: Decimal
+    debits_total: Decimal
+    credits_total: Decimal
+    orders: list[KhataOrderEntry]
+    settlements: list[KhataSettlementData]
 
 
 class SetDeliveryStatusRequest(BaseModel):

@@ -46,7 +46,10 @@ from features.restro.schemas import (
     CustomerData,
     CreateCustomerRequest,
     UpdateCustomerRequest,
-    SettleKhataRequest,
+    CreateKhataSettlementRequest,
+    KhataSettlementData,
+    KhataOrderEntry,
+    KhataHistoryResponse,
 )
 from features.restro.service import RestroCredentialService, RestroAuthService
 from features.restro.category_service import CategoryService
@@ -57,6 +60,9 @@ from features.restro.order_service import OrderService
 from features.restro.inventory_service import InventoryService
 from features.restro.employee_service import EmployeeService
 from features.restro.customer_service import CustomerService
+from features.restro.customer_repository import CustomerRepository
+from features.restro.order_service import compute_order_total
+from features.restro.khata_settlement_repository import KhataSettlementRepository
 from features.restro.repository import RestroCredentialRepository
 
 
@@ -871,6 +877,16 @@ _ORDER_ERROR_MAP = {
         "NO_BALANCE_TO_SETTLE",
         "This customer has no outstanding khata balance.",
         409,
+    ),
+    "INVALID_AMOUNT": (
+        "INVALID_AMOUNT",
+        "Amount must be greater than zero.",
+        422,
+    ),
+    "AMOUNT_EXCEEDS_BALANCE": (
+        "AMOUNT_EXCEEDS_BALANCE",
+        "Payment can't be more than the outstanding balance.",
+        422,
     ),
     "INVALID_DELIVERY_STATUS": (
         "INVALID_DELIVERY_STATUS",
@@ -1733,39 +1749,86 @@ def delete_customer(
     return success_response(data={"deleted": True}, message="Customer removed")
 
 
-@router.post("/branches/{branch_id}/customers/{customer_id}/settle-khata")
-def settle_khata(
+@router.get("/branches/{branch_id}/customers/{customer_id}/khata-history")
+def khata_history(
     branch_id: str,
     customer_id: str,
-    data: SettleKhataRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
-    # Settlement is an owner/manager action — it's the cash-drawer moment.
-    if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can settle khata balances")
+    """Full khata log for a customer: every khata order (debits) + every
+    settlement (credits) + a live balance snapshot. Any staff can read.
+
+    Orders and settlements are returned as separate arrays newest-first —
+    the client is responsible for interleaving them into a timeline if it
+    wants that presentation."""
     _assert_branch_scope(staff, branch_id)
-    result = OrderService.settle_khata(
+    tenant_id = staff["tenant_id"]
+    customer = CustomerRepository.get_by_id(db, tenant_id, customer_id)
+    if not customer or customer.branch_id != branch_id or not customer.is_active:
+        return error_response("CUSTOMER_NOT_FOUND", "Customer not found.", 404)
+
+    orders = CustomerRepository.list_khata_orders(db, tenant_id, customer_id)
+    settlements = KhataSettlementRepository.list_for_customer(db, tenant_id, customer_id)
+    order_entries = [
+        KhataOrderEntry(
+            id=o.id,
+            type=o.type,
+            placed_at=o.placed_at,
+            placed_at_bs=o.placed_at_bs,
+            total=compute_order_total(o),
+            line_count=sum(1 for l in o.lines if not l.is_voided),
+        )
+        for o in orders
+    ]
+    debits_total = sum((e.total for e in order_entries), Decimal("0"))
+    credits_total = KhataSettlementRepository.total_for_customer(db, tenant_id, customer_id)
+    balance = max(Decimal("0"), debits_total - credits_total)
+    payload = KhataHistoryResponse(
+        balance=balance,
+        debits_total=debits_total,
+        credits_total=credits_total,
+        orders=order_entries,
+        settlements=[KhataSettlementData.model_validate(s) for s in settlements],
+    )
+    return success_response(data=payload.model_dump(mode="json"))
+
+
+@router.post("/branches/{branch_id}/customers/{customer_id}/khata-settlements")
+def create_khata_settlement(
+    branch_id: str,
+    customer_id: str,
+    data: CreateKhataSettlementRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Record a partial or full payment against a customer's khata balance.
+    Owner/Manager only — this is the cash-drawer moment."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can accept khata settlements")
+    _assert_branch_scope(staff, branch_id)
+    actor_name, cred_id = _actor_from_staff(db, staff)
+    result = OrderService.record_khata_settlement(
         db,
         tenant_id=staff["tenant_id"],
         branch_id=branch_id,
         customer_id=customer_id,
-        settlement_method=data.settlement_method,
+        amount=data.amount,
+        method=data.method,
+        note=data.note,
+        actor_name=actor_name,
+        actor_cred_id=cred_id,
     )
     if not result["success"]:
-        # Reuse the order error map for settlement-specific codes; fall back
-        # to a generic message otherwise.
         return _order_error(result["error_code"])
-    # After settlement, fetch the customer fresh so the response includes the
-    # now-zero balance — callers use this to update their UI in one round-trip.
-    from features.restro.customer_repository import CustomerRepository
     customer = CustomerRepository.get_by_id(db, staff["tenant_id"], customer_id)
+    settlement_payload = KhataSettlementData.model_validate(result["settlement"]).model_dump(mode="json")
     return success_response(
         data={
-            "orders_settled": result["orders_settled"],
-            "amount_settled": str(result["amount_settled"]),
-            "settlement_method": result["settlement_method"],
+            "settlement": settlement_payload,
+            "new_balance": str(result["new_balance"]),
             "customer": _customer_payload(db, staff["tenant_id"], customer),
         },
-        message=f"Settled {result['orders_settled']} order(s) via {result['settlement_method']}",
+        message=f"Recorded Rs {result['settlement'].amount} via {result['settlement'].method}",
+        status_code=201,
     )

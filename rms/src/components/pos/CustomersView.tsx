@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
-import { Pencil, Phone, Plus, Search, Trash2, UserPlus, Wallet } from "lucide-react";
+import { History, Pencil, Phone, Plus, Search, Trash2, UserPlus, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +23,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { NPR, type Customer } from "@/lib/pos/data";
 import { usePos } from "@/lib/pos/store";
+import { KhataHistoryDialog } from "./KhataHistoryDialog";
+import { KhataSettleDialog } from "./KhataSettleDialog";
 
 const blank = (): Customer => ({
   id: "",
@@ -35,12 +36,12 @@ const blank = (): Customer => ({
 });
 
 export function CustomersView() {
-  const { customers, customersLoading, saveCustomer, deleteCustomer, settleKhata, actualRole } =
-    usePos();
+  const { customers, customersLoading, saveCustomer, deleteCustomer, actualRole } = usePos();
   const canEdit = actualRole === "owner" || actualRole === "manager";
   const [draft, setDraft] = useState<Customer | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Customer | null>(null);
   const [settleTarget, setSettleTarget] = useState<Customer | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<Customer | null>(null);
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -124,7 +125,7 @@ export function CustomersView() {
                 {c.notes}
               </p>
             )}
-            <div className="mt-3 flex justify-end gap-2">
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
               {c.outstandingBalance > 0 && canEdit && (
                 <Button
                   size="sm"
@@ -135,6 +136,15 @@ export function CustomersView() {
                   Settle
                 </Button>
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10"
+                onClick={() => setHistoryTarget(c)}
+              >
+                <History className="size-4" />
+                Log
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -171,21 +181,17 @@ export function CustomersView() {
         />
       )}
 
+      {historyTarget && (
+        <KhataHistoryDialog
+          customer={historyTarget}
+          onClose={() => setHistoryTarget(null)}
+        />
+      )}
+
       {settleTarget && (
-        <SettleKhataDialog
+        <KhataSettleDialog
           customer={settleTarget}
           onClose={() => setSettleTarget(null)}
-          onSettle={async (method) => {
-            const result = await settleKhata(settleTarget.id, method);
-            if (result) {
-              toast.success(
-                `Settled ${NPR(result.amountSettled)} · ${result.ordersSettled} order${
-                  result.ordersSettled === 1 ? "" : "s"
-                }`,
-              );
-              setSettleTarget(null);
-            }
-          }}
         />
       )}
 
@@ -213,79 +219,6 @@ export function CustomersView() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  );
-}
-
-function SettleKhataDialog({
-  customer,
-  onClose,
-  onSettle,
-}: {
-  customer: Customer;
-  onClose: () => void;
-  onSettle: (method: "cash" | "qr") => Promise<void>;
-}) {
-  const [method, setMethod] = useState<"cash" | "qr">("cash");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && !isSubmitting && onClose()}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="font-display text-lg">
-            Settle {customer.name}'s khata
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="rounded-xl border-2 border-primary bg-primary/5 p-4 text-center">
-            <p className="text-[11px] font-medium uppercase tracking-wider text-primary">
-              Amount due
-            </p>
-            <p className="mt-1 font-display text-3xl font-semibold text-primary">
-              {NPR(customer.outstandingBalance)}
-            </p>
-          </div>
-          <div>
-            <Label className="text-xs uppercase">Received via</Label>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              {(["cash", "qr"] as const).map((m) => (
-                <Button
-                  key={m}
-                  variant={method === m ? "default" : "outline"}
-                  className="h-14 text-sm uppercase"
-                  onClick={() => setMethod(m)}
-                >
-                  {m}
-                </Button>
-              ))}
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Settles every unsettled khata order for this customer. Their balance goes to zero and
-            the orders show as fully paid in reports.
-          </p>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" className="h-12" onClick={onClose} disabled={isSubmitting}>
-            Cancel
-          </Button>
-          <Button
-            className="h-12"
-            disabled={isSubmitting}
-            onClick={async () => {
-              setIsSubmitting(true);
-              try {
-                await onSettle(method);
-              } finally {
-                setIsSubmitting(false);
-              }
-            }}
-          >
-            {isSubmitting ? "Settling…" : `Confirm settlement`}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 

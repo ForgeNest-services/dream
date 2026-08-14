@@ -15,6 +15,7 @@ from features.restro.order_repository import (
 from features.restro.table_repository import TableRepository
 from features.restro.menu_item_repository import MenuItemRepository
 from features.restro.customer_repository import CustomerRepository
+from features.restro.khata_settlement_repository import KhataSettlementRepository
 from features.branches.repository import BranchRepository
 from utils.logger import logger
 
@@ -473,45 +474,73 @@ class OrderService:
         return {"success": True, "order": updated}
 
     @staticmethod
-    def settle_khata(
+    def khata_orders_total(db: Session, tenant_id: str, customer_id: str) -> Decimal:
+        """Sum of every khata order total for a customer (the debit side of
+        the ledger). Does NOT subtract settlements — that's the caller's job
+        via outstanding_balance()."""
+        orders = OrderRepository.list_khata_orders_for_customer(db, tenant_id, customer_id)
+        return sum((compute_order_total(o) for o in orders), Decimal("0"))
+
+    @staticmethod
+    def outstanding_balance(db: Session, tenant_id: str, customer_id: str) -> Decimal:
+        """Live khata balance = SUM(khata order totals) − SUM(settlements).
+        Never negative — a customer who over-paid shows 0 (over-payment
+        would need a proper credit-note flow we're not modeling yet)."""
+        debits = OrderService.khata_orders_total(db, tenant_id, customer_id)
+        credits = KhataSettlementRepository.total_for_customer(db, tenant_id, customer_id)
+        return max(Decimal("0"), debits - credits)
+
+    @staticmethod
+    def record_khata_settlement(
         db: Session,
         tenant_id: str,
         branch_id: str,
         customer_id: str,
-        settlement_method: str,
+        amount: Decimal,
+        method: str,
+        note: str | None,
+        actor_name: str,
+        actor_cred_id: str | None,
     ) -> dict:
-        """Customer paid down their khata — flip every unsettled khata order
-        of theirs to settled. Records the payment method used to settle (for
-        eventual daily-sales reports) via a log line for now; a proper
-        settlements ledger comes when we build Reports."""
-        if settlement_method not in KHATA_SETTLEMENT_METHODS:
+        """Records a partial or full payment against a customer's khata
+        balance. Amount must be > 0 and not exceed the current outstanding
+        balance (server-side clamp — the UI can pre-fill "full amount" but
+        can't accept an overpayment through this path)."""
+        if method not in KHATA_SETTLEMENT_METHODS:
             return {"success": False, "error_code": "INVALID_SETTLEMENT_METHOD"}
+        if amount <= 0:
+            return {"success": False, "error_code": "INVALID_AMOUNT"}
         customer = CustomerRepository.get_by_id(db, tenant_id, customer_id)
         if not customer or customer.branch_id != branch_id or not customer.is_active:
             return {"success": False, "error_code": "CUSTOMER_NOT_FOUND"}
 
-        unsettled = OrderRepository.list_unsettled_khata_for_customer(db, tenant_id, customer_id)
-        if not unsettled:
+        balance = OrderService.outstanding_balance(db, tenant_id, customer_id)
+        if balance <= 0:
             return {"success": False, "error_code": "NO_BALANCE_TO_SETTLE"}
+        if amount > balance:
+            return {"success": False, "error_code": "AMOUNT_EXCEEDS_BALANCE"}
 
-        total = sum((compute_order_total(o) for o in unsettled), Decimal("0"))
-        count = OrderRepository.settle_khata_for_customer(db, tenant_id, customer_id)
+        settlement = KhataSettlementRepository.create(
+            db,
+            tenant_id=tenant_id,
+            branch_id=branch_id,
+            customer_id=customer_id,
+            amount=amount,
+            method=method,
+            note=note,
+            actor_name=actor_name,
+            actor_cred_id=actor_cred_id,
+        )
+        new_balance = OrderService.outstanding_balance(db, tenant_id, customer_id)
         logger.info(
-            f"Khata settled: customer={customer_id} orders={count} total={total} via {settlement_method}",
+            f"Khata settlement: customer={customer_id} amount={amount} via {method} → balance {new_balance}",
             extra={"tenant_id": tenant_id, "branch_id": branch_id},
         )
         return {
             "success": True,
-            "orders_settled": count,
-            "amount_settled": total,
-            "settlement_method": settlement_method,
+            "settlement": settlement,
+            "new_balance": new_balance,
         }
-
-    @staticmethod
-    def outstanding_balance(db: Session, tenant_id: str, customer_id: str) -> Decimal:
-        """Sum of unsettled khata order totals for a customer."""
-        unsettled = OrderRepository.list_unsettled_khata_for_customer(db, tenant_id, customer_id)
-        return sum((compute_order_total(o) for o in unsettled), Decimal("0"))
 
     @staticmethod
     def cancel(db: Session, tenant_id: str, branch_id: str, order_id: str) -> dict:
