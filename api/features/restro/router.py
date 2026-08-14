@@ -34,6 +34,7 @@ from features.restro.schemas import (
     SetKitchenStatusRequest,
     SetDiscountRequest,
     MarkPaidRequest,
+    SetOrderCustomerRequest,
     SetDeliveryStatusRequest,
     InventoryItemData,
     StockMovementData,
@@ -1037,6 +1038,7 @@ def list_orders_paginated(
     type: str | None = None,
     kitchen_status: str | None = None,
     table_id: str | None = None,
+    payment_method: str | None = None,
     bs_from: str | None = None,
     bs_to: str | None = None,
     q: str | None = None,
@@ -1046,7 +1048,9 @@ def list_orders_paginated(
     db: Session = Depends(get_db),
 ):
     """Paginated bills-history endpoint. `bs_from` / `bs_to` accept BS dates
-    as "YYYY-MM-DD" strings and hit the (branch_id, placed_at_bs) index."""
+    as "YYYY-MM-DD" strings and hit the (branch_id, placed_at_bs) index.
+    `payment_method` filters closed bills by how they were paid (cash / qr /
+    khata) — the frontend Dues tab passes `khata` here."""
     _assert_branch_scope(staff, branch_id)
     paging = parse_paging(page, per_page)
     result = OrderService.list_paginated(
@@ -1057,6 +1061,7 @@ def list_orders_paginated(
         type=type,
         kitchen_status=kitchen_status,
         table_id=table_id,
+        payment_method=payment_method,
         bs_from=bs_from,
         bs_to=bs_to,
         search=q,
@@ -1302,6 +1307,28 @@ def set_order_discount(
         return _order_error(result["error_code"])
     order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
     return success_response(data=_order_payload(order), message="Discount updated")
+
+
+@router.patch("/branches/{branch_id}/orders/{order_id}/customer")
+def set_order_customer(
+    branch_id: str,
+    order_id: str,
+    data: SetOrderCustomerRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.set_customer(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        customer_id=data.customer_id,
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    return success_response(data=_order_payload(order), message="Customer updated")
 
 
 @router.post("/branches/{branch_id}/orders/{order_id}/mark-paid")

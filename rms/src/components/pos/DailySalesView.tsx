@@ -1,20 +1,22 @@
 import { useState } from "react";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NPR } from "@/lib/pos/data";
 import { billTotals, usePos } from "@/lib/pos/store";
+import { toBsIso } from "@/lib/pos/nepali-date";
+import { BsDatePicker } from "./BsDatePicker";
 
-const today = () => new Date().toISOString().slice(0, 10);
-
+// Filter operates on placed_at_bs (backend-stamped BS string, "YYYY-MM-DD")
+// which sorts lexically — matches the filter comparisons directly, no
+// Gregorian conversion needed.
 export function DailySalesView() {
   const { orders, settings, categories, menu } = usePos();
-  const [from, setFrom] = useState(today());
-  const [to, setTo] = useState(today());
+  const todayBs = toBsIso(new Date()) ?? "";
+  const [fromBs, setFromBs] = useState(todayBs);
+  const [toBs, setToBs] = useState(todayBs);
 
-  const start = new Date(`${from}T00:00:00`).getTime();
-  const end = new Date(`${to}T23:59:59`).getTime();
-
-  const inRange = orders.filter((o) => o.placedAt >= start && o.placedAt <= end);
+  const inRange = orders.filter(
+    (o) => o.placedAtBs >= fromBs && o.placedAtBs <= toBs,
+  );
   const paid = inRange.filter((o) => o.status === "paid");
   const sales = paid.reduce((s, o) => s + billTotals(o, settings.vatEnabled, settings.vatRate).total, 0);
   const items = inRange.reduce((s, o) => s + o.lines.reduce((n, l) => n + l.qty, 0), 0);
@@ -36,7 +38,7 @@ export function DailySalesView() {
 
   const stats = [
     { label: "Orders created", value: String(inRange.length) },
-    { label: "Orders settled", value: String(paid.length) },
+    { label: "Orders closed", value: String(paid.length) },
     { label: "Items sold", value: String(items) },
     { label: "Total sales", value: NPR(sales) },
   ];
@@ -45,17 +47,17 @@ export function DailySalesView() {
     <div className="space-y-4">
       <div className="min-w-0">
         <h2 className="truncate font-display text-2xl">Daily sales report</h2>
-        <p className="text-xs text-muted-foreground">Defaults to today · pick a range to compare</p>
+        <p className="text-xs text-muted-foreground">Defaults to today (BS) · pick a range to compare</p>
       </div>
 
       <div className="pos-card grid gap-3 p-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label>From</Label>
-          <Input type="date" className="h-12" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <BsDatePicker value={fromBs} onChange={setFromBs} />
         </div>
         <div className="space-y-2">
           <Label>To</Label>
-          <Input type="date" className="h-12" value={to} onChange={(e) => setTo(e.target.value)} />
+          <BsDatePicker value={toBs} onChange={setToBs} />
         </div>
       </div>
 

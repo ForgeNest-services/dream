@@ -90,6 +90,7 @@ class OrderService:
         type: str | None = None,
         kitchen_status: str | None = None,
         table_id: str | None = None,
+        payment_method: str | None = None,
         bs_from: str | None = None,
         bs_to: str | None = None,
         search: str | None = None,
@@ -106,6 +107,7 @@ class OrderService:
             type=type,
             kitchen_status=kitchen_status,
             table_id=table_id,
+            payment_method=payment_method,
             bs_from=bs_from,
             bs_to=bs_to,
             search=search,
@@ -487,6 +489,35 @@ class OrderService:
             extra={"tenant_id": tenant_id, "customer_id": effective_customer_id},
         )
         return {"success": True, "order": updated}
+
+    @staticmethod
+    def set_customer(
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        order_id: str,
+        customer_id: str | None,
+    ) -> dict:
+        """Attach or clear a customer on a draft order — mostly used to tag a
+        dine-in order to a khata customer before payment, so the waiter can
+        write the customer's name on the receipt (and mark-paid can skip the
+        customer picker). Only editable while the order is still draft."""
+        order = OrderRepository.get_by_id(db, tenant_id, order_id)
+        if not order or order.branch_id != branch_id:
+            return {"success": False, "error_code": "ORDER_NOT_FOUND"}
+        if order.status != "draft":
+            return {"success": False, "error_code": "ORDER_NOT_EDITABLE"}
+        if customer_id:
+            customer = CustomerRepository.get_by_id(db, tenant_id, customer_id)
+            if not customer or customer.branch_id != branch_id or not customer.is_active:
+                return {"success": False, "error_code": "CUSTOMER_NOT_FOUND"}
+        # Direct assign — no set_status call because customer_id is
+        # legitimately mutable while draft and we don't want the other
+        # side-effects (kitchen_status auto-flip etc.) that set_status has.
+        order.customer_id = customer_id
+        db.commit()
+        db.refresh(order)
+        return {"success": True, "order": order}
 
     @staticmethod
     def khata_orders_total(db: Session, tenant_id: str, customer_id: str) -> Decimal:

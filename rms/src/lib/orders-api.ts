@@ -90,6 +90,7 @@ function toQuery(params: OrdersListQuery): string {
 // comparison against the persisted `placed_at_bs` column).
 export interface OrdersPaginatedQuery extends Omit<OrdersListQuery, "limit"> {
   q?: string;
+  payment_method?: PaymentMethod;
   bs_from?: string;
   bs_to?: string;
   page?: number;
@@ -102,6 +103,7 @@ function toPaginatedQuery(params: OrdersPaginatedQuery): string {
   if (params.type) qs.set("type", params.type);
   if (params.kitchen_status) qs.set("kitchen_status", params.kitchen_status);
   if (params.table_id) qs.set("table_id", params.table_id);
+  if (params.payment_method) qs.set("payment_method", params.payment_method);
   if (params.q) qs.set("q", params.q);
   if (params.bs_from) qs.set("bs_from", params.bs_from);
   if (params.bs_to) qs.set("bs_to", params.bs_to);
@@ -207,6 +209,12 @@ export const ordersApi = {
     return apiClient.patch<OrderDto>(
       `/restro/branches/${branchId}/orders/${orderId}/discount`,
       { discount_type, discount_value },
+    );
+  },
+  setCustomer(branchId: string, orderId: string, customer_id: string | null) {
+    return apiClient.patch<OrderDto>(
+      `/restro/branches/${branchId}/orders/${orderId}/customer`,
+      { customer_id },
     );
   },
   markPaid(

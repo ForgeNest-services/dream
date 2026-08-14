@@ -105,6 +105,7 @@ class OrderRepository:
         type: str | None = None,
         kitchen_status: str | None = None,
         table_id: str | None = None,
+        payment_method: str | None = None,
         bs_from: str | None = None,
         bs_to: str | None = None,
         search: str | None = None,
@@ -123,6 +124,8 @@ class OrderRepository:
             query = query.filter(RestroOrder.kitchen_status == kitchen_status)
         if table_id:
             query = query.filter(RestroOrder.table_id == table_id)
+        if payment_method:
+            query = query.filter(RestroOrder.payment_method == payment_method)
         # BS date range hits the (branch_id, placed_at_bs) composite index.
         # placed_at_bs is stored as "YYYY-MM-DD" so lexical comparison is
         # equivalent to date comparison.
@@ -184,6 +187,7 @@ class OrderRepository:
         type: str | None = None,
         kitchen_status: str | None = None,
         table_id: str | None = None,
+        payment_method: str | None = None,
         bs_from: str | None = None,
         bs_to: str | None = None,
         search: str | None = None,
@@ -198,6 +202,7 @@ class OrderRepository:
             type=type,
             kitchen_status=kitchen_status,
             table_id=table_id,
+            payment_method=payment_method,
             bs_from=bs_from,
             bs_to=bs_to,
             search=search,

@@ -9,7 +9,9 @@ import { roleShowsNav } from "@/lib/pos/nav";
 export type OrdersSearch = {
   tab: "take" | "bills";
   q: string;
-  status: "all" | "draft" | "paid";
+  // "dues" is a virtual filter — narrows to closed bills paid via khata.
+  // Kept in the same field as status so we get one segmented control.
+  status: "all" | "draft" | "paid" | "dues";
   bs_from: string;
   bs_to: string;
   page: number;
@@ -17,7 +19,7 @@ export type OrdersSearch = {
 };
 
 const PER_PAGE_ALLOWED = new Set([10, 25, 50, 100]);
-const STATUS_ALLOWED: OrdersSearch["status"][] = ["all", "draft", "paid"];
+const STATUS_ALLOWED: OrdersSearch["status"][] = ["all", "draft", "paid", "dues"];
 
 export const Route = createFileRoute("/_app/orders")({
   head: () => ({ meta: [{ title: "Orders — Srota RMS" }] }),

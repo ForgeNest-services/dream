@@ -19,6 +19,7 @@ import {
   DrawerTrigger,
 } from "@/components/ui/drawer";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UserPlus, X as XIcon } from "lucide-react";
 import { NPR, type MenuItem, type Order, type OrderCustomerRef, type RestaurantTable } from "@/lib/pos/data";
 import { useBillTotals, usePos } from "@/lib/pos/store";
 import { BillReceipt, KotReceipt, PrintDialog } from "./ThermalPrint";
@@ -47,6 +48,7 @@ export function OrderScreen(props: OrderScreenProps) {
     addLineToOrder,
     sendToKitchen,
     markPaid,
+    setOrderCustomer,
     settings,
     mergedGroup,
   } = usePos();
@@ -54,6 +56,7 @@ export function OrderScreen(props: OrderScreenProps) {
   const [activeCat, setActiveCat] = useState<string>(ALL_CATEGORY);
   const [variantItem, setVariantItem] = useState<MenuItem | null>(null);
   const [payOpen, setPayOpen] = useState(false);
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [billOpen, setBillOpen] = useState(false);
   const [kotOpen, setKotOpen] = useState(false);
   const [printBillOpen, setPrintBillOpen] = useState(false);
@@ -70,9 +73,16 @@ export function OrderScreen(props: OrderScreenProps) {
   const qty = order?.lines.reduce((s, l) => s + l.qty, 0) ?? 0;
   const items =
     activeCat === ALL_CATEGORY ? menu : menu.filter((m) => m.categoryId === activeCat);
+  const tableLabel =
+    props.mode === "dine-in" ? mergedGroup(props.table).map((t) => t.label).join(" + ") : "";
+  // Dine-in: header shows table label; if a customer has been attached
+  // (typically for a khata order), append their name — matches delivery's
+  // "Delivery · Name" style.
   const headerLabel =
     props.mode === "dine-in"
-      ? mergedGroup(props.table).map((t) => t.label).join(" + ")
+      ? order?.customer
+        ? `${tableLabel} / ${order.customer.name}`
+        : tableLabel
       : order?.customer
         ? `Delivery · ${order.customer.name}`
         : "Delivery";
@@ -121,10 +131,35 @@ export function OrderScreen(props: OrderScreenProps) {
           >
             <ArrowLeft className="size-5" />
           </Button>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h2 className="truncate font-display text-xl leading-tight">{headerLabel}</h2>
             <p className="truncate text-xs text-muted-foreground">{subLabel}</p>
           </div>
+          {/* Attach-customer chip, only for dine-in. Delivery orders always
+              have a customer from creation, no need. */}
+          {props.mode === "dine-in" && order && (
+            order.customer ? (
+              <button
+                type="button"
+                onClick={() => order && setOrderCustomer(order.id, null)}
+                className="flex shrink-0 items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20"
+                aria-label={`Detach ${order.customer.name}`}
+                title="Detach customer"
+              >
+                <span className="max-w-24 truncate">{order.customer.name}</span>
+                <XIcon className="size-3.5" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setCustomerPickerOpen(true)}
+                className="flex shrink-0 items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:border-primary hover:text-primary"
+              >
+                <UserPlus className="size-3.5" />
+                Attach customer
+              </button>
+            )
+          )}
         </div>
 
         <Tabs value={activeCat} onValueChange={setActiveCat}>
@@ -313,6 +348,24 @@ export function OrderScreen(props: OrderScreenProps) {
               {method === "khata" ? "Add to Khata" : "Confirm payment"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={customerPickerOpen} onOpenChange={setCustomerPickerOpen}>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">Attach customer to order</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Tag this table's bill to a customer — the header shows their name and marking paid as
+            Khata will use them automatically.
+          </p>
+          <CustomerPicker
+            onPick={async (c) => {
+              if (order) await setOrderCustomer(order.id, c.id);
+              setCustomerPickerOpen(false);
+            }}
+          />
         </DialogContent>
       </Dialog>
 

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NPR, type Order, type RestaurantTable } from "@/lib/pos/data";
 import { billTotals, usePos } from "@/lib/pos/store";
-import { formatDateWithStoredBs, parseApiDate } from "@/lib/pos/nepali-date";
+import { formatDateWithStoredBs, parseApiDate, toBsIso } from "@/lib/pos/nepali-date";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useOrdersList } from "@/hooks/useOrdersList";
 import type { OrderDto } from "@/lib/orders-api";
@@ -126,9 +126,29 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedQ]);
 
+  // Default the bills tab to today's BS date range on first entry. Only
+  // patches when both dates are empty — a bookmark with an explicit range
+  // still opens exactly as saved.
+  useEffect(() => {
+    if (search.tab === "bills" && !search.bs_from && !search.bs_to) {
+      const today = toBsIso(new Date());
+      if (today) patchSearch({ bs_from: today, bs_to: today });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.tab]);
+
+  // "dues" tab = closed bills paid via khata. Translate the virtual filter
+  // into concrete status + payment_method for the API.
+  const effectiveStatus =
+    search.status === "all" || search.status === "dues" ? undefined : search.status;
+  const effectivePaymentMethod = search.status === "dues" ? ("khata" as const) : undefined;
+  const effectiveStatusForDues =
+    search.status === "dues" ? ("paid" as const) : effectiveStatus;
+
   const { orders, meta, isLoading } = useOrdersList(branchId || null, {
     q: search.q.trim() || undefined,
-    status: search.status === "all" ? undefined : search.status,
+    status: effectiveStatusForDues,
+    payment_method: effectivePaymentMethod,
     bs_from: search.bs_from || undefined,
     bs_to: search.bs_to || undefined,
     page: search.page,
@@ -206,7 +226,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
           />
         </div>
         <div className="flex gap-2">
-          {(["all", "draft", "paid"] as const).map((f) => (
+          {(["all", "draft", "paid", "dues"] as const).map((f) => (
             <button
               key={f}
               onClick={() => patchSearch({ status: f })}
@@ -216,7 +236,13 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
                   : "bg-secondary text-foreground"
               }`}
             >
-              {f === "draft" ? "Active" : f === "paid" ? "Closed" : "All"}
+              {f === "draft"
+                ? "Active"
+                : f === "paid"
+                  ? "Closed"
+                  : f === "dues"
+                    ? "Dues"
+                    : "All"}
             </button>
           ))}
         </div>

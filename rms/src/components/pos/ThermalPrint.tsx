@@ -89,7 +89,7 @@ export function KotReceipt({
   tableLabel: string;
   settings: Settings;
 }) {
-  const { tenant } = usePos();
+  const { tenant, menu } = usePos();
   const printedAt = Date.now();
   return (
     <div className="thermal-receipt mx-auto p-2">
@@ -107,16 +107,30 @@ export function KotReceipt({
       <Divider />
       <p>QTY ITEM</p>
       <Divider />
-      {order.lines.map((l) => (
-        <div key={l.id} className="mb-1">
-          <p>
-            {String(l.qty).padEnd(3, " ")}
-            {l.name}
-            {l.variantName ? ` (${l.variantName})` : ""}
-          </p>
-          {l.note && <p className="pl-6">* {l.note}</p>}
-        </div>
-      ))}
+      {order.lines.map((l) => {
+        // If this line references a combo menu item, expand its components
+        // as indented sub-lines. Multiplied by the order qty so ordering
+        // 2× "Family Meal" shows "→ 4× Steam Momo (Chicken)" etc.
+        const menuItem = l.menuItemId ? menu.find((m) => m.id === l.menuItemId) : null;
+        const combo = menuItem?.isCombo ? menuItem : null;
+        return (
+          <div key={l.id} className="mb-1">
+            <p>
+              {String(l.qty).padEnd(3, " ")}
+              {l.name}
+              {l.variantName ? ` (${l.variantName})` : ""}
+            </p>
+            {combo &&
+              combo.components.map((c) => (
+                <p key={c.id} className="pl-6">
+                  → {c.qty * l.qty}× {c.childName}
+                  {c.childVariantName ? ` (${c.childVariantName})` : ""}
+                </p>
+              ))}
+            {l.note && <p className="pl-6">* {l.note}</p>}
+          </div>
+        );
+      })}
       <Divider />
       <p className="text-center">-- END OF TICKET --</p>
     </div>

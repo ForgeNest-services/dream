@@ -292,6 +292,10 @@ type Ctx = {
   removeLine: (orderId: string, lineId: string) => Promise<void>;
   sendToKitchen: (orderId: string) => Promise<void>;
   setDiscount: (orderId: string, type: "percent" | "flat", value: number) => Promise<void>;
+  // Attach or clear a customer on a draft order. Used to tag a dine-in
+  // to a khata customer before payment, so the header shows their name
+  // and mark-paid can skip the picker.
+  setOrderCustomer: (orderId: string, customerId: string | null) => Promise<void>;
   // For khata, pass a customerId — if omitted, uses the customer already
   // attached to the order (delivery orders always have one). For cash/qr,
   // customerId is ignored.
@@ -1124,6 +1128,18 @@ export function PosProvider({ children }: { children: ReactNode }) {
         }
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed to set discount");
+      }
+    },
+    setOrderCustomer: async (orderId, customerId) => {
+      if (!branchId) return;
+      try {
+        const response = await ordersApi.setCustomer(branchId, orderId, customerId);
+        if (response.data) {
+          const updated = toOrder(response.data);
+          setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to attach customer");
       }
     },
     markPaid: async (orderId, method, customerId) => {

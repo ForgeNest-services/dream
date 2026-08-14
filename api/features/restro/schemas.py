@@ -483,6 +483,11 @@ class SetDiscountRequest(BaseModel):
         return v
 
 
+class SetOrderCustomerRequest(BaseModel):
+    # null = clear the current customer attachment.
+    customer_id: str | None = None
+
+
 class MarkPaidRequest(BaseModel):
     payment_method: str
     # Required when payment_method == 'khata' and the order doesn't already
