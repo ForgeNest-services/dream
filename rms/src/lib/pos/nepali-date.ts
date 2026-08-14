@@ -46,6 +46,18 @@ const NPT_TZ = "Asia/Kathmandu";
 const ANCHOR_AD = Date.UTC(2018, 3, 14);
 const MS_PER_DAY = 86400000;
 
+// The API's timestamps come from Postgres `TIMESTAMP` (naive) via SQLAlchemy,
+// which Pydantic serializes as "2026-08-14T06:00:00" — no `Z`, no offset.
+// JavaScript's `new Date(...)` spec says a bare-suffix ISO string is LOCAL
+// time, so `new Date("2026-08-14T06:00:00")` in a Nepal browser becomes
+// 06:00 NPT (= 00:15 UTC). That's off by the whole NPT offset. Force UTC
+// by appending Z when the string has no timezone marker.
+export function parseApiDate(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const hasTz = /[zZ]|[+\-]\d{2}:?\d{2}$/.test(iso);
+  return new Date(hasTz ? iso : iso + "Z");
+}
+
 export type BsDate = { year: number; month: number; day: number };
 
 // Extract year/month/day of a Date in NPT (not in the browser's local TZ).

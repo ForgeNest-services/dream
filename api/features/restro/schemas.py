@@ -356,6 +356,7 @@ class OrderData(BaseModel):
     branch_id: str
     table_id: str | None
     customer_id: str | None
+    bill_number: int
     type: str
     status: str
     kitchen_status: str
@@ -523,6 +524,20 @@ class KhataHistoryResponse(BaseModel):
     credits_total: Decimal
     orders: list[KhataOrderEntry]
     settlements: list[KhataSettlementData]
+
+
+class RestroTenantInfo(BaseModel):
+    """Business identity exposed to the RMS staff app — mirrors the fields
+    on the `tenants` row (registered under platform auth). RMS needs this to
+    print PAN/VAT on receipts and to gate the VAT toggle in Settings."""
+
+    id: str
+    name: str
+    pan: str | None
+    is_vat_registered: bool
+    business_email: str | None
+    business_phone: str | None
+    business_address: str | None
 
 
 class SetDeliveryStatusRequest(BaseModel):

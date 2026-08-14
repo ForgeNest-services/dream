@@ -1,3 +1,4 @@
+import { Info, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -5,9 +6,16 @@ import { Switch } from "@/components/ui/switch";
 import { usePos } from "@/lib/pos/store";
 
 export function SettingsView() {
-  const { settings, updateSettings, branch, branchId } = usePos();
+  const { settings, updateSettings, branch, branchId, tenant, tenantLoading } = usePos();
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   const menuUrl = `${origin}/menu/${branchId}`;
+
+  // Business identity (name, PAN, VAT status) is authoritative on the tenant
+  // row — edited in the admin app, read-only here. If the tenant hasn't
+  // registered VAT, the VAT toggle stays locked off no matter what the local
+  // per-branch settings say.
+  const canToggleVat = tenant?.is_vat_registered === true;
+  const businessName = tenant?.name ?? settings.restaurantName;
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
@@ -16,12 +24,16 @@ export function SettingsView() {
         <p className="text-sm text-muted-foreground">Editing settings for {branch?.name ?? "—"}</p>
         <div className="mt-4 space-y-4">
           <div className="space-y-2">
-            <Label>Restaurant name</Label>
-            <Input
-              className="h-12"
-              value={settings.restaurantName}
-              onChange={(e) => updateSettings({ restaurantName: e.target.value })}
-            />
+            <div className="flex items-center justify-between">
+              <Label>Restaurant name</Label>
+              <span className="rounded-md bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                From business
+              </span>
+            </div>
+            <Input className="h-12 bg-muted/40" value={businessName} readOnly disabled />
+            <p className="text-[11px] text-muted-foreground">
+              Set on the business registration in the admin app.
+            </p>
           </div>
           <div className="space-y-2">
             <Label>Branch address</Label>
@@ -45,17 +57,52 @@ export function SettingsView() {
       <div className="space-y-4">
         <div className="pos-card p-5">
           <h2 className="font-display text-xl">Tax</h2>
-          <div className="mt-4 flex items-center justify-between rounded-xl bg-secondary p-4">
+          <div className="mt-3 rounded-xl border border-border bg-secondary/50 p-3 text-xs">
+            <p className="flex items-center gap-1.5 font-medium text-foreground">
+              <Info className="size-3.5" />
+              Business tax status
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              {tenantLoading ? (
+                "Loading…"
+              ) : tenant?.is_vat_registered ? (
+                <>
+                  <span className="font-semibold text-primary">VAT-registered</span>
+                  {tenant.pan && <> · PAN {tenant.pan}</>} — VAT can be applied to bills.
+                </>
+              ) : tenant?.pan ? (
+                <>
+                  <span className="font-semibold">PAN only</span> · PAN {tenant.pan} — VAT is not
+                  available. Change this in the admin app if you register for VAT.
+                </>
+              ) : (
+                <>No PAN or VAT on file. Update your business info in the admin app.</>
+              )}
+            </p>
+          </div>
+          <div
+            className={`mt-4 flex items-center justify-between rounded-xl p-4 ${
+              canToggleVat ? "bg-secondary" : "bg-muted/40 opacity-70"
+            }`}
+          >
             <div>
-              <p className="font-medium">VAT</p>
-              <p className="text-xs text-muted-foreground">Applied as a single line on every bill</p>
+              <p className="flex items-center gap-1.5 font-medium">
+                {!canToggleVat && <Lock className="size-3.5 text-muted-foreground" />}
+                Apply VAT on bills
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {canToggleVat
+                  ? "Applied as a single line on every bill"
+                  : "Only available for VAT-registered businesses"}
+              </p>
             </div>
             <Switch
-              checked={settings.vatEnabled}
+              checked={canToggleVat && settings.vatEnabled}
+              disabled={!canToggleVat}
               onCheckedChange={(v) => updateSettings({ vatEnabled: v })}
             />
           </div>
-          {settings.vatEnabled && (
+          {canToggleVat && settings.vatEnabled && (
             <div className="mt-4 space-y-2">
               <Label>VAT rate (%)</Label>
               <Input

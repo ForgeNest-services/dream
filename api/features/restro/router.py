@@ -1,3 +1,4 @@
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from core.database import get_db
@@ -50,7 +51,9 @@ from features.restro.schemas import (
     KhataSettlementData,
     KhataOrderEntry,
     KhataHistoryResponse,
+    RestroTenantInfo,
 )
+from shared_models import Tenant
 from features.restro.service import RestroCredentialService, RestroAuthService
 from features.restro.category_service import CategoryService
 from features.restro.menu_item_service import MenuItemService
@@ -75,6 +78,33 @@ def _assert_branch_scope(staff: dict, branch_id: str) -> None:
         return
     if staff.get("branch_id") != branch_id:
         raise HTTPException(403, "Not allowed for this branch")
+
+
+# ---------------------------------------------------------------------------
+# Tenant info (read-only) — for the RMS Settings screen and bill receipts,
+# which need PAN + VAT-registration status pulled from the tenant row.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/tenant-info")
+def get_tenant_info(
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    tenant = db.query(Tenant).filter(Tenant.id == staff["tenant_id"]).first()
+    if not tenant:
+        return error_response("TENANT_NOT_FOUND", "Business not found.", 404)
+    return success_response(
+        data=RestroTenantInfo(
+            id=tenant.id,
+            name=tenant.name,
+            pan=tenant.pan,
+            is_vat_registered=bool(tenant.is_vat_registered),
+            business_email=tenant.business_email,
+            business_phone=tenant.business_phone,
+            business_address=tenant.business_address,
+        ).model_dump(mode="json")
+    )
 
 
 # ---------------------------------------------------------------------------

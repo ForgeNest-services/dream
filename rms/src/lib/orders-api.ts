@@ -37,6 +37,7 @@ export interface OrderDto {
   branch_id: string;
   table_id: string | null;
   customer_id: string | null;
+  bill_number: number;
   type: OrderType;
   status: OrderStatus;
   kitchen_status: KitchenStatus;

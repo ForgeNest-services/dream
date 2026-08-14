@@ -23,6 +23,8 @@ import {
 } from "../inventory-api";
 import { employeesApi, type EmployeeDto } from "../employees-api";
 import { customersApi, type CustomerDto } from "../customers-api";
+import { tenantApi, type TenantInfoDto } from "../tenant-api";
+import { parseApiDate } from "./nepali-date";
 import {
   EXPENSES,
   type Category,
@@ -96,6 +98,7 @@ function toOrderLine(l: OrderLineDto): OrderLine {
 function toOrder(o: OrderDto): Order {
   const order: Order = {
     id: o.id,
+    billNumber: o.bill_number,
     tableId: o.table_id ?? "",
     type: o.type,
     // Voided lines are historical audit rows — hide them from the UI which
@@ -105,14 +108,15 @@ function toOrder(o: OrderDto): Order {
     // as effectively closed so the UI hides it from live views.
     status: o.status === "draft" ? "draft" : "paid",
     kitchenStatus: o.kitchen_status,
-    placedAt: new Date(o.placed_at).getTime(),
+    placedAt: parseApiDate(o.placed_at)?.getTime() ?? 0,
     placedAtBs: o.placed_at_bs,
     discountType: o.discount_type,
     discountValue: Number(o.discount_value),
     waiter: o.waiter_name,
   };
   if (o.paid_at_bs) order.paidAtBs = o.paid_at_bs;
-  if (o.settled_at) order.settledAt = new Date(o.settled_at).getTime();
+  const settledDate = parseApiDate(o.settled_at);
+  if (settledDate) order.settledAt = settledDate.getTime();
   if (o.settled_at_bs) order.settledAtBs = o.settled_at_bs;
   if (o.payment_method) order.paymentMethod = o.payment_method;
   if (o.customer_id) order.customerId = o.customer_id;
@@ -154,7 +158,7 @@ function toStockMovement(dto: StockMovementDto): StockMovement {
     delta: Number(dto.delta),
     reason: dto.reason,
     by: dto.actor_name,
-    at: new Date(dto.created_at).getTime(),
+    at: parseApiDate(dto.created_at)?.getTime() ?? 0,
   };
   if (dto.note) movement.note = dto.note;
   if (dto.cost !== null) movement.cost = Number(dto.cost);
@@ -218,6 +222,11 @@ type Ctx = {
   branchId: string;
   setBranchId: (id: string) => void;
   branch: Branch | null;
+
+  // Tenant identity — pulled from the platform-auth `tenants` row via
+  // /restro/tenant-info. Read-only in RMS; editing lives in the admin app.
+  tenant: TenantInfoDto | null;
+  tenantLoading: boolean;
 
   settings: Settings;
   updateSettings: (patch: Partial<Settings>) => void;
@@ -559,6 +568,8 @@ export function PosProvider({ children }: { children: ReactNode }) {
   const [employeesLoading, setEmployeesLoading] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
+  const [tenant, setTenant] = useState<TenantInfoDto | null>(null);
+  const [tenantLoading, setTenantLoading] = useState(false);
   const [expenses, setExpenses] = useState<Expense[]>(EXPENSES);
 
   const settings = settingsMap[branchId] ?? defaultSettings(branch);
@@ -630,6 +641,29 @@ export function PosProvider({ children }: { children: ReactNode }) {
     };
   }, [session, branchId]);
 
+  // Tenant info is per-session (doesn't change with branch switch — it's the
+  // business identity). Fetched once after login.
+  useEffect(() => {
+    if (!session) {
+      setTenant(null);
+      return;
+    }
+    let cancelled = false;
+    setTenantLoading(true);
+    tenantApi
+      .info()
+      .then((response) => {
+        if (cancelled) return;
+        setTenant(response.data ?? null);
+      })
+      .finally(() => {
+        if (!cancelled) setTenantLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
   const setTableStatus = (tableId: string, status: RestaurantTable["status"]) =>
     setTables((prev) => {
       const target = prev.find((t) => t.id === tableId);
@@ -656,6 +690,9 @@ export function PosProvider({ children }: { children: ReactNode }) {
     branchId,
     setBranchId,
     branch,
+
+    tenant,
+    tenantLoading,
 
     settings,
     updateSettings: (patch) =>

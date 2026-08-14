@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NPR, type Order, type RestaurantTable } from "@/lib/pos/data";
 import { billTotals, usePos } from "@/lib/pos/store";
-import { formatDateWithStoredBs } from "@/lib/pos/nepali-date";
+import { formatDateWithStoredBs, parseApiDate } from "@/lib/pos/nepali-date";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useOrdersList } from "@/hooks/useOrdersList";
 import type { OrderDto } from "@/lib/orders-api";
@@ -144,6 +144,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
   // billTotals expect. Only the fields those consumers actually read.
   const toOrder = (o: OrderDto): Order => ({
     id: o.id,
+    billNumber: o.bill_number,
     tableId: o.table_id ?? "",
     type: o.type,
     ...(o.customer
@@ -172,7 +173,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
       })),
     status: o.status === "draft" ? "draft" : "paid",
     kitchenStatus: o.kitchen_status,
-    placedAt: new Date(o.placed_at).getTime(),
+    placedAt: parseApiDate(o.placed_at)?.getTime() ?? 0,
     placedAtBs: o.placed_at_bs,
     ...(o.paid_at_bs ? { paidAtBs: o.paid_at_bs } : {}),
     discountType: o.discount_type,
@@ -268,10 +269,10 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
               const mapped = toOrder(o);
               return (
                 <tr key={o.id} className="border-b border-border/70">
-                  <td className="py-3 pr-3">#{o.id.slice(-4).toUpperCase()}</td>
+                  <td className="py-3 pr-3">#{o.bill_number}</td>
                   <td className="py-3 pr-3">{label(o)}</td>
                   <td className="py-3 pr-3 text-muted-foreground">
-                    {formatDateWithStoredBs(new Date(o.placed_at), o.placed_at_bs)}
+                    {formatDateWithStoredBs(parseApiDate(o.placed_at) ?? 0, o.placed_at_bs)}
                   </td>
                   <td className="py-3 pr-3">
                     {(() => {

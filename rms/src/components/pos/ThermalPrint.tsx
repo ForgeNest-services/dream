@@ -8,7 +8,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { NPR, type Order, type Settings } from "@/lib/pos/data";
-import { formatBikramSambat, NEPALI_MONTHS } from "@/lib/pos/nepali-date";
+import type { TenantInfoDto } from "@/lib/tenant-api";
+import { usePos } from "@/lib/pos/store";
+import {
+  formatBikramSambat,
+  NEPALI_MONTHS,
+  parseApiDate,
+} from "@/lib/pos/nepali-date";
 
 function Divider() {
   return <div className="my-1 border-t border-dashed border-black" />;
@@ -24,6 +30,56 @@ function bsFromOrder(order: Order): string {
   return `${month} ${Number(d)}, ${Number(y)} BS`;
 }
 
+// `order.placedAt` was parsed via parseApiDate (UTC), so this formats in
+// NPT via toLocaleTimeString({ timeZone }).
+function nptTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Kathmandu",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function nptDate(ts: number): string {
+  return new Date(ts).toLocaleDateString("en-GB", {
+    timeZone: "Asia/Kathmandu",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+// Header block used by both KOT and Bill — pulls PAN + VAT-registration
+// status from the tenant, falls back gracefully if either is missing.
+function TenantHeader({
+  tenant,
+  settings,
+  showAddress,
+}: {
+  tenant: TenantInfoDto | null;
+  settings: Settings;
+  showAddress: boolean;
+}) {
+  const name = tenant?.name ?? settings.restaurantName;
+  return (
+    <>
+      <p className="text-center text-[13px] uppercase tracking-widest">{name}</p>
+      {showAddress && (
+        <>
+          {settings.branchAddress && <p className="text-center">{settings.branchAddress}</p>}
+          {settings.branchPhone && <p className="text-center">Tel: {settings.branchPhone}</p>}
+        </>
+      )}
+      {tenant?.pan && (
+        <p className="text-center text-[11px]">
+          {tenant.is_vat_registered ? "VAT No." : "PAN"}: {tenant.pan}
+        </p>
+      )}
+    </>
+  );
+}
+
 export function KotReceipt({
   order,
   tableLabel,
@@ -33,24 +89,20 @@ export function KotReceipt({
   tableLabel: string;
   settings: Settings;
 }) {
-  const printedAt = new Date();
-  const placed = new Date(order.placedAt);
+  const { tenant } = usePos();
+  const printedAt = Date.now();
   return (
     <div className="thermal-receipt mx-auto p-2">
       <p className="text-center text-[13px] uppercase tracking-widest">Kitchen Order Ticket</p>
-      <p className="text-center">{settings.restaurantName}</p>
+      <TenantHeader tenant={tenant} settings={settings} showAddress={false} />
       <Divider />
       <p>Table : {tableLabel}</p>
-      <p>Order : #{order.id.slice(0, 6).toUpperCase()}</p>
-      <p>Waiter: {order.waiter}</p>
+      <p>Bill  : #{order.billNumber}</p>
       <p>
-        Time : {placed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ·{" "}
-        {bsFromOrder(order)}
+        Time : {nptTime(order.placedAt)} · {bsFromOrder(order)}
       </p>
-      {printedAt.getTime() - placed.getTime() > 60_000 && (
-        <p className="text-[10px] opacity-70">
-          Printed: {printedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-        </p>
+      {printedAt - order.placedAt > 60_000 && (
+        <p className="text-[10px] opacity-70">Printed: {nptTime(printedAt)}</p>
       )}
       <Divider />
       <p>QTY ITEM</p>
@@ -82,27 +134,37 @@ export function BillReceipt({
   settings: Settings;
   totals: { subtotal: number; discount: number; vat: number; total: number };
 }) {
-  const placed = new Date(order.placedAt);
+  const { tenant } = usePos();
+  // Prefer the paid_at for closed bills, placed_at for drafts — matches what
+  // the customer expects to see on the receipt (when THIS bill was closed).
+  const displayTs =
+    order.status === "paid" && order.paidAtBs ? order.placedAt : order.placedAt;
   const row = (label: string, value: string) => (
     <div className="flex justify-between gap-2">
       <span>{label}</span>
       <span>{value}</span>
     </div>
   );
+  const paymentLabel = order.paymentMethod
+    ? order.paymentMethod === "khata"
+      ? "KHATA (on tab)"
+      : order.paymentMethod.toUpperCase()
+    : "PENDING";
   return (
     <div className="thermal-receipt mx-auto p-2">
-      <p className="text-center text-[13px] uppercase tracking-widest">{settings.restaurantName}</p>
-      <p className="text-center">{settings.branchAddress}</p>
-      <p className="text-center">Tel: {settings.branchPhone}</p>
+      <TenantHeader tenant={tenant} settings={settings} showAddress={true} />
       <Divider />
-      <p>Bill  : #{order.id.slice(0, 6).toUpperCase()}</p>
+      <p>Bill  : #{order.billNumber}</p>
       <p>Table : {tableLabel}</p>
-      <p>Staff : {order.waiter}</p>
+      {order.customer && (
+        <>
+          <p>Cust. : {order.customer.name}</p>
+          {order.customer.phone && <p>Phone : {order.customer.phone}</p>}
+        </>
+      )}
       <p>Date : {bsFromOrder(order)}</p>
-      <p>
-        Also: {placed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
-      </p>
-      <p>Time : {placed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+      <p>Also : {nptDate(displayTs)}</p>
+      <p>Time : {nptTime(displayTs)}</p>
       <Divider />
       {order.lines.map((l) => (
         <div key={l.id} className="mb-1">
@@ -116,14 +178,16 @@ export function BillReceipt({
       <Divider />
       {row("Subtotal", NPR(totals.subtotal))}
       {totals.discount > 0 && row("Discount", `-${NPR(totals.discount)}`)}
-      {settings.vatEnabled && row(`VAT ${settings.vatRate}%`, NPR(totals.vat))}
+      {settings.vatEnabled && tenant?.is_vat_registered && (
+        row(`VAT ${settings.vatRate}%`, NPR(totals.vat))
+      )}
       <Divider />
       <div className="flex justify-between text-[13px]">
         <span>TOTAL</span>
         <span>{NPR(totals.total)}</span>
       </div>
       <Divider />
-      <p>Payment: {(order.paymentMethod ?? "pending").toUpperCase()}</p>
+      <p>Payment: {paymentLabel}</p>
       {settings.qrImage && (
         <img src={settings.qrImage} alt="Payment QR" className="mx-auto mt-2 size-24 object-contain" />
       )}
@@ -131,6 +195,9 @@ export function BillReceipt({
     </div>
   );
 }
+// parseApiDate re-exported here in case any consumer needs it, avoiding a
+// circular import — actually it's already used above via order.placedAt (already parsed).
+void parseApiDate;
 
 export function PrintDialog({
   open,

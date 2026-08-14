@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { NPR, type Customer } from "@/lib/pos/data";
 import { usePos } from "@/lib/pos/store";
-import { formatDateWithStoredBs } from "@/lib/pos/nepali-date";
+import { formatDateWithStoredBs, parseApiDate } from "@/lib/pos/nepali-date";
 import {
   customersApi,
   type KhataHistoryDto,
@@ -61,12 +61,12 @@ export function KhataHistoryDialog({
     const items: TimelineItem[] = [
       ...data.orders.map((o) => ({
         kind: "order" as const,
-        at: new Date(o.placed_at).getTime(),
+        at: parseApiDate(o.placed_at)?.getTime() ?? 0,
         entry: o,
       })),
       ...data.settlements.map((s) => ({
         kind: "settlement" as const,
-        at: new Date(s.created_at).getTime(),
+        at: parseApiDate(s.created_at)?.getTime() ?? 0,
         entry: s,
       })),
     ];
@@ -158,7 +158,7 @@ function StatCard({
 }
 
 function OrderRow({ entry }: { entry: KhataOrderEntryDto }) {
-  const placedTs = new Date(entry.placed_at).getTime();
+  const placedTs = parseApiDate(entry.placed_at)?.getTime() ?? 0;
   return (
     <li className="rounded-xl border border-warning/40 bg-warning/5 p-3">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
@@ -181,7 +181,7 @@ function OrderRow({ entry }: { entry: KhataOrderEntryDto }) {
 }
 
 function SettlementRow({ entry }: { entry: KhataSettlementDto }) {
-  const at = new Date(entry.created_at).getTime();
+  const at = parseApiDate(entry.created_at)?.getTime() ?? 0;
   return (
     <li className="rounded-xl border border-success/40 bg-success/5 p-3">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">

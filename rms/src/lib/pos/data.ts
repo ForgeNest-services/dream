@@ -102,6 +102,9 @@ export type OrderCustomerRef = {
 
 export type Order = {
   id: string;
+  // Sequential per-branch number for receipts and searches. Populated by
+  // the server on create — always > 0.
+  billNumber: number;
   tableId: string;
   type: "dine-in" | "delivery";
   // Present when customer_id is set on the order — always for delivery,

@@ -178,7 +178,7 @@ export function ReportsView() {
             <tbody>
               {filtered.map((o) => (
                 <tr key={o.id} className="border-b border-border/70 align-top">
-                  <td className="py-3 pr-3">#{o.id.slice(-4).toUpperCase()}</td>
+                  <td className="py-3 pr-3">#{o.billNumber}</td>
                   <td className="py-3 pr-3">{label(o)}</td>
                   <td className="py-3 pr-3 text-muted-foreground">
                     {formatDateWithStoredBs(o.placedAt, o.placedAtBs)}
