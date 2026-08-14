@@ -14,6 +14,7 @@ from features.restro.order_repository import (
 )
 from features.restro.table_repository import TableRepository
 from features.restro.menu_item_repository import MenuItemRepository
+from features.restro.menu_item_service import combo_note_from_components
 from features.restro.customer_repository import CustomerRepository
 from features.restro.khata_settlement_repository import KhataSettlementRepository
 from features.branches.repository import BranchRepository
@@ -254,6 +255,11 @@ class OrderService:
                 snapshot_price = Decimal(variant.price)
             else:
                 snapshot_price = Decimal(item.price) if item.price is not None else Decimal(0)
+            # For combos, auto-populate the line note with the composition so
+            # the KOT shows the kitchen what to actually prep. Doesn't
+            # override an explicit note the waiter typed.
+            if item.is_combo and not (note and note.strip()):
+                note = combo_note_from_components(item)
         else:
             # Custom line (e.g. an off-menu item) — client must provide name+price.
             if not snapshot_name or snapshot_price is None:

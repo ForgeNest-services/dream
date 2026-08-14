@@ -12,6 +12,10 @@ DEFAULT_CATEGORIES = [
     "Momo",
     "Thakali Set",
     "Newari Khaja",
+    # Combo menu items live here by convention. The category is just
+    # organizational — combo behavior is driven by the `is_combo` flag on
+    # individual menu items, not by category name (rename-safe).
+    "Combo",
 ]
 
 

@@ -13,14 +13,27 @@ export type Category = { id: string; name: string };
 
 export type Variant = { id: string; name: string; price: number };
 
+// A combo component: one sub-item plus its variant + qty.
+export type MenuItemComponent = {
+  id: string;
+  childMenuItemId: string;
+  childVariantName?: string;
+  childName: string;
+  qty: number;
+};
+
 export type MenuItem = {
   id: string;
   name: string;
   categoryId: string;
   image?: string;
   hasVariants: boolean;
+  // Mutually exclusive with hasVariants. When true, `price` is the combo
+  // price and `components` is the composition (>=1 entries).
+  isCombo: boolean;
   price?: number;
   variants: Variant[];
+  components: MenuItemComponent[];
   soldOut: boolean;
 };
 

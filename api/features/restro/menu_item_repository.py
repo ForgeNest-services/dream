@@ -1,6 +1,6 @@
 from decimal import Decimal
 from sqlalchemy.orm import Session, joinedload
-from shared_models import RestroMenuItem, RestroMenuItemVariant
+from shared_models import RestroMenuItem, RestroMenuItemVariant, RestroMenuItemComponent
 
 
 class MenuItemRepository:
@@ -12,9 +12,11 @@ class MenuItemRepository:
         category_id: str,
         name: str,
         has_variants: bool,
+        is_combo: bool,
         price: Decimal | None,
         image_url: str | None,
         variants: list[dict],
+        components: list[dict],
     ) -> RestroMenuItem:
         item = RestroMenuItem(
             tenant_id=tenant_id,
@@ -22,11 +24,21 @@ class MenuItemRepository:
             category_id=category_id,
             name=name.strip(),
             has_variants=has_variants,
+            is_combo=is_combo,
             price=price,
             image_url=image_url,
         )
         item.variants = [
             RestroMenuItemVariant(name=v["name"].strip(), price=v["price"]) for v in variants
+        ]
+        item.components = [
+            RestroMenuItemComponent(
+                child_menu_item_id=c["child_menu_item_id"],
+                child_variant_name=(c.get("child_variant_name") or None),
+                qty=int(c.get("qty") or 1),
+                display_order=i,
+            )
+            for i, c in enumerate(components)
         ]
         db.add(item)
         db.commit()
@@ -37,7 +49,10 @@ class MenuItemRepository:
     def get_by_id(db: Session, tenant_id: str, item_id: str) -> RestroMenuItem | None:
         return (
             db.query(RestroMenuItem)
-            .options(joinedload(RestroMenuItem.variants))
+            .options(
+                joinedload(RestroMenuItem.variants),
+                joinedload(RestroMenuItem.components).joinedload(RestroMenuItemComponent.child),
+            )
             .filter(
                 RestroMenuItem.id == item_id,
                 RestroMenuItem.tenant_id == tenant_id,
@@ -51,7 +66,10 @@ class MenuItemRepository:
     ) -> list[RestroMenuItem]:
         query = (
             db.query(RestroMenuItem)
-            .options(joinedload(RestroMenuItem.variants))
+            .options(
+                joinedload(RestroMenuItem.variants),
+                joinedload(RestroMenuItem.components).joinedload(RestroMenuItemComponent.child),
+            )
             .filter(
                 RestroMenuItem.tenant_id == tenant_id,
                 RestroMenuItem.branch_id == branch_id,
@@ -69,10 +87,12 @@ class MenuItemRepository:
         category_id: str | None = None,
         name: str | None = None,
         has_variants: bool | None = None,
+        is_combo: bool | None = None,
         price: Decimal | None = None,
         price_explicitly_null: bool = False,
         image_url: str | None = None,
         variants: list[dict] | None = None,
+        components: list[dict] | None = None,
         is_active: bool | None = None,
     ) -> RestroMenuItem:
         if category_id is not None:
@@ -81,6 +101,8 @@ class MenuItemRepository:
             item.name = name.strip()
         if has_variants is not None:
             item.has_variants = has_variants
+        if is_combo is not None:
+            item.is_combo = is_combo
         if price_explicitly_null:
             item.price = None
         elif price is not None:
@@ -90,6 +112,16 @@ class MenuItemRepository:
         if variants is not None:
             item.variants = [
                 RestroMenuItemVariant(name=v["name"].strip(), price=v["price"]) for v in variants
+            ]
+        if components is not None:
+            item.components = [
+                RestroMenuItemComponent(
+                    child_menu_item_id=c["child_menu_item_id"],
+                    child_variant_name=(c.get("child_variant_name") or None),
+                    qty=int(c.get("qty") or 1),
+                    display_order=i,
+                )
+                for i, c in enumerate(components)
             ]
         if is_active is not None:
             item.is_active = is_active

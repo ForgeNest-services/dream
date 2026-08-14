@@ -366,6 +366,56 @@ _MENU_ITEM_ERROR_MAP = {
         422,
     ),
     "VARIANT_NAME_REQUIRED": ("VARIANT_NAME_REQUIRED", "Every variant needs a name.", 422),
+    "COMBO_CANNOT_HAVE_VARIANTS": (
+        "COMBO_CANNOT_HAVE_VARIANTS",
+        "A combo can't have variants — its composition IS the variant.",
+        422,
+    ),
+    "COMPONENTS_REQUIRED": (
+        "COMPONENTS_REQUIRED",
+        "Add at least one item to the combo.",
+        422,
+    ),
+    "COMPONENTS_NOT_ALLOWED": (
+        "COMPONENTS_NOT_ALLOWED",
+        "Components are only allowed on combo items.",
+        422,
+    ),
+    "COMPONENT_ITEM_REQUIRED": (
+        "COMPONENT_ITEM_REQUIRED",
+        "Every combo component needs an item picked.",
+        422,
+    ),
+    "COMPONENT_QTY_INVALID": (
+        "COMPONENT_QTY_INVALID",
+        "Each combo component needs a quantity of at least 1.",
+        422,
+    ),
+    "COMPONENT_ITEM_NOT_FOUND": (
+        "COMPONENT_ITEM_NOT_FOUND",
+        "One of the picked combo items no longer exists in this branch.",
+        404,
+    ),
+    "COMPONENT_CANNOT_BE_COMBO": (
+        "COMPONENT_CANNOT_BE_COMBO",
+        "Combos can't contain other combos — pick regular menu items.",
+        422,
+    ),
+    "COMPONENT_VARIANT_REQUIRED": (
+        "COMPONENT_VARIANT_REQUIRED",
+        "That component has variants — pick which one the combo uses.",
+        422,
+    ),
+    "COMPONENT_VARIANT_NOT_FOUND": (
+        "COMPONENT_VARIANT_NOT_FOUND",
+        "That variant no longer exists on the picked item.",
+        404,
+    ),
+    "COMPONENT_SELF_REFERENCE": (
+        "COMPONENT_SELF_REFERENCE",
+        "A combo can't include itself.",
+        422,
+    ),
 }
 
 
@@ -408,9 +458,11 @@ def create_menu_item(
         category_id=data.category_id,
         name=data.name,
         has_variants=data.has_variants,
+        is_combo=data.is_combo,
         price=data.price,
         image_url=data.image_url,
         variants=[v.model_dump() for v in data.variants],
+        components=[c.model_dump() for c in data.components],
     )
 
     if not result["success"]:
@@ -443,10 +495,14 @@ def update_menu_item(
         category_id=data.category_id,
         name=data.name,
         has_variants=data.has_variants,
+        is_combo=data.is_combo,
         price=data.price,
         price_explicitly_null=data.clear_price,
         image_url=data.image_url,
         variants=[v.model_dump() for v in data.variants] if data.variants is not None else None,
+        components=(
+            [c.model_dump() for c in data.components] if data.components is not None else None
+        ),
     )
 
     if not result["success"]:

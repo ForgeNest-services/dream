@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Numeric, Boolean, DateTime, ForeignKey, Index, text
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, foreign
 from datetime import datetime, timezone
 import uuid
 from core.database import Base
@@ -27,6 +27,10 @@ class RestroMenuItem(Base):
     name = Column(String(150), nullable=False)
     image_url = Column(String(1000), nullable=True)
     has_variants = Column(Boolean, nullable=False, default=False)
+    # Combos are menu items composed of other menu items. Mutually exclusive
+    # with has_variants — a combo has a single flat price and >=1 components
+    # in RestroMenuItemComponent. Enforced at the service layer.
+    is_combo = Column(Boolean, nullable=False, default=False)
     price = Column(Numeric(10, 2), nullable=True)
     sold_out = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
@@ -43,6 +47,13 @@ class RestroMenuItem(Base):
         back_populates="menu_item",
         cascade="all, delete-orphan",
         order_by="RestroMenuItemVariant.created_at",
+    )
+    components = relationship(
+        "RestroMenuItemComponent",
+        foreign_keys="RestroMenuItemComponent.parent_menu_item_id",
+        back_populates="parent",
+        cascade="all, delete-orphan",
+        order_by="RestroMenuItemComponent.display_order",
     )
 
     def __repr__(self):

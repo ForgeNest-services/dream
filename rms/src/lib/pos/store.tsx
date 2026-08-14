@@ -197,8 +197,16 @@ function toMenuItem(m: MenuItemDto): MenuItem {
     categoryId: m.category_id,
     ...(m.image_url ? { image: m.image_url } : {}),
     hasVariants: m.has_variants,
+    isCombo: m.is_combo,
     ...(m.price !== null ? { price: m.price } : {}),
     variants: m.variants.map((v) => ({ id: v.id, name: v.name, price: v.price })),
+    components: (m.components ?? []).map((c) => ({
+      id: c.id,
+      childMenuItemId: c.child_menu_item_id,
+      ...(c.child_variant_name ? { childVariantName: c.child_variant_name } : {}),
+      childName: c.child_name,
+      qty: c.qty,
+    })),
     soldOut: m.sold_out,
   };
 }
@@ -725,17 +733,29 @@ export function PosProvider({ children }: { children: ReactNode }) {
     saveMenuItem: async (item) => {
       if (!branchId) return;
       const variantPayload = item.variants.map((v) => ({ name: v.name, price: v.price }));
-      const priceField = item.hasVariants || item.price === undefined ? {} : { price: item.price };
+      const componentPayload = item.components.map((c) => ({
+        child_menu_item_id: c.childMenuItemId,
+        child_variant_name: c.childVariantName ?? null,
+        qty: c.qty,
+      }));
+      // Combos and non-combos both need a price. Variants-with-no-flat-price
+      // rule is unchanged (a variant item has per-variant prices).
+      const needsFlatPrice = item.isCombo || !item.hasVariants;
+      const priceField = needsFlatPrice && item.price !== undefined ? { price: item.price } : {};
       const existing = menu.some((m) => m.id === item.id);
       if (existing) {
         const response = await menuItemsApi.update(branchId, item.id, {
           category_id: item.categoryId,
           name: item.name,
           has_variants: item.hasVariants,
+          is_combo: item.isCombo,
           ...priceField,
-          clear_price: item.hasVariants,
+          // Only clear the price when it's a variant item (variants own the
+          // pricing). Combos and simple items always carry a flat price.
+          clear_price: item.hasVariants && !item.isCombo,
           image_url: item.image ?? null,
           variants: item.hasVariants ? variantPayload : [],
+          components: item.isCombo ? componentPayload : [],
         });
         if (response.data) {
           const updated = toMenuItem(response.data);
@@ -746,9 +766,11 @@ export function PosProvider({ children }: { children: ReactNode }) {
           category_id: item.categoryId,
           name: item.name,
           has_variants: item.hasVariants,
+          is_combo: item.isCombo,
           ...priceField,
           image_url: item.image ?? null,
           variants: item.hasVariants ? variantPayload : [],
+          components: item.isCombo ? componentPayload : [],
         });
         if (response.data) setMenu((p) => [...p, toMenuItem(response.data!)]);
       }

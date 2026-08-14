@@ -30,7 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { NPR, type MenuItem, type Variant } from "@/lib/pos/data";
+import { NPR, type MenuItem, type MenuItemComponent, type Variant } from "@/lib/pos/data";
 import { usePos } from "@/lib/pos/store";
 import { uploadsApi } from "@/lib/uploads-api";
 import { ApiError } from "@/lib/api-client";
@@ -49,8 +49,10 @@ function emptyItem(categoryId: string): MenuItem {
     name: "",
     categoryId,
     hasVariants: false,
+    isCombo: false,
     price: 0,
     variants: [],
+    components: [],
     soldOut: false,
   };
 }
@@ -235,6 +237,11 @@ export function MenuView() {
                   {item.hasVariants
                     ? `from ${NPR(lowestVariantPrice(item.variants))}`
                     : NPR(item.price ?? 0)}
+                  {item.isCombo && (
+                    <span className="ml-1 inline-block rounded bg-primary/15 px-1 text-[9px] font-semibold uppercase tracking-wider text-primary">
+                      Combo
+                    </span>
+                  )}
                 </p>
                 <div className="mt-auto flex items-center justify-between gap-1 border-t border-border pt-1.5">
                   <Switch
@@ -409,26 +416,52 @@ function MenuItemDialog({
             <p className="text-xs text-muted-foreground">Default placeholder is used when no image is uploaded.</p>
           </div>
 
+          {/* Combo toggle — mutually exclusive with variants. Turning combo
+              ON auto-clears variants; turning variants ON auto-clears combo. */}
           <div className="flex items-center justify-between rounded-xl bg-secondary p-4">
             <div>
-              <p className="font-medium">Has Variants</p>
-              <p className="text-xs text-muted-foreground">e.g. Veg / Chicken / Buff / Pork</p>
+              <p className="font-medium">Combo</p>
+              <p className="text-xs text-muted-foreground">
+                Built from other menu items — kitchen sees each dish, customer sees one line
+              </p>
             </div>
             <Switch
-              checked={item.hasVariants}
+              checked={item.isCombo}
               onCheckedChange={(checked) =>
                 patch({
-                  hasVariants: checked,
-                  variants:
-                    checked && item.variants.length === 0
-                      ? [{ id: uid(), name: "Veg", price: 0 }]
-                      : item.variants,
+                  isCombo: checked,
+                  hasVariants: checked ? false : item.hasVariants,
+                  variants: checked ? [] : item.variants,
+                  components: checked && item.components.length === 0 ? [] : item.components,
                 })
               }
             />
           </div>
 
-          {!item.hasVariants ? (
+          {!item.isCombo && (
+            <div className="flex items-center justify-between rounded-xl bg-secondary p-4">
+              <div>
+                <p className="font-medium">Has Variants</p>
+                <p className="text-xs text-muted-foreground">e.g. Veg / Chicken / Buff / Pork</p>
+              </div>
+              <Switch
+                checked={item.hasVariants}
+                onCheckedChange={(checked) =>
+                  patch({
+                    hasVariants: checked,
+                    variants:
+                      checked && item.variants.length === 0
+                        ? [{ id: uid(), name: "Veg", price: 0 }]
+                        : item.variants,
+                  })
+                }
+              />
+            </div>
+          )}
+
+          {item.isCombo ? (
+            <ComboComposer draft={item} onChange={patch} />
+          ) : !item.hasVariants ? (
             <div className="space-y-2">
               <Label>Price (NPR)</Label>
               <Input
@@ -508,5 +541,166 @@ function MenuItemDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// The combo composer: flat combo price at the top, followed by a list of
+// picked components (with qty + variant selector where applicable), and an
+// "Add item" picker at the bottom. Combos can't include other combos —
+// filtered out of the picker. Server re-validates the same rules.
+function ComboComposer({
+  draft,
+  onChange,
+}: {
+  draft: MenuItem;
+  onChange: (p: Partial<MenuItem>) => void;
+}) {
+  const { menu } = usePos();
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Non-combo, non-self, active, in the same branch (menu is already
+  // branch-scoped in the store).
+  const pickable = menu.filter((m) => !m.isCombo && m.id !== draft.id);
+
+  const updateComponent = (id: string, p: Partial<MenuItemComponent>) => {
+    onChange({
+      components: draft.components.map((c) => (c.id === id ? { ...c, ...p } : c)),
+    });
+  };
+  const removeComponent = (id: string) => {
+    onChange({ components: draft.components.filter((c) => c.id !== id) });
+  };
+  const addComponent = (mi: MenuItem) => {
+    const initial: MenuItemComponent = {
+      id: uid(),
+      childMenuItemId: mi.id,
+      childName: mi.name,
+      qty: 1,
+      ...(mi.hasVariants && mi.variants[0]
+        ? { childVariantName: mi.variants[0].name }
+        : {}),
+    };
+    onChange({ components: [...draft.components, initial] });
+    setPickerOpen(false);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <Label>Combo price (NPR)</Label>
+        <Input
+          type="number"
+          className="h-12"
+          value={draft.price ?? 0}
+          onChange={(e) => onChange({ price: Number(e.target.value) })}
+        />
+        <p className="text-xs text-muted-foreground">
+          What the customer pays for the whole combo — component items are not summed.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Composition ({draft.components.length})</Label>
+        {draft.components.length === 0 && (
+          <p className="rounded-xl bg-secondary p-4 text-center text-xs text-muted-foreground">
+            No items yet. Tap "Add item" to build the combo.
+          </p>
+        )}
+        {draft.components.map((c) => {
+          const child = menu.find((m) => m.id === c.childMenuItemId);
+          return (
+            <div
+              key={c.id}
+              className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-xl border border-border p-2"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{c.childName || child?.name || "?"}</p>
+                {child?.hasVariants && (
+                  <Select
+                    value={c.childVariantName ?? ""}
+                    onValueChange={(v) => updateComponent(c.id, { childVariantName: v })}
+                  >
+                    <SelectTrigger className="mt-1 h-8 text-xs">
+                      <SelectValue placeholder="Pick variant" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {child.variants.map((v) => (
+                        <SelectItem key={v.id} value={v.name}>
+                          {v.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+              <Input
+                type="number"
+                min={1}
+                className="h-11 w-16 text-center"
+                aria-label="Quantity"
+                value={c.qty}
+                onChange={(e) =>
+                  updateComponent(c.id, { qty: Math.max(1, Number(e.target.value)) })
+                }
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-11 shrink-0 text-danger"
+                aria-label="Remove component"
+                onClick={() => removeComponent(c.id)}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+
+      <Button
+        variant="outline"
+        className="h-11 w-full"
+        onClick={() => setPickerOpen(true)}
+      >
+        <Plus className="size-4" />
+        Add item to combo
+      </Button>
+
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">Pick a menu item</DialogTitle>
+          </DialogHeader>
+          {pickable.length === 0 ? (
+            <p className="rounded-xl bg-secondary p-6 text-center text-sm text-muted-foreground">
+              No other menu items exist yet. Create some regular items first, then compose a combo
+              from them.
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {pickable.map((m) => (
+                <li key={m.id}>
+                  <button
+                    type="button"
+                    onClick={() => addComponent(m)}
+                    className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border border-border p-3 text-left transition-colors hover:border-primary hover:bg-secondary/60"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{m.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {m.hasVariants
+                          ? `${m.variants.length} variant(s)`
+                          : NPR(m.price ?? 0)}
+                      </p>
+                    </div>
+                    <Plus className="size-4 self-center text-muted-foreground" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
