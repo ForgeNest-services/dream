@@ -454,10 +454,19 @@ class OrderService:
         settled_at_value = None if payment_method == "khata" else now
         clear_settled = payment_method == "khata"
 
+        # Auto-finish the kitchen ticket. Paying = the customer got the food,
+        # so the kitchen has no more work to do on it. Prevents a paid order
+        # from lingering on the Kitchen Display board in "new"/"cooking"
+        # forever (chef can't advance it — status='paid' makes it
+        # non-editable — and shops that don't use the kitchen board at all
+        # would never touch kitchen_status manually). Kitchen board also
+        # filters status='draft' as belt-and-suspenders.
+        kitchen_status = "served" if order.kitchen_status != "served" else None
         updated = OrderRepository.set_status(
             db,
             order,
             status="paid",
+            kitchen_status=kitchen_status,
             paid_at=now,
             payment_method=payment_method,
             customer_id=effective_customer_id if payment_method == "khata" else None,

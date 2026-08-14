@@ -34,7 +34,15 @@ export function KitchenView() {
     return () => clearInterval(t);
   }, []);
 
-  const live = orders.filter((o) => o.lines.some((l) => l.sent));
+  // Kitchen board shows only OPEN bills that have at least one sent line.
+  // Once an order is marked paid (or cancelled), it disappears from the
+  // board — even if chef never touched kitchen_status. Some restaurants
+  // don't use the board at all (printed KOT only), so we must not require
+  // manual advancement to clean things up. Backend also auto-sets
+  // kitchen_status='served' on mark_paid, so reports stay honest.
+  const live = orders.filter(
+    (o) => o.status === "draft" && o.lines.some((l) => l.sent),
+  );
 
   return (
     <div className="space-y-4">
