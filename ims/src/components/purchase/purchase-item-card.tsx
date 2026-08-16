@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useApp } from "@/context/app-store";
 import { generateBarcode } from "@/lib/barcode";
 import { Barcode, Plus, Trash2, X } from "lucide-react";
@@ -37,6 +38,9 @@ export interface DraftItem {
   categoryId: string;
   brandId: string;
   mediaId?: string | undefined;
+  /** only meaningful for kind: "new" — existing items use the product's own taxable/taxRate */
+  taxable: boolean;
+  taxRate?: number | undefined;
   rows: DraftRow[];
 }
 
@@ -70,6 +74,17 @@ export function PurchaseItemCard({
 }) {
   const app = useApp();
   const unitId = app.units[0]?.id ?? "";
+
+  const existingProduct =
+    item.kind === "existing" ? app.products.find((p) => p.id === item.productId) : undefined;
+  const taxable = item.kind === "existing" ? existingProduct?.taxable !== false : item.taxable;
+  const taxRate = taxable
+    ? item.kind === "existing"
+      ? (existingProduct?.taxRate ?? app.company.vatRate)
+      : (item.taxRate ?? app.company.vatRate)
+    : 0;
+  const costInclTax = (excl: number) => (taxable ? excl + (excl * taxRate) / 100 : excl);
+  const costExclTax = (incl: number) => (taxable ? incl / (1 + taxRate / 100) : incl);
 
   const setRow = (key: string, patch: Partial<DraftRow>) =>
     onChange({
@@ -215,6 +230,29 @@ export function PurchaseItemCard({
               onChange={(id) => onChange({ ...item, mediaId: id })}
             />
           </div>
+          <div className="flex items-center gap-2 sm:col-span-2">
+            <Switch
+              checked={item.taxable}
+              onCheckedChange={(v) => onChange({ ...item, taxable: v })}
+            />
+            <Label className="text-xs">Taxable</Label>
+          </div>
+          {item.taxable && (
+            <div className="space-y-1">
+              <Label className="text-xs">Tax rate (%)</Label>
+              <Input
+                type="number"
+                value={item.taxRate ?? app.company.vatRate}
+                onChange={(e) =>
+                  onChange({
+                    ...item,
+                    taxRate: e.target.value === "" ? undefined : Number(e.target.value),
+                  })
+                }
+                className="h-8"
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -227,7 +265,8 @@ export function PurchaseItemCard({
               <th className="py-1 text-left font-medium">Barcode</th>
               <th className="py-1 text-left font-medium">Unit</th>
               <th className="py-1 text-right font-medium">Qty</th>
-              <th className="py-1 text-right font-medium">Cost</th>
+              <th className="py-1 text-right font-medium">Cost (excl. tax)</th>
+              {taxable && <th className="py-1 text-right font-medium">Cost (incl. tax)</th>}
               <th className="py-1 text-right font-medium">Selling</th>
               <th className="py-1 text-right font-medium">Amount</th>
               <th />
@@ -236,7 +275,7 @@ export function PurchaseItemCard({
           <tbody>
             {item.rows.length === 0 ? (
               <tr>
-                <td colSpan={9} className="py-3 text-center text-xs text-muted-foreground">
+                <td colSpan={taxable ? 10 : 9} className="py-3 text-center text-xs text-muted-foreground">
                   Choose a product to load its variants.
                 </td>
               </tr>
@@ -315,6 +354,18 @@ export function PurchaseItemCard({
                       className="num h-8 w-24 text-right"
                     />
                   </td>
+                  {taxable && (
+                    <td className="py-1.5 pr-2">
+                      <Input
+                        type="number"
+                        value={costInclTax(r.unitCost).toFixed(2)}
+                        onChange={(e) =>
+                          setRow(r.key, { unitCost: costExclTax(Number(e.target.value) || 0) })
+                        }
+                        className="num h-8 w-24 text-right"
+                      />
+                    </td>
+                  )}
                   <td className="py-1.5 pr-2">
                     <Input
                       type="number"

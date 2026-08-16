@@ -198,12 +198,20 @@ function PurchaseBillsPage() {
                                   <th className="py-1 text-right font-medium">Qty</th>
                                   <th className="py-1 text-right font-medium">Unit cost</th>
                                   <th className="py-1 text-right font-medium">Amount</th>
+                                  <th className="py-1 text-right font-medium">VAT</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {pu.lines.map((l) => (
                                   <tr key={l.id} className="border-t border-border/60">
-                                    <td className="py-1.5">{l.description}</td>
+                                    <td className="py-1.5">
+                                      {l.description}
+                                      {!l.taxable && (
+                                        <span className="ml-1.5 text-muted-foreground">
+                                          (non-taxable)
+                                        </span>
+                                      )}
+                                    </td>
                                     <td className="num py-1.5 text-right">
                                       {l.qty} {app.unitSymbol(l.unitId)}
                                     </td>
@@ -213,9 +221,23 @@ function PurchaseBillsPage() {
                                     <td className="py-1.5 text-right">
                                       <Money value={l.qty * l.unitCost} />
                                     </td>
+                                    <td className="py-1.5 text-right">
+                                      {l.taxable ? <Money value={l.vatAmount} /> : "—"}
+                                    </td>
                                   </tr>
                                 ))}
                               </tbody>
+                              <tfoot>
+                                <tr className="border-t font-medium">
+                                  <td className="py-1.5" colSpan={3}>
+                                    VAT total
+                                  </td>
+                                  <td />
+                                  <td className="py-1.5 text-right">
+                                    <Money value={pu.lines.reduce((s, l) => s + l.vatAmount, 0)} />
+                                  </td>
+                                </tr>
+                              </tfoot>
                             </table>
                             {pu.note ? (
                               <p className="mt-2 text-xs text-muted-foreground">{pu.note}</p>

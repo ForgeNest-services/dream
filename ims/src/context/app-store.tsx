@@ -44,6 +44,8 @@ export type PurchaseDraftItem =
       categoryId: string;
       brandId?: string | undefined;
       mediaId?: string | undefined;
+      taxable: boolean;
+      taxRate?: number | undefined;
       rows: {
         name: string;
         modelNo: string;
@@ -105,7 +107,8 @@ interface AppContextValue extends AppState {
   // mutations
   addProduct: (
     p: Omit<Product, "id" | "createdAt">,
-    variants: Omit<Variant, "id" | "productId" | "stock">[],
+    variants: (Omit<Variant, "id" | "productId" | "stock"> & { initialStock?: number | undefined })[],
+    stockBranchId: string,
   ) => void;
   updateProduct: (id: string, patch: Partial<Product>, variants: Variant[]) => void;
   addCategory: (name: string, parentId: string | null) => void;
@@ -269,7 +272,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
       invoiceTotal,
 
-      addProduct: (p, vs) =>
+      addProduct: (p, vs, stockBranchId) =>
         setState((s) => {
           const id = nextId("p");
           const variants: Variant[] = (
@@ -284,18 +287,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
                     costPrice: 0,
                     sellingPrice: 0,
                     lowStockAt: 10,
-                  } as Omit<Variant, "id" | "productId" | "stock">,
+                  } as Omit<Variant, "id" | "productId" | "stock"> & {
+                    initialStock?: number | undefined;
+                  },
                 ]
-          ).map((v, i) => ({
-            ...v,
-            id: `${id}-v${i + 1}`,
-            productId: id,
-            stock: Object.fromEntries(s.branches.map((b) => [b.id, 0])),
-          }));
+          ).map((v, i) => {
+            const { initialStock, ...rest } = v;
+            return {
+              ...rest,
+              id: `${id}-v${i + 1}`,
+              productId: id,
+              stock: {
+                ...Object.fromEntries(s.branches.map((b) => [b.id, 0])),
+                ...(initialStock ? { [stockBranchId]: initialStock } : {}),
+              },
+            };
+          });
+          const movements: StockMovement[] = variants
+            .filter((v) => (v.stock[stockBranchId] ?? 0) > 0)
+            .map((v) => ({
+              id: nextId("mv"),
+              date: new Date().toISOString(),
+              branchId: stockBranchId,
+              productId: v.productId,
+              variantId: v.id,
+              type: "adjust-in",
+              qty: v.stock[stockBranchId] ?? 0,
+              unitCost: v.costPrice,
+              balanceAfter: v.stock[stockBranchId] ?? 0,
+              reason: "Initial stock on product creation",
+              userId: s.currentUser?.id ?? "u-1",
+            }));
           return {
             ...s,
             products: [{ ...p, id, createdAt: new Date().toISOString() }, ...s.products],
             variants: [...s.variants, ...variants],
+            movements: [...movements, ...s.movements],
           };
         }),
 
@@ -452,8 +479,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 categoryId: item.categoryId,
                 brandId: item.brandId,
                 mediaId: item.mediaId,
+                taxable: item.taxable,
+                taxRate: item.taxRate,
                 createdAt: input.date,
               });
+              const rate = item.taxable ? (item.taxRate ?? s.company.vatRate) : 0;
               item.rows.forEach((r, ri) => {
                 const vid = `${pid}-v${ri + 1}`;
                 newVariants.push({
@@ -477,10 +507,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   qty: r.qty,
                   unitId: r.unitId,
                   unitCost: r.unitCost,
+                  taxable: item.taxable,
+                  taxRate: rate,
+                  vatAmount: (r.qty * r.unitCost * rate) / 100,
                 });
               });
             } else {
               const product = s.products.find((p) => p.id === item.productId);
+              const taxable = product?.taxable !== false;
+              const rate = taxable ? (product?.taxRate ?? s.company.vatRate) : 0;
               item.rows.forEach((r) => {
                 const v = s.variants.find((x) => x.id === r.variantId);
                 if (!v || r.qty <= 0) return;
@@ -497,6 +532,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   qty: r.qty,
                   unitId: v.unitId,
                   unitCost: r.unitCost,
+                  taxable,
+                  taxRate: rate,
+                  vatAmount: (r.qty * r.unitCost * rate) / 100,
                 });
               });
             }

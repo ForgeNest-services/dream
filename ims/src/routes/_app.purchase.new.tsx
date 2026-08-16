@@ -57,6 +57,7 @@ function makeItem(): DraftItem {
     sku: "",
     categoryId: "",
     brandId: "none",
+    taxable: true,
     rows: [],
   };
 }
@@ -86,6 +87,29 @@ function NewPurchasePage() {
   const effectiveBill = billAmount === "" ? itemsTotal : Number(billAmount);
   const difference = effectiveBill - itemsTotal;
   const tracking = partyId !== "none" && postToLedger;
+
+  const taxTotals = useMemo(() => {
+    let taxableAmt = 0;
+    let nonTaxableAmt = 0;
+    let vat = 0;
+    for (const item of items) {
+      const product = item.kind === "existing" ? app.products.find((p) => p.id === item.productId) : undefined;
+      const taxable = item.kind === "existing" ? (product?.taxable !== false) : item.taxable;
+      const rate = taxable
+        ? (item.kind === "existing" ? (product?.taxRate ?? app.company.vatRate) : (item.taxRate ?? app.company.vatRate))
+        : 0;
+      for (const r of item.rows) {
+        const lineAmt = r.qty * r.unitCost;
+        if (taxable) {
+          taxableAmt += lineAmt;
+          vat += (lineAmt * rate) / 100;
+        } else {
+          nonTaxableAmt += lineAmt;
+        }
+      }
+    }
+    return { taxableAmt, nonTaxableAmt, vat, net: taxableAmt + nonTaxableAmt + vat };
+  }, [items, app.products, app.company.vatRate]);
 
   const patchItem = (key: string, next: DraftItem) =>
     setItems((prev) => prev.map((i) => (i.key === key ? next : i)));
@@ -133,6 +157,8 @@ function NewPurchasePage() {
           categoryId: i.categoryId,
           brandId: i.brandId === "none" ? undefined : i.brandId,
           mediaId: i.mediaId,
+          taxable: i.taxable,
+          taxRate: i.taxRate,
           rows: rows.map((r) => ({
             name: r.name.trim() || "Default",
             modelNo: r.modelNo,
@@ -368,11 +394,31 @@ function NewPurchasePage() {
               <Plus className="mr-1.5 h-4 w-4" /> Add new product
             </Button>
           </div>
-          <div className="flex justify-end rounded-lg border bg-card px-4 py-3 text-sm">
-            <span className="mr-3 text-muted-foreground">Items total</span>
-            <span className="font-medium">
-              <Money value={itemsTotal} />
-            </span>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 rounded-lg border bg-card px-4 py-3 text-sm sm:grid-cols-4">
+            <div className="flex justify-between gap-2 sm:flex-col sm:gap-0.5">
+              <dt className="text-muted-foreground">Taxable</dt>
+              <dd className="num font-medium">
+                <Money value={taxTotals.taxableAmt} />
+              </dd>
+            </div>
+            <div className="flex justify-between gap-2 sm:flex-col sm:gap-0.5">
+              <dt className="text-muted-foreground">Non-taxable</dt>
+              <dd className="num font-medium">
+                <Money value={taxTotals.nonTaxableAmt} />
+              </dd>
+            </div>
+            <div className="flex justify-between gap-2 sm:flex-col sm:gap-0.5">
+              <dt className="text-muted-foreground">VAT</dt>
+              <dd className="num font-medium">
+                <Money value={taxTotals.vat} />
+              </dd>
+            </div>
+            <div className="flex justify-between gap-2 border-t pt-1.5 sm:flex-col sm:gap-0.5 sm:border-t-0 sm:pt-0">
+              <dt className="text-muted-foreground">Net</dt>
+              <dd className="num font-semibold">
+                <Money value={taxTotals.net} />
+              </dd>
+            </div>
           </div>
         </section>
       </div>
