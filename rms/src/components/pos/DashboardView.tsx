@@ -70,10 +70,10 @@ export function DashboardView() {
   const isToday = !search.bs || search.bs === todayBs;
 
   const setDate = (bs: string) => {
+    // Do NOT pass `to: DASHBOARD_ROUTE` here — the router would resolve the
+    // route ID "/_app/dashboard" as a literal URL and 404. Omitting `to`
+    // keeps navigation on the current route and just patches the search.
     navigate({
-      to: DASHBOARD_ROUTE,
-      // Empty string clears the query — keeps the URL clean when going back
-      // to today.
       search: (): DashboardSearch => ({ bs: bs === todayBs ? "" : bs }),
       replace: true,
     });
