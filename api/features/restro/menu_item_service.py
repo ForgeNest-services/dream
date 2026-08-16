@@ -119,6 +119,20 @@ class MenuItemService:
     ) -> dict:
         if not MenuItemService._assert_branch(db, tenant_id, branch_id):
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
+        # Auto-provision the default menu for branches that have categories
+        # but no items yet — covers the case where categories were seeded on
+        # older code (before menu seeding existed). Only fires on an unfiltered
+        # list (category_id is None) so a category-scoped fetch doesn't
+        # accidentally trigger it.
+        if category_id is None:
+            existing = MenuItemRepository.list_for_branch(db, tenant_id, branch_id, None)
+            if not existing:
+                try:
+                    from features.restro.menu_seeder import seed_default_menu_items
+                    seed_default_menu_items(db, tenant_id, branch_id)
+                except Exception as e:
+                    from utils.logger import logger
+                    logger.error(f"Menu seed failed for branch {branch_id}: {e}")
         items = MenuItemRepository.list_for_branch(db, tenant_id, branch_id, category_id)
         return {"success": True, "items": items}
 
