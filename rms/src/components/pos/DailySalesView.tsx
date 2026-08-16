@@ -1,52 +1,49 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { NPR } from "@/lib/pos/data";
-import { billTotals, usePos } from "@/lib/pos/store";
+import { usePos } from "@/lib/pos/store";
 import { toBsIso } from "@/lib/pos/nepali-date";
+import { reportsApi, asNum, type SummaryDto } from "@/lib/reports-api";
 import { BsDatePicker } from "./BsDatePicker";
 
-// Filter operates on placed_at_bs (backend-stamped BS string, "YYYY-MM-DD")
-// which sorts lexically — matches the filter comparisons directly, no
-// Gregorian conversion needed.
 export function DailySalesView() {
-  const { orders, expenses, settings, categories, menu } = usePos();
+  const { branchId } = usePos();
   const todayBs = toBsIso(new Date()) ?? "";
   const [fromBs, setFromBs] = useState(todayBs);
   const [toBs, setToBs] = useState(todayBs);
+  const [summary, setSummary] = useState<SummaryDto | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const inRange = orders.filter(
-    (o) => o.placedAtBs >= fromBs && o.placedAtBs <= toBs,
-  );
-  const paid = inRange.filter((o) => o.status === "paid");
-  const sales = paid.reduce((s, o) => s + billTotals(o, settings.vatEnabled, settings.vatRate).total, 0);
-  const items = inRange.reduce((s, o) => s + o.lines.reduce((n, l) => n + l.qty, 0), 0);
+  useEffect(() => {
+    if (!branchId || !fromBs || !toBs) return;
+    let cancelled = false;
+    setLoading(true);
+    // Same endpoint handles single-day + range — server accepts bs_from == bs_to.
+    reportsApi
+      .rangeSummary(branchId, fromBs, toBs)
+      .then((r) => {
+        if (cancelled) return;
+        if (r.success && r.data) setSummary(r.data);
+        else toast.error("Failed to load report");
+      })
+      .catch(() => !cancelled && toast.error("Failed to load report"))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [branchId, fromBs, toBs]);
 
-  // Expenses filter uses the same BS range so the P&L view matches.
-  const expensesInRange = expenses.filter(
-    (e) => e.spentAtBs >= fromBs && e.spentAtBs <= toBs,
-  );
-  const expensesTotal = expensesInRange.reduce((s, e) => s + e.amount, 0);
-  const net = sales - expensesTotal;
-
-  const byCategory = categories
-    .map((c) => {
-      const amount = inRange.reduce(
-        (s, o) =>
-          s +
-          o.lines
-            .filter((l) => menu.find((m) => m.id === l.menuItemId)?.categoryId === c.id)
-            .reduce((n, l) => n + l.qty * l.price, 0),
-        0,
-      );
-      return { name: c.name, amount };
-    })
-    .filter((c) => c.amount > 0)
-    .sort((a, b) => b.amount - a.amount);
+  const salesGross = asNum(summary?.sales_gross);
+  const expensesTotal = asNum(summary?.expenses_total);
+  const net = asNum(summary?.net);
+  const items = summary?.items_sold ?? 0;
+  const paidCount = summary?.orders.paid ?? 0;
 
   const stats = [
-    { label: "Orders closed", value: String(paid.length) },
+    { label: "Orders closed", value: String(paidCount) },
     { label: "Items sold", value: String(items) },
-    { label: "Sales (gross)", value: NPR(sales) },
+    { label: "Sales (gross)", value: NPR(salesGross) },
     { label: "Expenses", value: NPR(expensesTotal) },
     {
       label: "Net (sales − expenses)",
@@ -91,27 +88,25 @@ export function DailySalesView() {
         })}
       </div>
 
-      {expensesInRange.length > 0 && (
+      {loading && !summary && (
+        <p className="pos-card p-6 text-center text-sm text-muted-foreground">
+          Loading report…
+        </p>
+      )}
+
+      {summary && summary.expenses_by_category.length > 0 && (
         <div className="pos-card p-4">
           <h3 className="font-display text-lg">Expenses breakdown</h3>
           <ul className="mt-3 space-y-2">
-            {expensesInRange
-              .reduce<{ category: string; amount: number }[]>((acc, e) => {
-                const row = acc.find((r) => r.category === e.category);
-                if (row) row.amount += e.amount;
-                else acc.push({ category: e.category, amount: e.amount });
-                return acc;
-              }, [])
-              .sort((a, b) => b.amount - a.amount)
-              .map((c) => (
-                <li
-                  key={c.category}
-                  className="flex items-center justify-between gap-3 text-sm"
-                >
-                  <span className="min-w-0 truncate">{c.category}</span>
-                  <span className="shrink-0 font-medium">{NPR(c.amount)}</span>
-                </li>
-              ))}
+            {summary.expenses_by_category.map((c) => (
+              <li
+                key={c.category}
+                className="flex items-center justify-between gap-3 text-sm"
+              >
+                <span className="min-w-0 truncate">{c.category}</span>
+                <span className="shrink-0 font-medium">{NPR(asNum(c.amount))}</span>
+              </li>
+            ))}
           </ul>
         </div>
       )}
@@ -119,19 +114,47 @@ export function DailySalesView() {
       <div className="pos-card p-4">
         <h3 className="font-display text-lg">Category breakdown</h3>
         <ul className="mt-3 space-y-2">
-          {byCategory.map((c) => (
-            <li key={c.name} className="flex items-center justify-between gap-3 text-sm">
-              <span className="min-w-0 truncate">{c.name}</span>
-              <span className="shrink-0 font-medium">{NPR(c.amount)}</span>
+          {summary?.by_category.map((c) => (
+            <li key={c.category} className="flex items-center justify-between gap-3 text-sm">
+              <span className="min-w-0 truncate">
+                {c.category}
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {c.qty} sold
+                </span>
+              </span>
+              <span className="shrink-0 font-medium">{NPR(asNum(c.revenue))}</span>
             </li>
           ))}
-          {byCategory.length === 0 && (
+          {summary && summary.by_category.length === 0 && (
             <li className="py-6 text-center text-sm text-muted-foreground">
               No orders in this date range yet.
             </li>
           )}
         </ul>
       </div>
+
+      {summary && (
+        <div className="pos-card p-4">
+          <h3 className="font-display text-lg">Payment methods</h3>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-3">
+            {(["cash", "qr", "khata"] as const).map((m) => {
+              const b = summary.by_payment[m];
+              return (
+                <li
+                  key={m}
+                  className="flex items-center justify-between gap-3 rounded-lg bg-secondary/50 p-3 text-sm"
+                >
+                  <div>
+                    <p className="font-medium capitalize">{m}</p>
+                    <p className="text-xs text-muted-foreground">{b.count} bills</p>
+                  </div>
+                  <span className="shrink-0 font-medium">{NPR(asNum(b.amount))}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

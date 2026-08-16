@@ -74,6 +74,7 @@ from features.restro.order_service import compute_order_total
 from features.restro.khata_settlement_repository import KhataSettlementRepository
 from features.restro.branch_settings_service import BranchSettingsService
 from features.restro.expense_service import ExpenseService
+from features.restro.reports_service import ReportsService
 from features.restro.repository import RestroCredentialRepository
 
 
@@ -2145,3 +2146,179 @@ def create_khata_settlement(
         message=f"Recorded Rs {result['settlement'].amount} via {result['settlement'].method}",
         status_code=201,
     )
+
+
+# ---------------------------------------------------------------------------
+# Reports & dashboard — read-only aggregations. All money is serialized as
+# strings (Decimal → str) to preserve precision; the frontend parses back to
+# Number for display only.
+# ---------------------------------------------------------------------------
+
+_REPORTS_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "INVALID_RANGE": ("INVALID_RANGE", "bs_to must be >= bs_from.", 422),
+    "INVALID_DATE": ("INVALID_DATE", "Date must be a valid BS YYYY-MM-DD string.", 422),
+    "BS_CONVERSION_FAILED": (
+        "BS_CONVERSION_FAILED",
+        "Today's date is outside the BS calendar table — extend BS_CALENDAR.",
+        500,
+    ),
+}
+
+
+def _reports_error(code: str):
+    mapped = _REPORTS_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to build report.", 500))
+    return error_response(*mapped)
+
+
+def _serialize_money(v) -> str:
+    """Decimal → string. JSONResponse can't encode Decimal directly, and
+    frontend billTotals-style code expects strings it can `Number()` back."""
+    return str(v) if v is not None else "0"
+
+
+def _serialize_summary(summary: dict) -> dict:
+    return {
+        "bs_from": summary["bs_from"],
+        "bs_to": summary["bs_to"],
+        "orders": summary["orders"],
+        "items_sold": summary["items_sold"],
+        "sales_gross": _serialize_money(summary["sales_gross"]),
+        "expenses_total": _serialize_money(summary["expenses_total"]),
+        "net": _serialize_money(summary["net"]),
+        "by_category": [
+            {
+                "category": c["category"],
+                "qty": c["qty"],
+                "revenue": _serialize_money(c["revenue"]),
+            }
+            for c in summary["by_category"]
+        ],
+        "by_payment": {
+            k: {"amount": _serialize_money(v["amount"]), "count": v["count"]}
+            for k, v in summary["by_payment"].items()
+        },
+        "expenses_by_category": [
+            {"category": c["category"], "amount": _serialize_money(c["amount"])}
+            for c in summary["expenses_by_category"]
+        ],
+    }
+
+
+def _serialize_top_items(items: list) -> list:
+    return [
+        {
+            "name": i["name"],
+            "variant_name": i["variant_name"],
+            "qty": i["qty"],
+            "revenue": _serialize_money(i["revenue"]),
+        }
+        for i in items
+    ]
+
+
+def _serialize_trend(trend: list) -> list:
+    return [
+        {
+            "bs_date": r["bs_date"],
+            "sales": _serialize_money(r["sales"]),
+            "orders": r["orders"],
+            "expenses": _serialize_money(r["expenses"]),
+        }
+        for r in trend
+    ]
+
+
+@router.get("/branches/{branch_id}/reports/dashboard")
+def reports_dashboard(
+    branch_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """One-shot bundle for the RMS dashboard landing screen. Any staff can
+    read — waiter/chef won't see the nav to reach it anyway, but the endpoint
+    is safe to expose."""
+    _assert_branch_scope(staff, branch_id)
+    result = ReportsService.dashboard(db, staff["tenant_id"], branch_id)
+    if not result["success"]:
+        return _reports_error(result["error_code"])
+    d = result["dashboard"]
+    return success_response(
+        data={
+            "today": _serialize_summary(d["today"]),
+            "yesterday_sales": _serialize_money(d["yesterday_sales"]),
+            "trend_7_days": _serialize_trend(d["trend_7_days"]),
+            "top_items": _serialize_top_items(d["top_items"]),
+            "tables": d["tables"],
+            "low_stock_count": d["low_stock_count"],
+        }
+    )
+
+
+@router.get("/branches/{branch_id}/reports/daily-summary")
+def reports_daily_summary(
+    branch_id: str,
+    bs: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Single-BS-day P&L. `bs` is a "YYYY-MM-DD" BS date string."""
+    _assert_branch_scope(staff, branch_id)
+    result = ReportsService.daily_summary(db, staff["tenant_id"], branch_id, bs)
+    if not result["success"]:
+        return _reports_error(result["error_code"])
+    return success_response(data=_serialize_summary(result["summary"]))
+
+
+@router.get("/branches/{branch_id}/reports/range-summary")
+def reports_range_summary(
+    branch_id: str,
+    bs_from: str,
+    bs_to: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Multi-day P&L. Backs the ReportsView + DailySalesView (range mode)."""
+    _assert_branch_scope(staff, branch_id)
+    result = ReportsService.range_summary(db, staff["tenant_id"], branch_id, bs_from, bs_to)
+    if not result["success"]:
+        return _reports_error(result["error_code"])
+    return success_response(data=_serialize_summary(result["summary"]))
+
+
+@router.get("/branches/{branch_id}/reports/sales-trend")
+def reports_sales_trend(
+    branch_id: str,
+    bs_from: str,
+    bs_to: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Per-day rows for a line chart. Fills zero-days so the X-axis is
+    continuous."""
+    _assert_branch_scope(staff, branch_id)
+    result = ReportsService.sales_trend(db, staff["tenant_id"], branch_id, bs_from, bs_to)
+    if not result["success"]:
+        return _reports_error(result["error_code"])
+    return success_response(data=_serialize_trend(result["trend"]))
+
+
+@router.get("/branches/{branch_id}/reports/top-items")
+def reports_top_items(
+    branch_id: str,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    limit: int = 10,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Ranked items list for the ReportsView items tab. Grouped by
+    (name, variant_name) so different variants of the same item show
+    separately."""
+    _assert_branch_scope(staff, branch_id)
+    result = ReportsService.top_items(
+        db, staff["tenant_id"], branch_id, bs_from, bs_to, limit
+    )
+    if not result["success"]:
+        return _reports_error(result["error_code"])
+    return success_response(data=_serialize_top_items(result["items"]))
