@@ -1,3 +1,4 @@
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from core.database import get_db
@@ -33,6 +34,7 @@ from features.restro.schemas import (
     SetKitchenStatusRequest,
     SetDiscountRequest,
     MarkPaidRequest,
+    SetOrderCustomerRequest,
     SetDeliveryStatusRequest,
     InventoryItemData,
     StockMovementData,
@@ -46,8 +48,13 @@ from features.restro.schemas import (
     CustomerData,
     CreateCustomerRequest,
     UpdateCustomerRequest,
-    SettleKhataRequest,
+    CreateKhataSettlementRequest,
+    KhataSettlementData,
+    KhataOrderEntry,
+    KhataHistoryResponse,
+    RestroTenantInfo,
 )
+from shared_models import Tenant
 from features.restro.service import RestroCredentialService, RestroAuthService
 from features.restro.category_service import CategoryService
 from features.restro.menu_item_service import MenuItemService
@@ -57,6 +64,9 @@ from features.restro.order_service import OrderService
 from features.restro.inventory_service import InventoryService
 from features.restro.employee_service import EmployeeService
 from features.restro.customer_service import CustomerService
+from features.restro.customer_repository import CustomerRepository
+from features.restro.order_service import compute_order_total
+from features.restro.khata_settlement_repository import KhataSettlementRepository
 from features.restro.repository import RestroCredentialRepository
 
 
@@ -69,6 +79,33 @@ def _assert_branch_scope(staff: dict, branch_id: str) -> None:
         return
     if staff.get("branch_id") != branch_id:
         raise HTTPException(403, "Not allowed for this branch")
+
+
+# ---------------------------------------------------------------------------
+# Tenant info (read-only) — for the RMS Settings screen and bill receipts,
+# which need PAN + VAT-registration status pulled from the tenant row.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/tenant-info")
+def get_tenant_info(
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    tenant = db.query(Tenant).filter(Tenant.id == staff["tenant_id"]).first()
+    if not tenant:
+        return error_response("TENANT_NOT_FOUND", "Business not found.", 404)
+    return success_response(
+        data=RestroTenantInfo(
+            id=tenant.id,
+            name=tenant.name,
+            pan=tenant.pan,
+            is_vat_registered=bool(tenant.is_vat_registered),
+            business_email=tenant.business_email,
+            business_phone=tenant.business_phone,
+            business_address=tenant.business_address,
+        ).model_dump(mode="json")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +367,56 @@ _MENU_ITEM_ERROR_MAP = {
         422,
     ),
     "VARIANT_NAME_REQUIRED": ("VARIANT_NAME_REQUIRED", "Every variant needs a name.", 422),
+    "COMBO_CANNOT_HAVE_VARIANTS": (
+        "COMBO_CANNOT_HAVE_VARIANTS",
+        "A combo can't have variants — its composition IS the variant.",
+        422,
+    ),
+    "COMPONENTS_REQUIRED": (
+        "COMPONENTS_REQUIRED",
+        "Add at least one item to the combo.",
+        422,
+    ),
+    "COMPONENTS_NOT_ALLOWED": (
+        "COMPONENTS_NOT_ALLOWED",
+        "Components are only allowed on combo items.",
+        422,
+    ),
+    "COMPONENT_ITEM_REQUIRED": (
+        "COMPONENT_ITEM_REQUIRED",
+        "Every combo component needs an item picked.",
+        422,
+    ),
+    "COMPONENT_QTY_INVALID": (
+        "COMPONENT_QTY_INVALID",
+        "Each combo component needs a quantity of at least 1.",
+        422,
+    ),
+    "COMPONENT_ITEM_NOT_FOUND": (
+        "COMPONENT_ITEM_NOT_FOUND",
+        "One of the picked combo items no longer exists in this branch.",
+        404,
+    ),
+    "COMPONENT_CANNOT_BE_COMBO": (
+        "COMPONENT_CANNOT_BE_COMBO",
+        "Combos can't contain other combos — pick regular menu items.",
+        422,
+    ),
+    "COMPONENT_VARIANT_REQUIRED": (
+        "COMPONENT_VARIANT_REQUIRED",
+        "That component has variants — pick which one the combo uses.",
+        422,
+    ),
+    "COMPONENT_VARIANT_NOT_FOUND": (
+        "COMPONENT_VARIANT_NOT_FOUND",
+        "That variant no longer exists on the picked item.",
+        404,
+    ),
+    "COMPONENT_SELF_REFERENCE": (
+        "COMPONENT_SELF_REFERENCE",
+        "A combo can't include itself.",
+        422,
+    ),
 }
 
 
@@ -372,9 +459,11 @@ def create_menu_item(
         category_id=data.category_id,
         name=data.name,
         has_variants=data.has_variants,
+        is_combo=data.is_combo,
         price=data.price,
         image_url=data.image_url,
         variants=[v.model_dump() for v in data.variants],
+        components=[c.model_dump() for c in data.components],
     )
 
     if not result["success"]:
@@ -407,10 +496,14 @@ def update_menu_item(
         category_id=data.category_id,
         name=data.name,
         has_variants=data.has_variants,
+        is_combo=data.is_combo,
         price=data.price,
         price_explicitly_null=data.clear_price,
         image_url=data.image_url,
         variants=[v.model_dump() for v in data.variants] if data.variants is not None else None,
+        components=(
+            [c.model_dump() for c in data.components] if data.components is not None else None
+        ),
     )
 
     if not result["success"]:
@@ -872,6 +965,16 @@ _ORDER_ERROR_MAP = {
         "This customer has no outstanding khata balance.",
         409,
     ),
+    "INVALID_AMOUNT": (
+        "INVALID_AMOUNT",
+        "Amount must be greater than zero.",
+        422,
+    ),
+    "AMOUNT_EXCEEDS_BALANCE": (
+        "AMOUNT_EXCEEDS_BALANCE",
+        "Payment can't be more than the outstanding balance.",
+        422,
+    ),
     "INVALID_DELIVERY_STATUS": (
         "INVALID_DELIVERY_STATUS",
         "Delivery status must be one of: pending, out, delivered.",
@@ -935,6 +1038,7 @@ def list_orders_paginated(
     type: str | None = None,
     kitchen_status: str | None = None,
     table_id: str | None = None,
+    payment_method: str | None = None,
     bs_from: str | None = None,
     bs_to: str | None = None,
     q: str | None = None,
@@ -944,7 +1048,9 @@ def list_orders_paginated(
     db: Session = Depends(get_db),
 ):
     """Paginated bills-history endpoint. `bs_from` / `bs_to` accept BS dates
-    as "YYYY-MM-DD" strings and hit the (branch_id, placed_at_bs) index."""
+    as "YYYY-MM-DD" strings and hit the (branch_id, placed_at_bs) index.
+    `payment_method` filters closed bills by how they were paid (cash / qr /
+    khata) — the frontend Dues tab passes `khata` here."""
     _assert_branch_scope(staff, branch_id)
     paging = parse_paging(page, per_page)
     result = OrderService.list_paginated(
@@ -955,6 +1061,7 @@ def list_orders_paginated(
         type=type,
         kitchen_status=kitchen_status,
         table_id=table_id,
+        payment_method=payment_method,
         bs_from=bs_from,
         bs_to=bs_to,
         search=q,
@@ -1200,6 +1307,28 @@ def set_order_discount(
         return _order_error(result["error_code"])
     order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
     return success_response(data=_order_payload(order), message="Discount updated")
+
+
+@router.patch("/branches/{branch_id}/orders/{order_id}/customer")
+def set_order_customer(
+    branch_id: str,
+    order_id: str,
+    data: SetOrderCustomerRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.set_customer(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        customer_id=data.customer_id,
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    return success_response(data=_order_payload(order), message="Customer updated")
 
 
 @router.post("/branches/{branch_id}/orders/{order_id}/mark-paid")
@@ -1733,39 +1862,86 @@ def delete_customer(
     return success_response(data={"deleted": True}, message="Customer removed")
 
 
-@router.post("/branches/{branch_id}/customers/{customer_id}/settle-khata")
-def settle_khata(
+@router.get("/branches/{branch_id}/customers/{customer_id}/khata-history")
+def khata_history(
     branch_id: str,
     customer_id: str,
-    data: SettleKhataRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
-    # Settlement is an owner/manager action — it's the cash-drawer moment.
-    if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can settle khata balances")
+    """Full khata log for a customer: every khata order (debits) + every
+    settlement (credits) + a live balance snapshot. Any staff can read.
+
+    Orders and settlements are returned as separate arrays newest-first —
+    the client is responsible for interleaving them into a timeline if it
+    wants that presentation."""
     _assert_branch_scope(staff, branch_id)
-    result = OrderService.settle_khata(
+    tenant_id = staff["tenant_id"]
+    customer = CustomerRepository.get_by_id(db, tenant_id, customer_id)
+    if not customer or customer.branch_id != branch_id or not customer.is_active:
+        return error_response("CUSTOMER_NOT_FOUND", "Customer not found.", 404)
+
+    orders = CustomerRepository.list_khata_orders(db, tenant_id, customer_id)
+    settlements = KhataSettlementRepository.list_for_customer(db, tenant_id, customer_id)
+    order_entries = [
+        KhataOrderEntry(
+            id=o.id,
+            type=o.type,
+            placed_at=o.placed_at,
+            placed_at_bs=o.placed_at_bs,
+            total=compute_order_total(o),
+            line_count=sum(1 for l in o.lines if not l.is_voided),
+        )
+        for o in orders
+    ]
+    debits_total = sum((e.total for e in order_entries), Decimal("0"))
+    credits_total = KhataSettlementRepository.total_for_customer(db, tenant_id, customer_id)
+    balance = max(Decimal("0"), debits_total - credits_total)
+    payload = KhataHistoryResponse(
+        balance=balance,
+        debits_total=debits_total,
+        credits_total=credits_total,
+        orders=order_entries,
+        settlements=[KhataSettlementData.model_validate(s) for s in settlements],
+    )
+    return success_response(data=payload.model_dump(mode="json"))
+
+
+@router.post("/branches/{branch_id}/customers/{customer_id}/khata-settlements")
+def create_khata_settlement(
+    branch_id: str,
+    customer_id: str,
+    data: CreateKhataSettlementRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Record a partial or full payment against a customer's khata balance.
+    Owner/Manager only — this is the cash-drawer moment."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can accept khata settlements")
+    _assert_branch_scope(staff, branch_id)
+    actor_name, cred_id = _actor_from_staff(db, staff)
+    result = OrderService.record_khata_settlement(
         db,
         tenant_id=staff["tenant_id"],
         branch_id=branch_id,
         customer_id=customer_id,
-        settlement_method=data.settlement_method,
+        amount=data.amount,
+        method=data.method,
+        note=data.note,
+        actor_name=actor_name,
+        actor_cred_id=cred_id,
     )
     if not result["success"]:
-        # Reuse the order error map for settlement-specific codes; fall back
-        # to a generic message otherwise.
         return _order_error(result["error_code"])
-    # After settlement, fetch the customer fresh so the response includes the
-    # now-zero balance — callers use this to update their UI in one round-trip.
-    from features.restro.customer_repository import CustomerRepository
     customer = CustomerRepository.get_by_id(db, staff["tenant_id"], customer_id)
+    settlement_payload = KhataSettlementData.model_validate(result["settlement"]).model_dump(mode="json")
     return success_response(
         data={
-            "orders_settled": result["orders_settled"],
-            "amount_settled": str(result["amount_settled"]),
-            "settlement_method": result["settlement_method"],
+            "settlement": settlement_payload,
+            "new_balance": str(result["new_balance"]),
             "customer": _customer_payload(db, staff["tenant_id"], customer),
         },
-        message=f"Settled {result['orders_settled']} order(s) via {result['settlement_method']}",
+        message=f"Recorded Rs {result['settlement'].amount} via {result['settlement'].method}",
+        status_code=201,
     )

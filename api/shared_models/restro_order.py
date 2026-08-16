@@ -1,6 +1,7 @@
 from sqlalchemy import (
     Column,
     String,
+    Integer,
     Numeric,
     DateTime,
     ForeignKey,
@@ -48,6 +49,10 @@ class RestroOrder(Base):
             "settled_at",
             postgresql_where=text("payment_method = 'khata'"),
         ),
+        # Sequential per-branch bill numbers — printed on the receipt as
+        # "Bill #123", populated by the repository via MAX(bill_number)+1.
+        # UNIQUE constraint catches concurrent-insert races (repo retries).
+        Index("uq_restro_order_bill_number", "branch_id", "bill_number", unique=True),
         {"schema": "public"},
     )
 
@@ -57,6 +62,10 @@ class RestroOrder(Base):
     # Nullable for delivery orders. For dine-in it points to the "primary"
     # table of a merge group (or the sole table if not merged).
     table_id = Column(String(36), ForeignKey("public.restro_tables.id"), nullable=True, index=True)
+    # Human-friendly sequential bill number, unique per branch. Starts at 1.
+    # See OrderRepository.create — computed under the same DB session so a
+    # concurrent conflict on the UNIQUE index triggers a retry.
+    bill_number = Column(Integer, nullable=False)
     # Required for delivery orders (populated on create), and for orders
     # closed as payment_method='khata' (populated on mark-paid). Optional
     # for cash/qr dine-in.

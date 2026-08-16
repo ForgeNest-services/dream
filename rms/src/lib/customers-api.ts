@@ -15,10 +15,46 @@ export interface CustomerDto {
   updated_at: string;
 }
 
-export interface SettleKhataResponse {
-  orders_settled: number;
-  amount_settled: string;
-  settlement_method: "cash" | "qr";
+export interface KhataOrderEntryDto {
+  id: string;
+  type: "dine-in" | "delivery";
+  placed_at: string;
+  placed_at_bs: string;
+  total: string;
+  line_count: number;
+}
+
+export interface KhataSettlementDto {
+  id: string;
+  tenant_id: string;
+  branch_id: string;
+  customer_id: string;
+  amount: string;
+  method: "cash" | "qr";
+  note: string | null;
+  actor_name: string;
+  actor_cred_id: string | null;
+  created_at: string;
+  created_at_bs: string;
+}
+
+export interface KhataHistoryDto {
+  balance: string;
+  debits_total: string;
+  credits_total: string;
+  orders: KhataOrderEntryDto[];
+  settlements: KhataSettlementDto[];
+}
+
+export interface CreateKhataSettlementPayload {
+  amount: number;
+  method: "cash" | "qr";
+  note?: string | null;
+}
+
+export interface CreateKhataSettlementResponse {
+  settlement: KhataSettlementDto;
+  new_balance: string;
   customer: CustomerDto;
 }
 
@@ -59,10 +95,19 @@ export const customersApi = {
       `/restro/branches/${branchId}/customers/${customerId}`,
     );
   },
-  settleKhata(branchId: string, customerId: string, settlement_method: "cash" | "qr") {
-    return apiClient.post<SettleKhataResponse>(
-      `/restro/branches/${branchId}/customers/${customerId}/settle-khata`,
-      { settlement_method },
+  addKhataSettlement(
+    branchId: string,
+    customerId: string,
+    payload: CreateKhataSettlementPayload,
+  ) {
+    return apiClient.post<CreateKhataSettlementResponse>(
+      `/restro/branches/${branchId}/customers/${customerId}/khata-settlements`,
+      payload,
+    );
+  },
+  khataHistory(branchId: string, customerId: string) {
+    return apiClient.get<KhataHistoryDto>(
+      `/restro/branches/${branchId}/customers/${customerId}/khata-history`,
     );
   },
 };

@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -10,7 +9,8 @@ import {
 } from "@/components/ui/select";
 import { NPR } from "@/lib/pos/data";
 import { billTotals, usePos } from "@/lib/pos/store";
-import { formatDateWithStoredBs } from "@/lib/pos/nepali-date";
+import { formatDateWithStoredBs, toBsIso } from "@/lib/pos/nepali-date";
+import { BsDatePicker } from "./BsDatePicker";
 
 type Tab = "orders" | "category" | "items";
 
@@ -26,22 +26,23 @@ const TABS: { id: Tab; label: string }[] = [
 export function ReportsView() {
   const { orders, settings, categories, menu, tables } = usePos();
   const [tab, setTab] = useState<Tab>("orders");
-  const [from, setFrom] = useState(new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10));
-  const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+  // Default range: last 7 days in BS. Filter operates on placed_at_bs
+  // (backend-stamped, "YYYY-MM-DD"), which sorts lexically.
+  const todayBs = toBsIso(new Date()) ?? "";
+  const weekAgoBs = toBsIso(new Date(Date.now() - 6 * 86400000)) ?? "";
+  const [fromBs, setFromBs] = useState(weekAgoBs);
+  const [toBs, setToBs] = useState(todayBs);
   const [status, setStatus] = useState("all");
   const [type, setType] = useState("all");
-
-  const start = new Date(`${from}T00:00:00`).getTime();
-  const end = new Date(`${to}T23:59:59`).getTime();
 
   const filtered = useMemo(
     () =>
       orders
-        .filter((o) => o.placedAt >= start && o.placedAt <= end)
+        .filter((o) => o.placedAtBs >= fromBs && o.placedAtBs <= toBs)
         .filter((o) => (status === "all" ? true : o.status === status))
         .filter((o) => (type === "all" ? true : o.type === type))
         .sort((a, b) => b.placedAt - a.placedAt),
-    [orders, start, end, status, type],
+    [orders, fromBs, toBs, status, type],
   );
 
   const label = (o: (typeof orders)[number]) =>
@@ -90,7 +91,7 @@ export function ReportsView() {
 
   const stats = [
     { label: "Orders", value: String(filtered.length) },
-    { label: "Settled", value: String(filtered.filter((o) => o.status === "paid").length) },
+    { label: "Closed", value: String(filtered.filter((o) => o.status === "paid").length) },
     { label: "Items sold", value: String(filtered.reduce((s, o) => s + o.lines.reduce((n, l) => n + l.qty, 0), 0)) },
     { label: "Net sales", value: NPR(totalSales) },
   ];
@@ -104,12 +105,12 @@ export function ReportsView() {
 
       <div className="pos-card grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="space-y-2">
-          <Label>From</Label>
-          <Input type="date" className="h-12" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <Label>From (BS)</Label>
+          <BsDatePicker value={fromBs} onChange={setFromBs} />
         </div>
         <div className="space-y-2">
-          <Label>To</Label>
-          <Input type="date" className="h-12" value={to} onChange={(e) => setTo(e.target.value)} />
+          <Label>To (BS)</Label>
+          <BsDatePicker value={toBs} onChange={setToBs} />
         </div>
         <div className="space-y-2">
           <Label>Status</Label>
@@ -119,7 +120,7 @@ export function ReportsView() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
-              <SelectItem value="paid">Settled</SelectItem>
+              <SelectItem value="paid">Closed</SelectItem>
               <SelectItem value="draft">Running</SelectItem>
             </SelectContent>
           </Select>
@@ -178,7 +179,7 @@ export function ReportsView() {
             <tbody>
               {filtered.map((o) => (
                 <tr key={o.id} className="border-b border-border/70 align-top">
-                  <td className="py-3 pr-3">#{o.id.slice(-4).toUpperCase()}</td>
+                  <td className="py-3 pr-3">#{o.billNumber}</td>
                   <td className="py-3 pr-3">{label(o)}</td>
                   <td className="py-3 pr-3 text-muted-foreground">
                     {formatDateWithStoredBs(o.placedAt, o.placedAtBs)}
@@ -186,7 +187,7 @@ export function ReportsView() {
                   <td className="py-3 pr-3 text-muted-foreground">
                     {o.lines.map((l) => `${l.qty}× ${l.name}${l.variantName ? ` (${l.variantName})` : ""}`).join(", ")}
                   </td>
-                  <td className="py-3 pr-3">{o.status === "paid" ? "Settled" : "Running"}</td>
+                  <td className="py-3 pr-3">{o.status === "paid" ? "Closed" : "Running"}</td>
                   <td className="py-3 text-right font-semibold">
                     {NPR(billTotals(o, settings.vatEnabled, settings.vatRate).total)}
                   </td>

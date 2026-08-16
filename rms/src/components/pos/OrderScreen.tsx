@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, ChevronUp, Minus, Plus, Printer, Receipt, Send, Trash2, Wallet } from "lucide-react";
+import { ArrowLeft, Minus, Plus, Printer, Receipt, Send, Trash2, UtensilsCrossed, Wallet } from "lucide-react";
 import placeholder from "@/assets/menu-placeholder.jpg";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,14 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Drawer,
-  DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerTrigger,
-} from "@/components/ui/drawer";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UserPlus, X as XIcon } from "lucide-react";
 import { NPR, type MenuItem, type Order, type OrderCustomerRef, type RestaurantTable } from "@/lib/pos/data";
 import { useBillTotals, usePos } from "@/lib/pos/store";
 import { BillReceipt, KotReceipt, PrintDialog } from "./ThermalPrint";
@@ -47,6 +41,7 @@ export function OrderScreen(props: OrderScreenProps) {
     addLineToOrder,
     sendToKitchen,
     markPaid,
+    setOrderCustomer,
     settings,
     mergedGroup,
   } = usePos();
@@ -54,8 +49,13 @@ export function OrderScreen(props: OrderScreenProps) {
   const [activeCat, setActiveCat] = useState<string>(ALL_CATEGORY);
   const [variantItem, setVariantItem] = useState<MenuItem | null>(null);
   const [payOpen, setPayOpen] = useState(false);
-  const [billOpen, setBillOpen] = useState(false);
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
   const [kotOpen, setKotOpen] = useState(false);
+  // Mobile-only view toggle: below xl we render either the menu grid or the
+  // bill panel, not both. The old bottom-sheet drawer was hard to reach with
+  // a thumb — a tab bar at the top with clear "N items · Rs X" on the Bill
+  // side is faster to read and tap.
+  const [mobileView, setMobileView] = useState<"menu" | "bill">("menu");
   const [printBillOpen, setPrintBillOpen] = useState(false);
   const [method, setMethod] = useState<"cash" | "qr" | "khata">("cash");
   // For khata payments the caller must attach a customer. Cleared each time
@@ -70,9 +70,16 @@ export function OrderScreen(props: OrderScreenProps) {
   const qty = order?.lines.reduce((s, l) => s + l.qty, 0) ?? 0;
   const items =
     activeCat === ALL_CATEGORY ? menu : menu.filter((m) => m.categoryId === activeCat);
+  const tableLabel =
+    props.mode === "dine-in" ? mergedGroup(props.table).map((t) => t.label).join(" + ") : "";
+  // Dine-in: header shows table label; if a customer has been attached
+  // (typically for a khata order), append their name — matches delivery's
+  // "Delivery · Name" style.
   const headerLabel =
     props.mode === "dine-in"
-      ? mergedGroup(props.table).map((t) => t.label).join(" + ")
+      ? order?.customer
+        ? `${tableLabel} / ${order.customer.name}`
+        : tableLabel
       : order?.customer
         ? `Delivery · ${order.customer.name}`
         : "Delivery";
@@ -108,9 +115,13 @@ export function OrderScreen(props: OrderScreenProps) {
     />
   );
 
+  const showMenuOnMobile = mobileView === "menu";
+  const showBillOnMobile = mobileView === "bill";
+
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-      <section className="space-y-3 pb-24 xl:pb-0">
+      <section className="space-y-3">
+        {/* Order header — back, table label, attach-customer chip. */}
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -121,65 +132,154 @@ export function OrderScreen(props: OrderScreenProps) {
           >
             <ArrowLeft className="size-5" />
           </Button>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h2 className="truncate font-display text-xl leading-tight">{headerLabel}</h2>
             <p className="truncate text-xs text-muted-foreground">{subLabel}</p>
           </div>
+          {props.mode === "dine-in" && order && (
+            order.customer ? (
+              <button
+                type="button"
+                onClick={() => order && setOrderCustomer(order.id, null)}
+                className="flex shrink-0 items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20"
+                aria-label={`Detach ${order.customer.name}`}
+                title="Detach customer"
+              >
+                <span className="max-w-24 truncate">{order.customer.name}</span>
+                <XIcon className="size-3.5" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setCustomerPickerOpen(true)}
+                className="flex shrink-0 items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:border-primary hover:text-primary"
+              >
+                <UserPlus className="size-3.5" />
+                Attach customer
+              </button>
+            )
+          )}
         </div>
 
-        <Tabs value={activeCat} onValueChange={setActiveCat}>
-          <TabsList className="h-11 w-full justify-start overflow-x-auto">
-            <TabsTrigger
-              value={ALL_CATEGORY}
-              className="h-9 shrink-0 px-3 text-xs sm:text-sm"
-            >
-              All
-            </TabsTrigger>
-            {categories.map((c) => (
-              <TabsTrigger key={c.id} value={c.id} className="h-9 shrink-0 px-3 text-xs sm:text-sm">
-                {c.name}
+        {/* Mobile-only Menu ↔ Bill toggle. Bill button shows the running
+            total so waiters see at a glance whether they need to jump over.
+            Hidden on xl+ where the split layout renders both side-by-side. */}
+        <div className="grid grid-cols-2 gap-2 xl:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileView("menu")}
+            className={`flex min-h-12 items-center justify-center gap-2 rounded-xl text-sm font-medium transition-colors ${
+              showMenuOnMobile
+                ? "bg-primary text-primary-foreground"
+                : "bg-secondary text-foreground"
+            }`}
+          >
+            <UtensilsCrossed className="size-4" />
+            Menu
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileView("bill")}
+            className={`flex min-h-12 items-center justify-between gap-2 rounded-xl px-3 text-sm font-medium transition-colors ${
+              showBillOnMobile
+                ? "bg-primary text-primary-foreground"
+                : "bg-secondary text-foreground"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <Receipt className="size-4" />
+              Bill
+              {qty > 0 && (
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                    showBillOnMobile ? "bg-white/25" : "bg-primary/15 text-primary"
+                  }`}
+                >
+                  {qty}
+                </span>
+              )}
+            </span>
+            <span className="font-display text-sm">{NPR(totals.total)}</span>
+          </button>
+        </div>
+
+        {/* Menu grid — hidden on mobile when Bill tab is active. */}
+        <div className={showMenuOnMobile ? "space-y-3" : "hidden xl:block xl:space-y-3"}>
+          <Tabs value={activeCat} onValueChange={setActiveCat}>
+            <TabsList className="h-11 w-full justify-start overflow-x-auto">
+              <TabsTrigger
+                value={ALL_CATEGORY}
+                className="h-9 shrink-0 px-3 text-xs sm:text-sm"
+              >
+                All
               </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+              {categories.map((c) => (
+                <TabsTrigger key={c.id} value={c.id} className="h-9 shrink-0 px-3 text-xs sm:text-sm">
+                  {c.name}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
 
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-2.5 md:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
-          {items.map((item) => (
-            <button
-              key={item.id}
-              disabled={item.soldOut}
-              onClick={() => (item.hasVariants ? setVariantItem(item) : add(item))}
-              className={`pos-card flex flex-col overflow-hidden text-left transition-transform active:scale-[0.98] ${
-                item.soldOut ? "cursor-not-allowed opacity-45 grayscale" : "hover:border-primary"
-              }`}
-            >
-              <div className="flex h-32 w-full items-center justify-center bg-secondary sm:h-36 md:h-40">
-                <img
-                  src={item.image || placeholder}
-                  alt={item.name}
-                  loading="lazy"
-                  width={512}
-                  height={512}
-                  className="h-full w-full object-contain"
-                />
-              </div>
-              <div className="flex-1 p-2">
-                <p className="line-clamp-2 text-xs font-medium leading-tight sm:text-sm">
-                  {item.name}
-                </p>
-                <p className="mt-1 text-xs text-primary sm:text-sm">
-                  {item.hasVariants ? `${item.variants.length} options` : NPR(item.price ?? 0)}
-                </p>
-                {item.soldOut && (
-                  <p className="mt-1 text-[10px] uppercase tracking-wider text-danger">Sold out</p>
-                )}
-              </div>
-            </button>
-          ))}
+          {/* Cards: denser + smaller image on mobile so more items fit above
+              the fold. Scales up on tablets / desktops. */}
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-2.5 md:grid-cols-5 xl:grid-cols-4 2xl:grid-cols-5">
+            {items.map((item) => (
+              <button
+                key={item.id}
+                disabled={item.soldOut}
+                onClick={() => (item.hasVariants ? setVariantItem(item) : add(item))}
+                className={`pos-card flex flex-col overflow-hidden text-left transition-transform active:scale-[0.98] ${
+                  item.soldOut ? "cursor-not-allowed opacity-45 grayscale" : "hover:border-primary"
+                }`}
+              >
+                <div className="flex h-20 w-full items-center justify-center bg-secondary sm:h-28 md:h-32 xl:h-32">
+                  <img
+                    src={item.image || placeholder}
+                    alt={item.name}
+                    loading="lazy"
+                    width={512}
+                    height={512}
+                    className="h-full w-full object-contain"
+                  />
+                </div>
+                <div className="flex-1 p-1.5 sm:p-2">
+                  <p className="line-clamp-2 text-[11px] font-medium leading-tight sm:text-sm">
+                    {item.name}
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-semibold text-primary sm:mt-1 sm:text-sm">
+                    {item.hasVariants ? `${item.variants.length} opts` : NPR(item.price ?? 0)}
+                  </p>
+                  {item.soldOut && (
+                    <p className="mt-0.5 text-[9px] uppercase tracking-wider text-danger sm:text-[10px]">
+                      Sold out
+                    </p>
+                  )}
+                </div>
+              </button>
+            ))}
+            {items.length === 0 && (
+              <p className="pos-card col-span-full p-6 text-center text-sm text-muted-foreground">
+                No items in this category.
+              </p>
+            )}
+          </div>
         </div>
+
+        {/* Bill panel in-flow on mobile when Bill tab is active. */}
+        {showBillOnMobile && (
+          <div className="pos-card p-3 xl:hidden">
+            <h3 className="font-display text-lg">Running bill</h3>
+            <p className="truncate text-xs text-muted-foreground">
+              {headerLabel} · {order?.lines.length ?? 0} line(s)
+            </p>
+            {billPanel}
+          </div>
+        )}
       </section>
 
-      {/* Desktop side panel */}
+      {/* Desktop side panel — always visible on xl+, hidden on mobile
+          (mobile uses the in-flow bill panel above instead). */}
       <aside className="pos-card hidden h-fit flex-col p-4 xl:sticky xl:top-24 xl:flex">
         <h3 className="font-display text-lg">Running bill</h3>
         <p className="truncate text-xs text-muted-foreground">
@@ -187,28 +287,6 @@ export function OrderScreen(props: OrderScreenProps) {
         </p>
         {billPanel}
       </aside>
-
-      {/* Mobile persistent summary bar + bottom sheet */}
-      <Drawer open={billOpen} onOpenChange={setBillOpen}>
-        <DrawerTrigger asChild>
-          <button className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-3 border-t border-navy-soft/40 bg-navy px-4 py-3 text-navy-foreground xl:hidden">
-            <span className="flex min-w-0 items-center gap-2">
-              <Receipt className="size-5 shrink-0" />
-              <span className="truncate text-sm">{qty} item{qty === 1 ? "" : "s"} · {headerLabel}</span>
-            </span>
-            <span className="flex shrink-0 items-center gap-2">
-              <span className="font-display text-lg">{NPR(totals.total)}</span>
-              <ChevronUp className="size-5" />
-            </span>
-          </button>
-        </DrawerTrigger>
-        <DrawerContent className="max-h-[92vh]">
-          <DrawerHeader className="pb-2">
-            <DrawerTitle className="truncate font-display text-lg">Running bill · {headerLabel}</DrawerTitle>
-          </DrawerHeader>
-          <div className="overflow-y-auto px-4 pb-6">{billPanel}</div>
-        </DrawerContent>
-      </Drawer>
 
       <Dialog open={!!variantItem} onOpenChange={(o) => !o && setVariantItem(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
@@ -313,6 +391,24 @@ export function OrderScreen(props: OrderScreenProps) {
               {method === "khata" ? "Add to Khata" : "Confirm payment"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={customerPickerOpen} onOpenChange={setCustomerPickerOpen}>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">Attach customer to order</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Tag this table's bill to a customer — the header shows their name and marking paid as
+            Khata will use them automatically.
+          </p>
+          <CustomerPicker
+            onPick={async (c) => {
+              if (order) await setOrderCustomer(order.id, c.id);
+              setCustomerPickerOpen(false);
+            }}
+          />
         </DialogContent>
       </Dialog>
 

@@ -36,13 +36,47 @@ export const NEPALI_MONTHS = [
   "Chaitra",
 ];
 
+// Business timezone. Every date/time the UI shows is in Nepal Standard Time
+// (UTC+05:45, no DST) — a POS should always display the restaurant's local
+// clock, never the viewer's browser TZ. Also anchors BS calendar-day
+// decisions so a bill closed at 23:59 NPT doesn't roll into the next BS
+// date just because the viewer's browser happens to be in the US.
+const NPT_TZ = "Asia/Kathmandu";
+
 const ANCHOR_AD = Date.UTC(2018, 3, 14);
 const MS_PER_DAY = 86400000;
 
+// The API's timestamps come from Postgres `TIMESTAMP` (naive) via SQLAlchemy,
+// which Pydantic serializes as "2026-08-14T06:00:00" — no `Z`, no offset.
+// JavaScript's `new Date(...)` spec says a bare-suffix ISO string is LOCAL
+// time, so `new Date("2026-08-14T06:00:00")` in a Nepal browser becomes
+// 06:00 NPT (= 00:15 UTC). That's off by the whole NPT offset. Force UTC
+// by appending Z when the string has no timezone marker.
+export function parseApiDate(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const hasTz = /[zZ]|[+\-]\d{2}:?\d{2}$/.test(iso);
+  return new Date(hasTz ? iso : iso + "Z");
+}
+
 export type BsDate = { year: number; month: number; day: number };
 
+// Extract year/month/day of a Date in NPT (not in the browser's local TZ).
+// Uses Intl to avoid any manual offset math — handles the +05:45 offset
+// correctly regardless of where the code runs (browser, Node SSR, etc.).
+function nptYmd(d: Date): { y: number; m: number; day: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: NPT_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? "0");
+  return { y: get("year"), m: get("month"), day: get("day") };
+}
+
 export function toBikramSambat(date: Date): BsDate | null {
-  const utc = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const { y, m, day } = nptYmd(date);
+  const utc = Date.UTC(y, m - 1, day);
   let diff = Math.floor((utc - ANCHOR_AD) / MS_PER_DAY);
   if (diff < 0) return null;
 
@@ -70,6 +104,7 @@ export function formatBikramSambat(date: Date): string {
 
 export function formatGregorian(date: Date): string {
   return date.toLocaleDateString("en-US", {
+    timeZone: NPT_TZ,
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -84,13 +119,15 @@ export function formatBikramSambatShort(date: Date): string {
   return `${NEPALI_MONTHS[bs.month - 1]} ${bs.day}, ${bs.year}`;
 }
 
-// Compact Gregorian date with time, e.g. "12 Aug, 14:30".
+// Compact Gregorian date with time, e.g. "12 Aug, 14:30" — always in NPT.
 export function formatGregorianShort(date: Date): string {
   return date.toLocaleString("en-GB", {
+    timeZone: NPT_TZ,
     day: "2-digit",
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
 }
 
@@ -106,9 +143,14 @@ export function formatDateWithBs(date: Date | number): string {
 // Date-only variant for form inputs / labels (no time). Takes a "YYYY-MM-DD"
 // string or a Date. Returns e.g. "12 Aug 2026 · Bhadra 27, 2083 BS".
 export function formatDateOnlyWithBs(input: string | Date): string {
-  const d = typeof input === "string" ? new Date(`${input}T00:00:00`) : input;
+  // For a "YYYY-MM-DD" input, treat it as the calendar day itself (no time
+  // component), rendered as NPT — avoids the UTC-midnight-rolling-back
+  // problem where "2026-08-13" would render as "12 Aug" for anyone west of
+  // NPT.
+  const d = typeof input === "string" ? new Date(`${input}T00:00:00+05:45`) : input;
   if (Number.isNaN(d.getTime())) return "";
   const g = d.toLocaleDateString("en-GB", {
+    timeZone: NPT_TZ,
     day: "2-digit",
     month: "short",
     year: "numeric",

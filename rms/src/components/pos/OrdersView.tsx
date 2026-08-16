@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NPR, type Order, type RestaurantTable } from "@/lib/pos/data";
 import { billTotals, usePos } from "@/lib/pos/store";
-import { formatDateWithStoredBs } from "@/lib/pos/nepali-date";
+import { formatDateWithStoredBs, parseApiDate, toBsIso } from "@/lib/pos/nepali-date";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useOrdersList } from "@/hooks/useOrdersList";
 import type { OrderDto } from "@/lib/orders-api";
@@ -87,7 +87,7 @@ export function OrdersView({ showControls = false }: { showControls?: boolean })
 const PER_PAGE_OPTIONS = [10, 25, 50, 100] as const;
 
 function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
-  const { tables, settings, branchId } = usePos();
+  const { tables, settings, branchId, customers } = usePos();
   const search = useSearch({ from: ORDERS_ROUTE });
   const navigate = useNavigate();
 
@@ -126,9 +126,29 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedQ]);
 
+  // Default the bills tab to today's BS date range on first entry. Only
+  // patches when both dates are empty — a bookmark with an explicit range
+  // still opens exactly as saved.
+  useEffect(() => {
+    if (search.tab === "bills" && !search.bs_from && !search.bs_to) {
+      const today = toBsIso(new Date());
+      if (today) patchSearch({ bs_from: today, bs_to: today });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.tab]);
+
+  // "dues" tab = closed bills paid via khata. Translate the virtual filter
+  // into concrete status + payment_method for the API.
+  const effectiveStatus =
+    search.status === "all" || search.status === "dues" ? undefined : search.status;
+  const effectivePaymentMethod = search.status === "dues" ? ("khata" as const) : undefined;
+  const effectiveStatusForDues =
+    search.status === "dues" ? ("paid" as const) : effectiveStatus;
+
   const { orders, meta, isLoading } = useOrdersList(branchId || null, {
     q: search.q.trim() || undefined,
-    status: search.status === "all" ? undefined : search.status,
+    status: effectiveStatusForDues,
+    payment_method: effectivePaymentMethod,
     bs_from: search.bs_from || undefined,
     bs_to: search.bs_to || undefined,
     page: search.page,
@@ -144,6 +164,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
   // billTotals expect. Only the fields those consumers actually read.
   const toOrder = (o: OrderDto): Order => ({
     id: o.id,
+    billNumber: o.bill_number,
     tableId: o.table_id ?? "",
     type: o.type,
     ...(o.customer
@@ -172,7 +193,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
       })),
     status: o.status === "draft" ? "draft" : "paid",
     kitchenStatus: o.kitchen_status,
-    placedAt: new Date(o.placed_at).getTime(),
+    placedAt: parseApiDate(o.placed_at)?.getTime() ?? 0,
     placedAtBs: o.placed_at_bs,
     ...(o.paid_at_bs ? { paidAtBs: o.paid_at_bs } : {}),
     discountType: o.discount_type,
@@ -199,13 +220,13 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="h-12 pl-9"
-            placeholder="Search bill id, waiter, table, delivery name or phone"
+            placeholder="Bill #, waiter, table, customer name or phone"
             value={qInput}
             onChange={(e) => setQInput(e.target.value)}
           />
         </div>
         <div className="flex gap-2">
-          {(["all", "draft", "paid"] as const).map((f) => (
+          {(["all", "draft", "paid", "dues"] as const).map((f) => (
             <button
               key={f}
               onClick={() => patchSearch({ status: f })}
@@ -215,7 +236,13 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
                   : "bg-secondary text-foreground"
               }`}
             >
-              {f === "draft" ? "Active" : f === "paid" ? "Settled" : "All"}
+              {f === "draft"
+                ? "Active"
+                : f === "paid"
+                  ? "Closed"
+                  : f === "dues"
+                    ? "Dues"
+                    : "All"}
             </button>
           ))}
         </div>
@@ -258,6 +285,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
               <th className="py-3 pr-3">Table / Customer</th>
               <th className="py-3 pr-3">Date</th>
               <th className="py-3 pr-3">Status</th>
+              <th className="py-3 pr-3">Paid via</th>
               <th className="py-3 pr-3">Total</th>
               <th className="py-3 text-right">Actions</th>
             </tr>
@@ -268,19 +296,54 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
               const mapped = toOrder(o);
               return (
                 <tr key={o.id} className="border-b border-border/70">
-                  <td className="py-3 pr-3">#{o.id.slice(-4).toUpperCase()}</td>
+                  <td className="py-3 pr-3">#{o.bill_number}</td>
                   <td className="py-3 pr-3">{label(o)}</td>
                   <td className="py-3 pr-3 text-muted-foreground">
-                    {formatDateWithStoredBs(new Date(o.placed_at), o.placed_at_bs)}
+                    {formatDateWithStoredBs(parseApiDate(o.placed_at) ?? 0, o.placed_at_bs)}
                   </td>
                   <td className="py-3 pr-3">
-                    <span
-                      className={`rounded-lg px-2 py-1 text-xs ${
-                        o.status !== "draft" ? "bg-secondary text-foreground" : "bg-primary/15 text-primary"
-                      }`}
-                    >
-                      {o.status === "draft" ? "Active" : o.status === "paid" ? "Settled" : "Cancelled"}
-                    </span>
+                    {(() => {
+                      const isKhata =
+                        o.status === "paid" && o.payment_method === "khata";
+                      // Khata order flips to "Settled" once the customer's
+                      // overall balance is zero (paid off via the ledger).
+                      // We do it at the customer level because settlements
+                      // aren't attributed to individual orders.
+                      const customerCleared =
+                        isKhata &&
+                        o.customer_id &&
+                        (customers.find((c) => c.id === o.customer_id)?.outstandingBalance ?? 0) === 0;
+                      const label =
+                        o.status === "draft"
+                          ? "Active"
+                          : o.status === "paid"
+                            ? isKhata
+                              ? customerCleared
+                                ? "Settled"
+                                : "Khata"
+                              : "Settled"
+                            : "Cancelled";
+                      const cls =
+                        isKhata && !customerCleared
+                          ? "bg-warning text-navy"
+                          : o.status !== "draft"
+                            ? "bg-success/15 text-success"
+                            : "bg-primary/15 text-primary";
+                      return (
+                        <span className={`rounded-lg px-2 py-1 text-xs font-medium ${cls}`}>
+                          {label}
+                        </span>
+                      );
+                    })()}
+                  </td>
+                  <td className="py-3 pr-3">
+                    {o.payment_method ? (
+                      <span className="rounded-md bg-secondary px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {o.payment_method}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="py-3 pr-3 font-semibold">
                     {NPR(billTotals(mapped, settings.vatEnabled, settings.vatRate).total)}
@@ -308,7 +371,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
             })}
             {orders.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                <td colSpan={7} className="py-8 text-center text-muted-foreground">
                   {isLoading ? "Loading…" : anyFilterActive ? "No bills match your filters." : "No bills yet."}
                 </td>
               </tr>

@@ -1,4 +1,4 @@
-import { Building2, ChevronDown, Eye, LogOut } from "lucide-react";
+import { ChevronDown, Eye, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallAppButton } from "./InstallAppButton";
 import {
@@ -23,10 +23,7 @@ export function PosHeader() {
     viewAsRole,
     effectiveRole,
     setViewAsRole,
-    branches,
     branch,
-    canSwitchBranch,
-    setBranchId,
   } = usePos();
   if (!session) return null;
   const today = new Date();
@@ -56,32 +53,10 @@ export function PosHeader() {
             alt="Srota RMS"
             className="h-10 w-auto shrink-0 sm:h-11"
           />
-
-          {canSwitchBranch && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="ml-2 hidden h-11 gap-2 rounded-xl bg-navy-soft/60 px-3 text-navy-foreground hover:bg-navy-soft hover:text-navy-foreground md:inline-flex"
-                >
-                  <Building2 className="size-4" />
-                  <span className="max-w-[10rem] truncate text-sm font-semibold">{branch?.name ?? "Select branch"}</span>
-                  <ChevronDown className="size-4 opacity-70" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-60">
-                <DropdownMenuLabel>Switch branch</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {branches.map((b) => (
-                  <DropdownMenuItem key={b.id} className="py-3" onClick={() => setBranchId(b.id)}>
-                    <div>
-                      <p className="font-semibold">{b.name}</p>
-                      <p className="text-xs text-muted-foreground">{b.address}</p>
-                    </div>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+          {branch && (
+            <p className="hidden truncate text-sm font-medium text-navy-foreground/80 sm:block">
+              {branch.name}
+            </p>
           )}
         </div>
 

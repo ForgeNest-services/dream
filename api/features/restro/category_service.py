@@ -9,9 +9,13 @@ DEFAULT_CATEGORIES = [
     "Cold Beverages / Refreshers",
     "Hookah",
     "Fast Food",
-    "Momo",
     "Thakali Set",
     "Newari Khaja",
+    "Cigarettes",
+    # Combo menu items live here by convention. The category is just
+    # organizational — combo behavior is driven by the `is_combo` flag on
+    # individual menu items, not by category name (rename-safe).
+    "Combo",
 ]
 
 
@@ -34,6 +38,14 @@ class CategoryService:
                 extra={"tenant_id": tenant_id, "branch_id": branch_id},
             )
             categories = CategoryRepository.list_for_branch(db, tenant_id, branch_id)
+            # Seed the default menu right after the categories exist —
+            # deferred import breaks the circular dependency (menu_seeder
+            # imports MenuItemRepository which lives in the same package).
+            try:
+                from features.restro.menu_seeder import seed_default_menu_items
+                seed_default_menu_items(db, tenant_id, branch_id)
+            except Exception as e:
+                logger.error(f"Default menu seeding failed for branch {branch_id}: {e}")
 
         return {"success": True, "categories": categories}
 

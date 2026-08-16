@@ -127,6 +127,34 @@ class VariantInput(BaseModel):
         return v
 
 
+class MenuItemComponentData(BaseModel):
+    """A component of a combo, serialized with the child item's name so the
+    frontend can render "2× Steam Momo (Chicken)" without a second lookup."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    child_menu_item_id: str
+    child_variant_name: str | None
+    qty: int
+    display_order: int
+    # Populated via @model_validator below from the joined child relationship.
+    child_name: str = ""
+
+
+class MenuItemComponentInput(BaseModel):
+    child_menu_item_id: str
+    child_variant_name: str | None = None
+    qty: int = 1
+
+    @field_validator("qty")
+    @classmethod
+    def qty_positive(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("qty must be at least 1")
+        return v
+
+
 class MenuItemData(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -137,10 +165,12 @@ class MenuItemData(BaseModel):
     name: str
     image_url: str | None
     has_variants: bool
+    is_combo: bool
     price: Decimal | None
     sold_out: bool
     is_active: bool
     variants: list[VariantData]
+    components: list[MenuItemComponentData] = []
     created_at: datetime
     updated_at: datetime
 
@@ -149,9 +179,11 @@ class CreateMenuItemRequest(BaseModel):
     category_id: str
     name: str
     has_variants: bool = False
+    is_combo: bool = False
     price: Decimal | None = None
     image_url: str | None = None
     variants: list[VariantInput] = []
+    components: list[MenuItemComponentInput] = []
 
     @field_validator("name")
     @classmethod
@@ -172,10 +204,12 @@ class UpdateMenuItemRequest(BaseModel):
     category_id: str | None = None
     name: str | None = None
     has_variants: bool | None = None
+    is_combo: bool | None = None
     price: Decimal | None = None
     clear_price: bool = False
     image_url: str | None = None
     variants: list[VariantInput] | None = None
+    components: list[MenuItemComponentInput] | None = None
 
     @field_validator("name")
     @classmethod
@@ -356,6 +390,7 @@ class OrderData(BaseModel):
     branch_id: str
     table_id: str | None
     customer_id: str | None
+    bill_number: int
     type: str
     status: str
     kitchen_status: str
@@ -448,6 +483,11 @@ class SetDiscountRequest(BaseModel):
         return v
 
 
+class SetOrderCustomerRequest(BaseModel):
+    # null = clear the current customer attachment.
+    customer_id: str | None = None
+
+
 class MarkPaidRequest(BaseModel):
     payment_method: str
     # Required when payment_method == 'khata' and the order doesn't already
@@ -462,17 +502,81 @@ class MarkPaidRequest(BaseModel):
         return v
 
 
-class SettleKhataRequest(BaseModel):
-    # cash | qr — how the customer actually paid down their tab. Khata itself
-    # isn't a valid settlement (that'd be circular).
-    settlement_method: str
+class CreateKhataSettlementRequest(BaseModel):
+    """A partial or full payment against a customer's khata balance."""
 
-    @field_validator("settlement_method")
+    amount: Decimal
+    # cash | qr — how the customer handed over the money. Khata isn't valid
+    # (that'd be circular).
+    method: str
+    note: str | None = None
+
+    @field_validator("method")
     @classmethod
-    def valid(cls, v: str) -> str:
+    def method_valid(cls, v: str) -> str:
         if v not in ("cash", "qr"):
-            raise ValueError("settlement_method must be 'cash' or 'qr'")
+            raise ValueError("method must be 'cash' or 'qr'")
         return v
+
+    @field_validator("amount")
+    @classmethod
+    def amount_positive(cls, v: Decimal) -> Decimal:
+        if v <= 0:
+            raise ValueError("amount must be greater than zero")
+        return v
+
+
+class KhataSettlementData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    customer_id: str
+    amount: Decimal
+    method: str
+    note: str | None
+    actor_name: str
+    actor_cred_id: str | None
+    created_at: datetime
+    created_at_bs: str
+
+
+class KhataOrderEntry(BaseModel):
+    """A khata order (debit side of the ledger). `total` is the server-computed
+    final amount, matching what the customer was shown at bill time."""
+
+    id: str
+    type: str
+    placed_at: datetime
+    placed_at_bs: str
+    total: Decimal
+    line_count: int
+
+
+class KhataHistoryResponse(BaseModel):
+    """Full khata log for a customer: orders they racked up + settlements
+    they've paid, plus a live balance snapshot."""
+
+    balance: Decimal
+    debits_total: Decimal
+    credits_total: Decimal
+    orders: list[KhataOrderEntry]
+    settlements: list[KhataSettlementData]
+
+
+class RestroTenantInfo(BaseModel):
+    """Business identity exposed to the RMS staff app — mirrors the fields
+    on the `tenants` row (registered under platform auth). RMS needs this to
+    print PAN/VAT on receipts and to gate the VAT toggle in Settings."""
+
+    id: str
+    name: str
+    pan: str | None
+    is_vat_registered: bool
+    business_email: str | None
+    business_phone: str | None
+    business_address: str | None
 
 
 class SetDeliveryStatusRequest(BaseModel):

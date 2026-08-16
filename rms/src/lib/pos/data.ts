@@ -13,14 +13,27 @@ export type Category = { id: string; name: string };
 
 export type Variant = { id: string; name: string; price: number };
 
+// A combo component: one sub-item plus its variant + qty.
+export type MenuItemComponent = {
+  id: string;
+  childMenuItemId: string;
+  childVariantName?: string;
+  childName: string;
+  qty: number;
+};
+
 export type MenuItem = {
   id: string;
   name: string;
   categoryId: string;
   image?: string;
   hasVariants: boolean;
+  // Mutually exclusive with hasVariants. When true, `price` is the combo
+  // price and `components` is the composition (>=1 entries).
+  isCombo: boolean;
   price?: number;
   variants: Variant[];
+  components: MenuItemComponent[];
   soldOut: boolean;
 };
 
@@ -102,6 +115,9 @@ export type OrderCustomerRef = {
 
 export type Order = {
   id: string;
+  // Sequential per-branch number for receipts and searches. Populated by
+  // the server on create — always > 0.
+  billNumber: number;
   tableId: string;
   type: "dine-in" | "delivery";
   // Present when customer_id is set on the order — always for delivery,

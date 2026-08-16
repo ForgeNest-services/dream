@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from sqlalchemy import and_, or_, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from shared_models import RestroOrder, RestroOrderLine, RestroTable, RestroCustomer
 from utils.bikram_sambat import to_bs_iso
@@ -41,24 +42,50 @@ class OrderRepository:
         # agree on the exact same moment — the default runs at flush, which
         # would compute BS from a slightly earlier `now()`.
         now = datetime.now(timezone.utc)
-        order = RestroOrder(
-            tenant_id=tenant_id,
-            branch_id=branch_id,
-            type=type,
-            status="draft",
-            kitchen_status="new",
-            table_id=table_id,
-            customer_id=customer_id,
-            placed_at=now,
-            placed_at_bs=to_bs_iso(now) or "",
-            waiter_name=waiter_name,
-            waiter_cred_id=waiter_cred_id,
-            delivery_status="pending" if type == "delivery" else None,
+
+        # Bill numbers are branch-scoped sequential integers. Concurrent
+        # inserts on the same branch could both read the same MAX and try
+        # to insert the same next number; the UNIQUE index catches that and
+        # we retry with a fresh MAX. Bounded to a handful of retries — under
+        # steady contention something's wrong upstream.
+        for attempt in range(5):
+            next_num = OrderRepository._next_bill_number(db, branch_id)
+            order = RestroOrder(
+                tenant_id=tenant_id,
+                branch_id=branch_id,
+                type=type,
+                status="draft",
+                kitchen_status="new",
+                table_id=table_id,
+                customer_id=customer_id,
+                bill_number=next_num,
+                placed_at=now,
+                placed_at_bs=to_bs_iso(now) or "",
+                waiter_name=waiter_name,
+                waiter_cred_id=waiter_cred_id,
+                delivery_status="pending" if type == "delivery" else None,
+            )
+            db.add(order)
+            try:
+                db.commit()
+                db.refresh(order)
+                return order
+            except IntegrityError as e:
+                db.rollback()
+                # Only retry on bill-number collisions; anything else (e.g.
+                # the one-draft-per-table partial unique) bubbles up.
+                if "uq_restro_order_bill_number" not in str(e.orig):
+                    raise
+        raise RuntimeError(f"Could not allocate bill_number for branch {branch_id} after 5 retries")
+
+    @staticmethod
+    def _next_bill_number(db: Session, branch_id: str) -> int:
+        current_max = (
+            db.query(func.coalesce(func.max(RestroOrder.bill_number), 0))
+            .filter(RestroOrder.branch_id == branch_id)
+            .scalar()
         )
-        db.add(order)
-        db.commit()
-        db.refresh(order)
-        return order
+        return int(current_max) + 1
 
     @staticmethod
     def get_by_id(db: Session, tenant_id: str, order_id: str) -> RestroOrder | None:
@@ -78,6 +105,7 @@ class OrderRepository:
         type: str | None = None,
         kitchen_status: str | None = None,
         table_id: str | None = None,
+        payment_method: str | None = None,
         bs_from: str | None = None,
         bs_to: str | None = None,
         search: str | None = None,
@@ -96,6 +124,8 @@ class OrderRepository:
             query = query.filter(RestroOrder.kitchen_status == kitchen_status)
         if table_id:
             query = query.filter(RestroOrder.table_id == table_id)
+        if payment_method:
+            query = query.filter(RestroOrder.payment_method == payment_method)
         # BS date range hits the (branch_id, placed_at_bs) composite index.
         # placed_at_bs is stored as "YYYY-MM-DD" so lexical comparison is
         # equivalent to date comparison.
@@ -103,23 +133,29 @@ class OrderRepository:
             query = query.filter(RestroOrder.placed_at_bs >= bs_from)
         if bs_to:
             query = query.filter(RestroOrder.placed_at_bs <= bs_to)
-        # Search across waiter, customer name/phone, table label, and short
-        # id slice. Only outer-joins when actually searching so the store's
-        # plain "give me last N" fetch stays cheap.
+        # Search across waiter, customer name/phone, table label, and — for
+        # digit-only queries — the exact bill number. UUID matching was
+        # removed because UUIDs contain every digit and character; searching
+        # "1" matched most rows. Digit-only-as-bill-number is what a waiter
+        # actually types when they want "bill 42".
         if search:
-            term = f"%{search.lower()}%"
+            term_raw = search.strip()
+            term = f"%{term_raw.lower()}%"
+            conditions = [
+                func.lower(RestroOrder.waiter_name).like(term),
+                func.lower(RestroCustomer.name).like(term),
+                func.lower(RestroCustomer.phone).like(term),
+                func.lower(RestroTable.label).like(term),
+            ]
+            if term_raw.isdigit():
+                try:
+                    conditions.append(RestroOrder.bill_number == int(term_raw))
+                except ValueError:
+                    pass
             query = (
                 query.outerjoin(RestroTable, RestroOrder.table_id == RestroTable.id)
                 .outerjoin(RestroCustomer, RestroOrder.customer_id == RestroCustomer.id)
-                .filter(
-                    or_(
-                        func.lower(RestroOrder.waiter_name).like(term),
-                        func.lower(RestroCustomer.name).like(term),
-                        func.lower(RestroCustomer.phone).like(term),
-                        func.lower(RestroTable.label).like(term),
-                        func.lower(RestroOrder.id).like(term),
-                    )
-                )
+                .filter(or_(*conditions))
             )
         return query
 
@@ -157,6 +193,7 @@ class OrderRepository:
         type: str | None = None,
         kitchen_status: str | None = None,
         table_id: str | None = None,
+        payment_method: str | None = None,
         bs_from: str | None = None,
         bs_to: str | None = None,
         search: str | None = None,
@@ -171,6 +208,7 @@ class OrderRepository:
             type=type,
             kitchen_status=kitchen_status,
             table_id=table_id,
+            payment_method=payment_method,
             bs_from=bs_from,
             bs_to=bs_to,
             search=search,
@@ -265,40 +303,24 @@ class OrderRepository:
         return order
 
     @staticmethod
-    def list_unsettled_khata_for_customer(
+    def list_khata_orders_for_customer(
         db: Session, tenant_id: str, customer_id: str
     ) -> list[RestroOrder]:
-        """Every khata order that hasn't been paid off yet. Used both by
-        balance-computation and by the settle endpoint (which flips each
-        row's settled_at to now())."""
+        """Every khata order for this customer (closed bills that hit their
+        tab). Used by balance-computation as the debit side of the ledger;
+        settlements are the credit side. Draft khata orders don't exist —
+        khata is only set at mark-paid time."""
         return (
             db.query(RestroOrder)
             .filter(
                 RestroOrder.tenant_id == tenant_id,
                 RestroOrder.customer_id == customer_id,
                 RestroOrder.payment_method == "khata",
-                RestroOrder.settled_at.is_(None),
                 RestroOrder.status == "paid",
             )
             .order_by(RestroOrder.placed_at.asc())
             .all()
         )
-
-    @staticmethod
-    def settle_khata_for_customer(
-        db: Session, tenant_id: str, customer_id: str
-    ) -> int:
-        """Flips settled_at = now() on every unsettled khata order for the
-        given customer. Returns the count of rows updated. Idempotent — a
-        second call finds nothing to settle and returns 0."""
-        rows = OrderRepository.list_unsettled_khata_for_customer(db, tenant_id, customer_id)
-        now = datetime.now(timezone.utc)
-        bs = to_bs_iso(now)
-        for order in rows:
-            order.settled_at = now
-            order.settled_at_bs = bs
-        db.commit()
-        return len(rows)
 
     @staticmethod
     def set_discount(
