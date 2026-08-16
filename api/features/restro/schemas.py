@@ -565,6 +565,26 @@ class KhataHistoryResponse(BaseModel):
     settlements: list[KhataSettlementData]
 
 
+class BranchSettingsData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    vat_enabled: bool
+    vat_rate: Decimal
+    qr_image_url: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class UpdateBranchSettingsRequest(BaseModel):
+    vat_enabled: bool | None = None
+    vat_rate: Decimal | None = None
+    qr_image_url: str | None = None
+    clear_qr: bool = False
+
+
 class RestroTenantInfo(BaseModel):
     """Business identity exposed to the RMS staff app — mirrors the fields
     on the `tenants` row (registered under platform auth). RMS needs this to

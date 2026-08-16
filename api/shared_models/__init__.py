@@ -21,6 +21,7 @@ from .restro_stock_movement import RestroStockMovement
 from .restro_employee import RestroEmployee
 from .restro_customer import RestroCustomer
 from .restro_khata_settlement import RestroKhataSettlement
+from .restro_branch_settings import RestroBranchSettings
 from .app import App
 
 __all__ = [
@@ -47,5 +48,6 @@ __all__ = [
     "RestroEmployee",
     "RestroCustomer",
     "RestroKhataSettlement",
+    "RestroBranchSettings",
     "App",
 ]

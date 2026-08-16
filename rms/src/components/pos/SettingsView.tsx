@@ -1,4 +1,5 @@
-import { Building2, Info, Lock } from "lucide-react";
+import { useState } from "react";
+import { Building2, Info, Loader2, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +17,8 @@ export function SettingsView() {
   const {
     settings,
     updateSettings,
+    uploadQrImage,
+    clearQrImage,
     branch,
     branchId,
     branches,
@@ -24,6 +27,7 @@ export function SettingsView() {
     tenant,
     tenantLoading,
   } = usePos();
+  const [isUploadingQr, setIsUploadingQr] = useState(false);
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   const menuUrl = `${origin}/menu/${branchId}`;
 
@@ -190,13 +194,21 @@ export function SettingsView() {
 
         <div className="pos-card p-5">
           <h2 className="font-display text-xl">Payment QR</h2>
-          <p className="text-sm text-muted-foreground">One static QR image per branch.</p>
+          <p className="text-sm text-muted-foreground">
+            One static QR image per branch — uploaded to storage and printed on receipts. Replacing
+            or removing it also deletes the old file from storage.
+          </p>
           <div className="mt-4 flex flex-wrap items-center gap-4">
-            <div className="grid size-32 shrink-0 place-items-center overflow-hidden rounded-xl border-2 border-dashed border-border bg-secondary">
+            <div className="relative grid size-32 shrink-0 place-items-center overflow-hidden rounded-xl border-2 border-dashed border-border bg-secondary">
               {settings.qrImage ? (
                 <img src={settings.qrImage} alt="Payment QR" className="size-full object-contain" />
               ) : (
                 <span className="px-2 text-center text-xs text-muted-foreground">No QR uploaded</span>
+              )}
+              {isUploadingQr && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                  <Loader2 className="size-6 animate-spin text-white" />
+                </div>
               )}
             </div>
             <div className="flex min-w-48 flex-1 flex-col gap-2">
@@ -204,16 +216,27 @@ export function SettingsView() {
                 type="file"
                 accept="image/*"
                 className="h-12"
-                onChange={(e) => {
+                disabled={isUploadingQr}
+                onChange={async (e) => {
                   const file = e.target.files?.[0];
-                  if (file) updateSettings({ qrImage: URL.createObjectURL(file) });
+                  if (!file) return;
+                  setIsUploadingQr(true);
+                  try {
+                    await uploadQrImage(file);
+                  } finally {
+                    setIsUploadingQr(false);
+                    // Reset the file input so the same filename can be
+                    // re-picked to trigger an upload again if needed.
+                    e.target.value = "";
+                  }
                 }}
               />
               {settings.qrImage && (
                 <Button
                   variant="outline"
                   className="h-11"
-                  onClick={() => updateSettings({ qrImage: undefined })}
+                  disabled={isUploadingQr}
+                  onClick={() => clearQrImage()}
                 >
                   Remove QR
                 </Button>

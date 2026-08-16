@@ -24,6 +24,11 @@ import {
 import { employeesApi, type EmployeeDto } from "../employees-api";
 import { customersApi, type CustomerDto } from "../customers-api";
 import { tenantApi, type TenantInfoDto } from "../tenant-api";
+import {
+  branchSettingsApi,
+  type BranchSettingsDto,
+} from "../branch-settings-api";
+import { uploadsApi } from "../uploads-api";
 import { parseApiDate } from "./nepali-date";
 import {
   EXPENSES,
@@ -236,8 +241,14 @@ type Ctx = {
   tenant: TenantInfoDto | null;
   tenantLoading: boolean;
 
+  // Per-branch settings — server-backed via /restro/branches/{id}/settings.
+  // vat_enabled / vat_rate persist across sessions; qrImage points at a
+  // MinIO URL that gets replaced (old file deleted) on new upload.
   settings: Settings;
-  updateSettings: (patch: Partial<Settings>) => void;
+  settingsLoading: boolean;
+  updateSettings: (patch: Partial<Settings>) => Promise<void>;
+  uploadQrImage: (file: File) => Promise<void>;
+  clearQrImage: () => Promise<void>;
 
   categories: Category[];
   categoriesLoading: boolean;
@@ -566,7 +577,11 @@ export function PosProvider({ children }: { children: ReactNode }) {
   const canSwitchBranch = actualRole === "owner";
   const branch = branches.find((b) => b.id === branchId) ?? branches[0] ?? null;
 
+  // Per-branch settings live server-side now (RestroBranchSettings). We
+  // still cache by branch id so switching branches doesn't blank the QR/
+  // VAT config while the refetch is in flight.
   const [settingsMap, setSettingsMap] = useState<Record<string, Settings>>({});
+  const [settingsLoading, setSettingsLoading] = useState(false);
   const [zones, setZones] = useState<Zone[]>([]);
   const [zonesLoading, setZonesLoading] = useState(false);
   const [tables, setTables] = useState<RestaurantTable[]>([]);
@@ -585,6 +600,57 @@ export function PosProvider({ children }: { children: ReactNode }) {
   const [expenses, setExpenses] = useState<Expense[]>(EXPENSES);
 
   const settings = settingsMap[branchId] ?? defaultSettings(branch);
+
+  // Load persisted settings for the active branch. Backend auto-provisions
+  // defaults on first read, so this always returns a row.
+  useEffect(() => {
+    if (!session || !branchId) return;
+    let cancelled = false;
+    setSettingsLoading(true);
+    branchSettingsApi
+      .get(branchId)
+      .then((response) => {
+        if (cancelled || !response.data) return;
+        const dto = response.data;
+        setSettingsMap((prev) => ({
+          ...prev,
+          [branchId]: {
+            restaurantName: prev[branchId]?.restaurantName ?? defaultSettings(branch).restaurantName,
+            branchAddress: prev[branchId]?.branchAddress ?? defaultSettings(branch).branchAddress,
+            branchPhone: prev[branchId]?.branchPhone ?? defaultSettings(branch).branchPhone,
+            vatEnabled: dto.vat_enabled,
+            vatRate: Number(dto.vat_rate),
+            ...(dto.qr_image_url ? { qrImage: dto.qr_image_url } : {}),
+          },
+        }));
+      })
+      .finally(() => {
+        if (!cancelled) setSettingsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // branch is intentionally omitted from deps — defaultSettings only
+    // reads it for name/address/phone which are still local (unchanged).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, branchId]);
+
+  // Small helper to splice a settings DTO from the server into local state
+  // without discarding the local-only display fields (restaurantName etc.).
+  const mergeServerSettings = (dto: BranchSettingsDto) => {
+    setSettingsMap((prev) => {
+      const existing = prev[branchId] ?? defaultSettings(branch);
+      return {
+        ...prev,
+        [branchId]: {
+          ...existing,
+          vatEnabled: dto.vat_enabled,
+          vatRate: Number(dto.vat_rate),
+          qrImage: dto.qr_image_url ?? undefined,
+        },
+      };
+    });
+  };
 
   // Load inventory whenever the branch changes. Movements are lazy — fetched
   // on demand when the user opens the history modal, since one item's log can
@@ -707,8 +773,57 @@ export function PosProvider({ children }: { children: ReactNode }) {
     tenantLoading,
 
     settings,
-    updateSettings: (patch) =>
-      setSettingsMap((prev) => ({ ...prev, [branchId]: { ...settings, ...patch } })),
+    settingsLoading,
+    // Server-persisted subset of Settings — anything that hits the DB
+    // (vatEnabled, vatRate, qrImage) gets PATCHed; local-only fields
+    // (restaurantName, branchAddress, branchPhone) stay client-side because
+    // they're derived from tenant+branch elsewhere and already read-only in
+    // the UI. QR uploads/clears go through dedicated helpers below.
+    updateSettings: async (patch) => {
+      if (!branchId) return;
+      // Optimistic local merge so the UI feels instant. Server response
+      // then splices the authoritative values back (in case validation
+      // clamps something).
+      setSettingsMap((prev) => ({ ...prev, [branchId]: { ...settings, ...patch } }));
+      const persistablePatch: Record<string, unknown> = {};
+      if ("vatEnabled" in patch) persistablePatch.vat_enabled = patch.vatEnabled;
+      if ("vatRate" in patch) persistablePatch.vat_rate = patch.vatRate;
+      if (Object.keys(persistablePatch).length === 0) return;
+      try {
+        const response = await branchSettingsApi.update(branchId, persistablePatch);
+        if (response.data) mergeServerSettings(response.data);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to save settings");
+      }
+    },
+    uploadQrImage: async (file) => {
+      if (!branchId) return;
+      try {
+        // Upload to MinIO first — get a public URL — then PATCH settings.
+        // Backend deletes the previous MinIO object on qr_image_url change,
+        // so we never accumulate orphans.
+        const upload = await uploadsApi.uploadPaymentQr(branchId, file);
+        if (!upload.data?.url) throw new Error("Upload returned no URL");
+        const response = await branchSettingsApi.update(branchId, {
+          qr_image_url: upload.data.url,
+        });
+        if (response.data) mergeServerSettings(response.data);
+        toast.success("Payment QR updated");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to upload QR");
+      }
+    },
+    clearQrImage: async () => {
+      if (!branchId) return;
+      try {
+        // DELETE clears the URL server-side and deletes the MinIO file.
+        const response = await branchSettingsApi.clearQr(branchId);
+        if (response.data) mergeServerSettings(response.data);
+        toast.success("Payment QR removed");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to remove QR");
+      }
+    },
 
     categories,
     categoriesLoading,
