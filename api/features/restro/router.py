@@ -2232,19 +2232,20 @@ def _serialize_trend(trend: list) -> list:
 @router.get("/branches/{branch_id}/reports/dashboard")
 def reports_dashboard(
     branch_id: str,
+    bs: str | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
-    """One-shot bundle for the RMS dashboard landing screen. Any staff can
-    read — waiter/chef won't see the nav to reach it anyway, but the endpoint
-    is safe to expose."""
+    """One-shot bundle for the RMS dashboard landing screen. `bs` defaults to
+    today (server clock in NPT) — pass a BS date to view a historical day."""
     _assert_branch_scope(staff, branch_id)
-    result = ReportsService.dashboard(db, staff["tenant_id"], branch_id)
+    result = ReportsService.dashboard(db, staff["tenant_id"], branch_id, bs)
     if not result["success"]:
         return _reports_error(result["error_code"])
     d = result["dashboard"]
     return success_response(
         data={
+            "anchor_bs": d["anchor_bs"],
             "today": _serialize_summary(d["today"]),
             "yesterday_sales": _serialize_money(d["yesterday_sales"]),
             "trend_7_days": _serialize_trend(d["trend_7_days"]),

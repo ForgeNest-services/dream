@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -18,12 +19,12 @@ import {
   type TopItemDto,
 } from "@/lib/reports-api";
 import { useOrdersList } from "@/hooks/useOrdersList";
-import type { OrderStatus, OrderType } from "@/lib/orders-api";
+import type { ReportsSearch } from "@/routes/_app.reports";
 import { BsDatePicker } from "./BsDatePicker";
 
-type Tab = "orders" | "category" | "items";
+const REPORTS_ROUTE = "/_app/reports" as const;
 
-const TABS: { id: Tab; label: string }[] = [
+const TABS: { id: ReportsSearch["tab"]; label: string }[] = [
   { id: "orders", label: "Order wise" },
   { id: "category", label: "Category wise" },
   { id: "items", label: "Menu wise" },
@@ -31,19 +32,26 @@ const TABS: { id: Tab; label: string }[] = [
 
 export function ReportsView() {
   const { branchId, tables, settings } = usePos();
+  const search = useSearch({ from: REPORTS_ROUTE });
+  const navigate = useNavigate();
 
-  // Default range: last 7 days in BS.
+  // Fall back to last-7-days if the URL doesn't specify a range. Kept as
+  // local state seeded from search so first-mount doesn't re-render twice;
+  // any user change goes through patchSearch → URL → re-read.
   const todayBs = toBsIso(new Date()) ?? "";
   const weekAgoBs = toBsIso(new Date(Date.now() - 6 * 86400000)) ?? "";
-  const [fromBs, setFromBs] = useState(weekAgoBs);
-  const [toBs, setToBs] = useState(todayBs);
-  const [status, setStatus] = useState<"all" | OrderStatus>("all");
-  const [type, setType] = useState<"all" | OrderType>("all");
-  const [tab, setTab] = useState<Tab>("orders");
+  const fromBs = search.bs_from || weekAgoBs;
+  const toBs = search.bs_to || todayBs;
 
-  // Aggregations from the reports endpoint — stats, by-category, by-payment,
-  // expenses breakdown. Refetches on range change (status/type don't affect
-  // the summary since it always sums closed-and-paid orders).
+  const patchSearch = (patch: Partial<ReportsSearch>) => {
+    navigate({
+      to: REPORTS_ROUTE,
+      search: (prev: ReportsSearch) => ({ ...prev, ...patch }),
+      replace: true,
+    });
+  };
+
+  // Summary — stats, by-category, by-payment, expenses breakdown.
   const [summary, setSummary] = useState<SummaryDto | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
 
@@ -65,13 +73,12 @@ export function ReportsView() {
     };
   }, [branchId, fromBs, toBs]);
 
-  // Top items — separate call because the summary caps at ~10 categories,
-  // this is the ranked menu-item list. Only fetches when the tab is active.
+  // Top items — only fetches when the items tab is active.
   const [items, setItems] = useState<TopItemDto[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
 
   useEffect(() => {
-    if (!branchId || tab !== "items" || !fromBs || !toBs) return;
+    if (!branchId || search.tab !== "items" || !fromBs || !toBs) return;
     let cancelled = false;
     setItemsLoading(true);
     reportsApi
@@ -85,17 +92,13 @@ export function ReportsView() {
     return () => {
       cancelled = true;
     };
-  }, [branchId, fromBs, toBs, tab]);
+  }, [branchId, fromBs, toBs, search.tab]);
 
-  // Orders tab uses the paginated bills endpoint — reuses the existing hook
-  // that OrdersView uses. First page, generous per_page so the report shows
-  // the full range without a second click. Client can hit "Load more" once
-  // we add it — for now, cap at 100.
   const { orders, meta, isLoading: ordersLoading } = useOrdersList(branchId || null, {
     bs_from: fromBs || undefined,
     bs_to: toBs || undefined,
-    status: status === "all" ? undefined : status,
-    type: type === "all" ? undefined : type,
+    status: search.status === "all" ? undefined : search.status,
+    type: search.type === "all" ? undefined : search.type,
     page: 1,
     per_page: 100,
   });
@@ -146,15 +149,18 @@ export function ReportsView() {
       <div className="pos-card grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="space-y-2">
           <Label>From (BS)</Label>
-          <BsDatePicker value={fromBs} onChange={setFromBs} />
+          <BsDatePicker value={fromBs} onChange={(v) => patchSearch({ bs_from: v })} />
         </div>
         <div className="space-y-2">
           <Label>To (BS)</Label>
-          <BsDatePicker value={toBs} onChange={setToBs} />
+          <BsDatePicker value={toBs} onChange={(v) => patchSearch({ bs_to: v })} />
         </div>
         <div className="space-y-2">
           <Label>Status</Label>
-          <Select value={status} onValueChange={(v) => setStatus(v as typeof status)}>
+          <Select
+            value={search.status}
+            onValueChange={(v) => patchSearch({ status: v as ReportsSearch["status"] })}
+          >
             <SelectTrigger className="h-12">
               <SelectValue />
             </SelectTrigger>
@@ -167,7 +173,10 @@ export function ReportsView() {
         </div>
         <div className="space-y-2">
           <Label>Order type</Label>
-          <Select value={type} onValueChange={(v) => setType(v as typeof type)}>
+          <Select
+            value={search.type}
+            onValueChange={(v) => patchSearch({ type: v as ReportsSearch["type"] })}
+          >
             <SelectTrigger className="h-12">
               <SelectValue />
             </SelectTrigger>
@@ -239,9 +248,9 @@ export function ReportsView() {
         {TABS.map((t) => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => patchSearch({ tab: t.id })}
             className={`min-h-11 shrink-0 rounded-xl px-4 text-sm transition-colors ${
-              tab === t.id ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
+              search.tab === t.id ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
             }`}
           >
             {t.label}
@@ -250,7 +259,7 @@ export function ReportsView() {
       </div>
 
       <div className="pos-card overflow-x-auto p-4 sm:p-5">
-        {tab === "orders" && (
+        {search.tab === "orders" && (
           <table className="w-full min-w-[720px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
@@ -281,7 +290,9 @@ export function ReportsView() {
                       )
                       .join(", ")}
                   </td>
-                  <td className="py-3 pr-3">{o.status === "paid" ? "Closed" : o.status === "draft" ? "Running" : o.status}</td>
+                  <td className="py-3 pr-3">
+                    {o.status === "paid" ? "Closed" : o.status === "draft" ? "Running" : o.status}
+                  </td>
                   <td className="py-3 text-right font-semibold">
                     {NPR(billTotalFromDto(o))}
                   </td>
@@ -305,7 +316,7 @@ export function ReportsView() {
           </table>
         )}
 
-        {tab === "category" && (
+        {search.tab === "category" && (
           <table className="w-full min-w-[420px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
@@ -340,7 +351,7 @@ export function ReportsView() {
           </table>
         )}
 
-        {tab === "items" && (
+        {search.tab === "items" && (
           <table className="w-full min-w-[420px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
@@ -379,7 +390,7 @@ export function ReportsView() {
         )}
       </div>
 
-      {tab === "orders" && meta && meta.total > orders.length && (
+      {search.tab === "orders" && meta && meta.total > orders.length && (
         <p className="pos-card p-3 text-center text-xs text-muted-foreground">
           Showing {orders.length} of {meta.total} bills · narrow the date range for a
           more focused view

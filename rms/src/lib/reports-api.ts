@@ -51,6 +51,7 @@ export interface TrendRowDto {
 }
 
 export interface DashboardDto {
+  anchor_bs: string;
   today: SummaryDto;
   yesterday_sales: string;
   trend_7_days: TrendRowDto[];
@@ -60,9 +61,10 @@ export interface DashboardDto {
 }
 
 export const reportsApi = {
-  dashboard(branchId: string) {
+  dashboard(branchId: string, bs?: string) {
+    const q = bs ? `?bs=${encodeURIComponent(bs)}` : "";
     return apiClient.get<DashboardDto>(
-      `/restro/branches/${branchId}/reports/dashboard`,
+      `/restro/branches/${branchId}/reports/dashboard${q}`,
     );
   },
   dailySummary(branchId: string, bs: string) {

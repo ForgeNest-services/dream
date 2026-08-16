@@ -11,7 +11,6 @@ from features.restro.reports_repository import ReportsRepository
 from features.restro.order_service import compute_order_total
 from features.branches.repository import BranchRepository
 from utils.bikram_sambat import to_bs_iso, bs_iso_to_ad
-from utils.logger import logger
 
 
 def _assert_branch(db: Session, tenant_id: str, branch_id: str) -> bool:
@@ -189,29 +188,39 @@ class ReportsService:
         return {"success": True, "trend": trend}
 
     @staticmethod
-    def dashboard(db: Session, tenant_id: str, branch_id: str) -> dict:
-        """One-shot bundle for the dashboard landing screen. Today's snapshot,
-        yesterday's sales for the delta, last-7-days trend, top 5 items,
-        table occupancy, and low-stock count."""
+    def dashboard(
+        db: Session, tenant_id: str, branch_id: str, bs: str | None = None
+    ) -> dict:
+        """One-shot bundle for the dashboard landing screen. `bs` is optional
+        — omit for "today" (server clock, NPT), or pass a BS date to view a
+        past day (managers reconciling yesterday's cash, etc.). The 7-day
+        trend and top-items window is anchored on `bs`, so viewing 2083-05-27
+        shows that day + the 6 days leading up to it."""
         if not _assert_branch(db, tenant_id, branch_id):
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
 
         from datetime import date
-        today = date.today()
-        today_bs = to_bs_iso(today)
-        yesterday_bs = to_bs_iso(today - timedelta(days=1))
-        seven_days_ago_bs = to_bs_iso(today - timedelta(days=6))  # inclusive → 7 days
-        if not today_bs or not yesterday_bs or not seven_days_ago_bs:
+        if bs:
+            anchor_ad = bs_iso_to_ad(bs)
+            if anchor_ad is None:
+                return {"success": False, "error_code": "INVALID_DATE"}
+        else:
+            anchor_ad = date.today()
+
+        anchor_bs = to_bs_iso(anchor_ad)
+        yesterday_bs = to_bs_iso(anchor_ad - timedelta(days=1))
+        seven_days_ago_bs = to_bs_iso(anchor_ad - timedelta(days=6))  # inclusive → 7 days
+        if not anchor_bs or not yesterday_bs or not seven_days_ago_bs:
             return {"success": False, "error_code": "BS_CONVERSION_FAILED"}
 
-        today_summary = _range_summary(db, tenant_id, branch_id, today_bs, today_bs)
+        today_summary = _range_summary(db, tenant_id, branch_id, anchor_bs, anchor_bs)
         yesterday_summary = _range_summary(db, tenant_id, branch_id, yesterday_bs, yesterday_bs)
 
         trend_result = ReportsService.sales_trend(
-            db, tenant_id, branch_id, seven_days_ago_bs, today_bs
+            db, tenant_id, branch_id, seven_days_ago_bs, anchor_bs
         )
         top = ReportsRepository.top_items(
-            db, tenant_id, branch_id, seven_days_ago_bs, today_bs, 5
+            db, tenant_id, branch_id, seven_days_ago_bs, anchor_bs, 5
         )
         occ = ReportsRepository.table_occupancy(db, tenant_id, branch_id)
         low_stock = ReportsRepository.low_stock_count(db, tenant_id, branch_id)
@@ -219,6 +228,7 @@ class ReportsService:
         return {
             "success": True,
             "dashboard": {
+                "anchor_bs": anchor_bs,
                 "today": today_summary,
                 "yesterday_sales": yesterday_summary["sales_gross"],
                 "trend_7_days": trend_result.get("trend", []),
