@@ -1,12 +1,29 @@
-import { Info, Lock } from "lucide-react";
+import { Building2, Info, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { usePos } from "@/lib/pos/store";
 
 export function SettingsView() {
-  const { settings, updateSettings, branch, branchId, tenant, tenantLoading } = usePos();
+  const {
+    settings,
+    updateSettings,
+    branch,
+    branchId,
+    branches,
+    canSwitchBranch,
+    setBranchId,
+    tenant,
+    tenantLoading,
+  } = usePos();
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   const menuUrl = `${origin}/menu/${branchId}`;
 
@@ -21,8 +38,43 @@ export function SettingsView() {
     <div className="grid gap-4 xl:grid-cols-2">
       <div className="pos-card p-5">
         <h2 className="font-display text-xl">Restaurant & branch</h2>
-        <p className="text-sm text-muted-foreground">Editing settings for {branch?.name ?? "—"}</p>
+        <p className="text-sm text-muted-foreground">Viewing settings for {branch?.name ?? "—"}</p>
         <div className="mt-4 space-y-4">
+          {/* Branch switcher — the primary place to change branch since the
+              header switcher was removed for mobile clarity. Owner-only:
+              managers/waiters/chefs are locked to their branch by their JWT. */}
+          {canSwitchBranch && branches.length > 1 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Current branch</Label>
+                <span className="rounded-md bg-primary/15 px-2 py-0.5 text-[11px] font-medium text-primary">
+                  Owner
+                </span>
+              </div>
+              <Select value={branchId} onValueChange={setBranchId}>
+                <SelectTrigger className="h-12">
+                  <Building2 className="size-4 shrink-0 opacity-70" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((b) => (
+                    <SelectItem key={b.id} value={b.id} className="py-3">
+                      <div>
+                        <p className="font-semibold">{b.name}</p>
+                        {b.address && (
+                          <p className="text-xs text-muted-foreground">{b.address}</p>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                Switch to view menu, orders and reports for a different branch.
+              </p>
+            </div>
+          )}
+
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label>Restaurant name</Label>
@@ -35,21 +87,42 @@ export function SettingsView() {
               Set on the business registration in the admin app.
             </p>
           </div>
+
+          {/* Branch address/phone are authoritative on the branches table
+              (managed in the admin app). Read-only here to prevent the local
+              settings-store copy from silently diverging from the source. */}
           <div className="space-y-2">
-            <Label>Branch address</Label>
+            <div className="flex items-center justify-between">
+              <Label>Branch address</Label>
+              <span className="rounded-md bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                From branch
+              </span>
+            </div>
             <Input
-              className="h-12"
-              value={settings.branchAddress}
-              onChange={(e) => updateSettings({ branchAddress: e.target.value })}
+              className="h-12 bg-muted/40"
+              value={branch?.address ?? ""}
+              readOnly
+              disabled
+              placeholder="No address on branch record"
             />
           </div>
           <div className="space-y-2">
-            <Label>Branch phone</Label>
+            <div className="flex items-center justify-between">
+              <Label>Branch phone</Label>
+              <span className="rounded-md bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                From branch
+              </span>
+            </div>
             <Input
-              className="h-12"
-              value={settings.branchPhone}
-              onChange={(e) => updateSettings({ branchPhone: e.target.value })}
+              className="h-12 bg-muted/40"
+              value={branch?.phone ?? ""}
+              readOnly
+              disabled
+              placeholder="No phone on branch record"
             />
+            <p className="text-[11px] text-muted-foreground">
+              Edit address / phone on the branch record in the admin app.
+            </p>
           </div>
         </div>
       </div>
