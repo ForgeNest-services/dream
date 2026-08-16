@@ -96,6 +96,38 @@ def to_bs_iso(g_or_dt: date | datetime | None) -> str | None:
     return f"{y:04d}-{m:02d}-{d:02d}"
 
 
+def bs_iso_to_ad(bs_iso: str | None) -> date | None:
+    """Reverse of to_bs_iso for whole calendar days. Takes a "YYYY-MM-DD" BS
+    string and returns the corresponding Gregorian date. Used by report
+    day-walkers that need to iterate a BS range (BS months have variable
+    length so we can't just add days-of-month directly)."""
+    if not bs_iso:
+        return None
+    try:
+        parts = bs_iso.split("-")
+        y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+    except (ValueError, IndexError):
+        return None
+    if m < 1 or m > 12 or d < 1:
+        return None
+    if y < 2075 or y not in BS_CALENDAR:
+        return None
+    months = BS_CALENDAR[y]
+    if d > months[m - 1]:
+        return None
+    diff = 0
+    year = 2075
+    while year < y:
+        months_y = BS_CALENDAR.get(year)
+        if months_y is None:
+            return None
+        diff += sum(months_y)
+        year += 1
+    diff += sum(months[: m - 1])
+    diff += d - 1
+    return _ANCHOR + timedelta(days=diff)
+
+
 def format_bs_pretty(g_or_dt: date | datetime | None) -> str:
     """Human-readable BS date, e.g. "Bhadra 27, 2083 BS". Empty string on
     out-of-range or None input."""

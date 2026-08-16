@@ -24,9 +24,14 @@ import {
 import { employeesApi, type EmployeeDto } from "../employees-api";
 import { customersApi, type CustomerDto } from "../customers-api";
 import { tenantApi, type TenantInfoDto } from "../tenant-api";
+import {
+  branchSettingsApi,
+  type BranchSettingsDto,
+} from "../branch-settings-api";
+import { expensesApi, type ExpenseDto } from "../expenses-api";
+import { uploadsApi } from "../uploads-api";
 import { parseApiDate } from "./nepali-date";
 import {
-  EXPENSES,
   type Category,
   type Customer,
   type DeliveryStatus,
@@ -165,6 +170,17 @@ function toStockMovement(dto: StockMovementDto): StockMovement {
   return movement;
 }
 
+function toExpense(dto: ExpenseDto): Expense {
+  return {
+    id: dto.id,
+    spentAtBs: dto.spent_at_bs,
+    category: dto.category,
+    amount: Number(dto.amount),
+    note: dto.note ?? "",
+    actorName: dto.actor_name,
+  };
+}
+
 function toEmployee(dto: EmployeeDto): Employee {
   const emp: Employee = {
     id: dto.id,
@@ -236,8 +252,14 @@ type Ctx = {
   tenant: TenantInfoDto | null;
   tenantLoading: boolean;
 
+  // Per-branch settings — server-backed via /restro/branches/{id}/settings.
+  // vat_enabled / vat_rate persist across sessions; qrImage points at a
+  // MinIO URL that gets replaced (old file deleted) on new upload.
   settings: Settings;
-  updateSettings: (patch: Partial<Settings>) => void;
+  settingsLoading: boolean;
+  updateSettings: (patch: Partial<Settings>) => Promise<void>;
+  uploadQrImage: (file: File) => Promise<void>;
+  clearQrImage: () => Promise<void>;
 
   categories: Category[];
   categoriesLoading: boolean;
@@ -341,8 +363,9 @@ type Ctx = {
   ) => Promise<{ newBalance: number; amount: number; method: "cash" | "qr" } | null>;
 
   expenses: Expense[];
-  saveExpense: (expense: Expense) => void;
-  deleteExpense: (id: string) => void;
+  expensesLoading: boolean;
+  saveExpense: (expense: Expense) => Promise<void>;
+  deleteExpense: (id: string) => Promise<void>;
 };
 
 const PosContext = createContext<Ctx | null>(null);
@@ -566,7 +589,11 @@ export function PosProvider({ children }: { children: ReactNode }) {
   const canSwitchBranch = actualRole === "owner";
   const branch = branches.find((b) => b.id === branchId) ?? branches[0] ?? null;
 
+  // Per-branch settings live server-side now (RestroBranchSettings). We
+  // still cache by branch id so switching branches doesn't blank the QR/
+  // VAT config while the refetch is in flight.
   const [settingsMap, setSettingsMap] = useState<Record<string, Settings>>({});
+  const [settingsLoading, setSettingsLoading] = useState(false);
   const [zones, setZones] = useState<Zone[]>([]);
   const [zonesLoading, setZonesLoading] = useState(false);
   const [tables, setTables] = useState<RestaurantTable[]>([]);
@@ -582,9 +609,61 @@ export function PosProvider({ children }: { children: ReactNode }) {
   const [customersLoading, setCustomersLoading] = useState(false);
   const [tenant, setTenant] = useState<TenantInfoDto | null>(null);
   const [tenantLoading, setTenantLoading] = useState(false);
-  const [expenses, setExpenses] = useState<Expense[]>(EXPENSES);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expensesLoading, setExpensesLoading] = useState(false);
 
   const settings = settingsMap[branchId] ?? defaultSettings(branch);
+
+  // Load persisted settings for the active branch. Backend auto-provisions
+  // defaults on first read, so this always returns a row.
+  useEffect(() => {
+    if (!session || !branchId) return;
+    let cancelled = false;
+    setSettingsLoading(true);
+    branchSettingsApi
+      .get(branchId)
+      .then((response) => {
+        if (cancelled || !response.data) return;
+        const dto = response.data;
+        setSettingsMap((prev) => ({
+          ...prev,
+          [branchId]: {
+            restaurantName: prev[branchId]?.restaurantName ?? defaultSettings(branch).restaurantName,
+            branchAddress: prev[branchId]?.branchAddress ?? defaultSettings(branch).branchAddress,
+            branchPhone: prev[branchId]?.branchPhone ?? defaultSettings(branch).branchPhone,
+            vatEnabled: dto.vat_enabled,
+            vatRate: Number(dto.vat_rate),
+            ...(dto.qr_image_url ? { qrImage: dto.qr_image_url } : {}),
+          },
+        }));
+      })
+      .finally(() => {
+        if (!cancelled) setSettingsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // branch is intentionally omitted from deps — defaultSettings only
+    // reads it for name/address/phone which are still local (unchanged).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, branchId]);
+
+  // Small helper to splice a settings DTO from the server into local state
+  // without discarding the local-only display fields (restaurantName etc.).
+  const mergeServerSettings = (dto: BranchSettingsDto) => {
+    setSettingsMap((prev) => {
+      const existing = prev[branchId] ?? defaultSettings(branch);
+      return {
+        ...prev,
+        [branchId]: {
+          ...existing,
+          vatEnabled: dto.vat_enabled,
+          vatRate: Number(dto.vat_rate),
+          qrImage: dto.qr_image_url ?? undefined,
+        },
+      };
+    });
+  };
 
   // Load inventory whenever the branch changes. Movements are lazy — fetched
   // on demand when the user opens the history modal, since one item's log can
@@ -653,6 +732,30 @@ export function PosProvider({ children }: { children: ReactNode }) {
     };
   }, [session, branchId]);
 
+  // Expenses list — no date filter here, we fetch all and let the reports
+  // filter client-side (same pattern as orders). Add server-side range
+  // filtering when a branch has thousands of expenses.
+  useEffect(() => {
+    if (!session || !branchId) {
+      setExpenses([]);
+      return;
+    }
+    let cancelled = false;
+    setExpensesLoading(true);
+    expensesApi
+      .list(branchId)
+      .then((response) => {
+        if (cancelled) return;
+        setExpenses((response.data ?? []).map(toExpense));
+      })
+      .finally(() => {
+        if (!cancelled) setExpensesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, branchId]);
+
   // Tenant info is per-session (doesn't change with branch switch — it's the
   // business identity). Fetched once after login.
   useEffect(() => {
@@ -707,8 +810,57 @@ export function PosProvider({ children }: { children: ReactNode }) {
     tenantLoading,
 
     settings,
-    updateSettings: (patch) =>
-      setSettingsMap((prev) => ({ ...prev, [branchId]: { ...settings, ...patch } })),
+    settingsLoading,
+    // Server-persisted subset of Settings — anything that hits the DB
+    // (vatEnabled, vatRate, qrImage) gets PATCHed; local-only fields
+    // (restaurantName, branchAddress, branchPhone) stay client-side because
+    // they're derived from tenant+branch elsewhere and already read-only in
+    // the UI. QR uploads/clears go through dedicated helpers below.
+    updateSettings: async (patch) => {
+      if (!branchId) return;
+      // Optimistic local merge so the UI feels instant. Server response
+      // then splices the authoritative values back (in case validation
+      // clamps something).
+      setSettingsMap((prev) => ({ ...prev, [branchId]: { ...settings, ...patch } }));
+      const persistablePatch: Record<string, unknown> = {};
+      if ("vatEnabled" in patch) persistablePatch.vat_enabled = patch.vatEnabled;
+      if ("vatRate" in patch) persistablePatch.vat_rate = patch.vatRate;
+      if (Object.keys(persistablePatch).length === 0) return;
+      try {
+        const response = await branchSettingsApi.update(branchId, persistablePatch);
+        if (response.data) mergeServerSettings(response.data);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to save settings");
+      }
+    },
+    uploadQrImage: async (file) => {
+      if (!branchId) return;
+      try {
+        // Upload to MinIO first — get a public URL — then PATCH settings.
+        // Backend deletes the previous MinIO object on qr_image_url change,
+        // so we never accumulate orphans.
+        const upload = await uploadsApi.uploadPaymentQr(branchId, file);
+        if (!upload.data?.url) throw new Error("Upload returned no URL");
+        const response = await branchSettingsApi.update(branchId, {
+          qr_image_url: upload.data.url,
+        });
+        if (response.data) mergeServerSettings(response.data);
+        toast.success("Payment QR updated");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to upload QR");
+      }
+    },
+    clearQrImage: async () => {
+      if (!branchId) return;
+      try {
+        // DELETE clears the URL server-side and deletes the MinIO file.
+        const response = await branchSettingsApi.clearQr(branchId);
+        if (response.data) mergeServerSettings(response.data);
+        toast.success("Payment QR removed");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to remove QR");
+      }
+    },
 
     categories,
     categoriesLoading,
@@ -1410,13 +1562,49 @@ export function PosProvider({ children }: { children: ReactNode }) {
     },
 
     expenses,
-    saveExpense: (expense) =>
-      setExpenses((p) =>
-        p.some((e) => e.id === expense.id)
-          ? p.map((e) => (e.id === expense.id ? expense : e))
-          : [{ ...expense }, ...p],
-      ),
-    deleteExpense: (id) => setExpenses((p) => p.filter((e) => e.id !== id)),
+    expensesLoading,
+    saveExpense: async (expense) => {
+      if (!branchId) return;
+      try {
+        const existing = expenses.some((e) => e.id === expense.id);
+        if (existing) {
+          const response = await expensesApi.update(branchId, expense.id, {
+            category: expense.category,
+            amount: expense.amount,
+            note: expense.note || null,
+            spent_at_bs: expense.spentAtBs,
+            clear_note: !expense.note,
+          });
+          if (response.data) {
+            const updated = toExpense(response.data);
+            setExpenses((p) => p.map((e) => (e.id === expense.id ? updated : e)));
+          }
+        } else {
+          const response = await expensesApi.create(branchId, {
+            category: expense.category,
+            amount: expense.amount,
+            note: expense.note || null,
+            spent_at_bs: expense.spentAtBs,
+          });
+          if (response.data) {
+            const created = toExpense(response.data);
+            // Backend orders newest-first by spent_at_bs — prepend to match.
+            setExpenses((p) => [created, ...p]);
+          }
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to save expense");
+      }
+    },
+    deleteExpense: async (id) => {
+      if (!branchId) return;
+      try {
+        await expensesApi.remove(branchId, id);
+        setExpenses((p) => p.filter((e) => e.id !== id));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete expense");
+      }
+    },
   };
 
   return <PosContext.Provider value={value}>{children}</PosContext.Provider>;

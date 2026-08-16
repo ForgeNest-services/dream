@@ -2,7 +2,6 @@ import {
   BarChart3,
   Bike,
   Boxes,
-  CalendarRange,
   ChefHat,
   ClipboardList,
   Contact2,
@@ -34,7 +33,6 @@ export const MANAGER_NAV: NavItem[] = [
   { key: "customers", label: "Customers", to: "/customers", icon: Contact2 },
   { key: "khata", label: "Khata", to: "/khata", icon: Notebook },
   { key: "employees", label: "Employees", to: "/employees", icon: Users },
-  { key: "daily", label: "Daily Sales", to: "/daily", icon: CalendarRange },
   { key: "reports", label: "Reports", to: "/reports", icon: BarChart3 },
   { key: "settings", label: "Settings", to: "/settings", icon: SettingsIcon },
 ];

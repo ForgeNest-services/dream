@@ -53,6 +53,11 @@ from features.restro.schemas import (
     KhataOrderEntry,
     KhataHistoryResponse,
     RestroTenantInfo,
+    BranchSettingsData,
+    UpdateBranchSettingsRequest,
+    ExpenseData,
+    CreateExpenseRequest,
+    UpdateExpenseRequest,
 )
 from shared_models import Tenant
 from features.restro.service import RestroCredentialService, RestroAuthService
@@ -67,6 +72,9 @@ from features.restro.customer_service import CustomerService
 from features.restro.customer_repository import CustomerRepository
 from features.restro.order_service import compute_order_total
 from features.restro.khata_settlement_repository import KhataSettlementRepository
+from features.restro.branch_settings_service import BranchSettingsService
+from features.restro.expense_service import ExpenseService
+from features.restro.reports_service import ReportsService
 from features.restro.repository import RestroCredentialRepository
 
 
@@ -85,6 +93,199 @@ def _assert_branch_scope(staff: dict, branch_id: str) -> None:
 # Tenant info (read-only) — for the RMS Settings screen and bill receipts,
 # which need PAN + VAT-registration status pulled from the tenant row.
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Branch settings — VAT + payment QR. Auto-provisioned on first read.
+# Any staff can read (waiter needs QR + VAT rate to render the bill / payment
+# dialog). Only owner/manager can update, since VAT/QR are business-level.
+# ---------------------------------------------------------------------------
+
+_BRANCH_SETTINGS_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "INVALID_VAT_RATE": ("INVALID_VAT_RATE", "VAT rate must be between 0 and 100.", 422),
+}
+
+
+def _branch_settings_error(code: str):
+    mapped = _BRANCH_SETTINGS_ERROR_MAP.get(
+        code, ("SERVER_ERROR", "Failed to update settings.", 500)
+    )
+    return error_response(*mapped)
+
+
+@router.get("/branches/{branch_id}/settings")
+def get_branch_settings(
+    branch_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = BranchSettingsService.get_or_create(db, staff["tenant_id"], branch_id)
+    if not result["success"]:
+        return _branch_settings_error(result["error_code"])
+    return success_response(
+        data=BranchSettingsData.model_validate(result["settings"]).model_dump(mode="json")
+    )
+
+
+@router.patch("/branches/{branch_id}/settings")
+def update_branch_settings(
+    branch_id: str,
+    data: UpdateBranchSettingsRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can change settings")
+    _assert_branch_scope(staff, branch_id)
+    result = BranchSettingsService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        vat_enabled=data.vat_enabled,
+        vat_rate=data.vat_rate,
+        qr_image_url=data.qr_image_url,
+        clear_qr=data.clear_qr,
+    )
+    if not result["success"]:
+        return _branch_settings_error(result["error_code"])
+    return success_response(
+        data=BranchSettingsData.model_validate(result["settings"]).model_dump(mode="json"),
+        message="Settings updated",
+    )
+
+
+@router.delete("/branches/{branch_id}/settings/qr")
+def clear_branch_qr(
+    branch_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Dedicated endpoint for the "Remove QR" button. Same as PATCH with
+    clear_qr=true but a plain DELETE reads more clearly in the UI code."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can change settings")
+    _assert_branch_scope(staff, branch_id)
+    result = BranchSettingsService.clear_qr(db, staff["tenant_id"], branch_id)
+    if not result["success"]:
+        return _branch_settings_error(result["error_code"])
+    return success_response(
+        data=BranchSettingsData.model_validate(result["settings"]).model_dump(mode="json"),
+        message="QR removed",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Expenses — branch-scoped operating spend. Any staff can log an expense
+# (waiter buying utilities on the go); owner/manager can edit/delete.
+# ---------------------------------------------------------------------------
+
+_EXPENSE_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "EXPENSE_NOT_FOUND": ("EXPENSE_NOT_FOUND", "Expense not found.", 404),
+    "INVALID_AMOUNT": ("INVALID_AMOUNT", "Amount must be greater than zero.", 422),
+    "INVALID_DATE": ("INVALID_DATE", "Date must be a valid BS YYYY-MM-DD string.", 422),
+}
+
+
+def _expense_error(code: str):
+    mapped = _EXPENSE_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to save expense.", 500))
+    return error_response(*mapped)
+
+
+@router.get("/branches/{branch_id}/expenses")
+def list_expenses(
+    branch_id: str,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = ExpenseService.list_for_branch(
+        db, staff["tenant_id"], branch_id, bs_from, bs_to
+    )
+    if not result["success"]:
+        return _expense_error(result["error_code"])
+    return success_response(
+        data=[ExpenseData.model_validate(e).model_dump(mode="json") for e in result["expenses"]]
+    )
+
+
+@router.post("/branches/{branch_id}/expenses")
+def create_expense(
+    branch_id: str,
+    data: CreateExpenseRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    actor_name, cred_id = _actor_from_staff(db, staff)
+    result = ExpenseService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        category=data.category,
+        amount=data.amount,
+        note=data.note,
+        spent_at_bs=data.spent_at_bs,
+        actor_name=actor_name,
+        actor_cred_id=cred_id,
+    )
+    if not result["success"]:
+        return _expense_error(result["error_code"])
+    return success_response(
+        data=ExpenseData.model_validate(result["expense"]).model_dump(mode="json"),
+        message="Expense recorded",
+        status_code=201,
+    )
+
+
+@router.patch("/branches/{branch_id}/expenses/{expense_id}")
+def update_expense(
+    branch_id: str,
+    expense_id: str,
+    data: UpdateExpenseRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can edit expenses")
+    _assert_branch_scope(staff, branch_id)
+    result = ExpenseService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        expense_id=expense_id,
+        category=data.category,
+        amount=data.amount,
+        note=data.note,
+        spent_at_bs=data.spent_at_bs,
+        clear_note=data.clear_note,
+    )
+    if not result["success"]:
+        return _expense_error(result["error_code"])
+    return success_response(
+        data=ExpenseData.model_validate(result["expense"]).model_dump(mode="json"),
+        message="Expense updated",
+    )
+
+
+@router.delete("/branches/{branch_id}/expenses/{expense_id}")
+def delete_expense(
+    branch_id: str,
+    expense_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can delete expenses")
+    _assert_branch_scope(staff, branch_id)
+    result = ExpenseService.delete(db, staff["tenant_id"], branch_id, expense_id)
+    if not result["success"]:
+        return _expense_error(result["error_code"])
+    return success_response(data={"deleted": True}, message="Expense removed")
 
 
 @router.get("/tenant-info")
@@ -1945,3 +2146,180 @@ def create_khata_settlement(
         message=f"Recorded Rs {result['settlement'].amount} via {result['settlement'].method}",
         status_code=201,
     )
+
+
+# ---------------------------------------------------------------------------
+# Reports & dashboard — read-only aggregations. All money is serialized as
+# strings (Decimal → str) to preserve precision; the frontend parses back to
+# Number for display only.
+# ---------------------------------------------------------------------------
+
+_REPORTS_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "INVALID_RANGE": ("INVALID_RANGE", "bs_to must be >= bs_from.", 422),
+    "INVALID_DATE": ("INVALID_DATE", "Date must be a valid BS YYYY-MM-DD string.", 422),
+    "BS_CONVERSION_FAILED": (
+        "BS_CONVERSION_FAILED",
+        "Today's date is outside the BS calendar table — extend BS_CALENDAR.",
+        500,
+    ),
+}
+
+
+def _reports_error(code: str):
+    mapped = _REPORTS_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to build report.", 500))
+    return error_response(*mapped)
+
+
+def _serialize_money(v) -> str:
+    """Decimal → string. JSONResponse can't encode Decimal directly, and
+    frontend billTotals-style code expects strings it can `Number()` back."""
+    return str(v) if v is not None else "0"
+
+
+def _serialize_summary(summary: dict) -> dict:
+    return {
+        "bs_from": summary["bs_from"],
+        "bs_to": summary["bs_to"],
+        "orders": summary["orders"],
+        "items_sold": summary["items_sold"],
+        "sales_gross": _serialize_money(summary["sales_gross"]),
+        "expenses_total": _serialize_money(summary["expenses_total"]),
+        "net": _serialize_money(summary["net"]),
+        "by_category": [
+            {
+                "category": c["category"],
+                "qty": c["qty"],
+                "revenue": _serialize_money(c["revenue"]),
+            }
+            for c in summary["by_category"]
+        ],
+        "by_payment": {
+            k: {"amount": _serialize_money(v["amount"]), "count": v["count"]}
+            for k, v in summary["by_payment"].items()
+        },
+        "expenses_by_category": [
+            {"category": c["category"], "amount": _serialize_money(c["amount"])}
+            for c in summary["expenses_by_category"]
+        ],
+    }
+
+
+def _serialize_top_items(items: list) -> list:
+    return [
+        {
+            "name": i["name"],
+            "variant_name": i["variant_name"],
+            "qty": i["qty"],
+            "revenue": _serialize_money(i["revenue"]),
+        }
+        for i in items
+    ]
+
+
+def _serialize_trend(trend: list) -> list:
+    return [
+        {
+            "bs_date": r["bs_date"],
+            "sales": _serialize_money(r["sales"]),
+            "orders": r["orders"],
+            "expenses": _serialize_money(r["expenses"]),
+        }
+        for r in trend
+    ]
+
+
+@router.get("/branches/{branch_id}/reports/dashboard")
+def reports_dashboard(
+    branch_id: str,
+    bs: str | None = None,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """One-shot bundle for the RMS dashboard landing screen. `bs` defaults to
+    today (server clock in NPT) — pass a BS date to view a historical day."""
+    _assert_branch_scope(staff, branch_id)
+    result = ReportsService.dashboard(db, staff["tenant_id"], branch_id, bs)
+    if not result["success"]:
+        return _reports_error(result["error_code"])
+    d = result["dashboard"]
+    return success_response(
+        data={
+            "anchor_bs": d["anchor_bs"],
+            "today": _serialize_summary(d["today"]),
+            "yesterday_sales": _serialize_money(d["yesterday_sales"]),
+            "trend_7_days": _serialize_trend(d["trend_7_days"]),
+            "top_items": _serialize_top_items(d["top_items"]),
+            "tables": d["tables"],
+            "low_stock_count": d["low_stock_count"],
+        }
+    )
+
+
+@router.get("/branches/{branch_id}/reports/daily-summary")
+def reports_daily_summary(
+    branch_id: str,
+    bs: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Single-BS-day P&L. `bs` is a "YYYY-MM-DD" BS date string."""
+    _assert_branch_scope(staff, branch_id)
+    result = ReportsService.daily_summary(db, staff["tenant_id"], branch_id, bs)
+    if not result["success"]:
+        return _reports_error(result["error_code"])
+    return success_response(data=_serialize_summary(result["summary"]))
+
+
+@router.get("/branches/{branch_id}/reports/range-summary")
+def reports_range_summary(
+    branch_id: str,
+    bs_from: str,
+    bs_to: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Multi-day P&L. Backs the ReportsView + DailySalesView (range mode)."""
+    _assert_branch_scope(staff, branch_id)
+    result = ReportsService.range_summary(db, staff["tenant_id"], branch_id, bs_from, bs_to)
+    if not result["success"]:
+        return _reports_error(result["error_code"])
+    return success_response(data=_serialize_summary(result["summary"]))
+
+
+@router.get("/branches/{branch_id}/reports/sales-trend")
+def reports_sales_trend(
+    branch_id: str,
+    bs_from: str,
+    bs_to: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Per-day rows for a line chart. Fills zero-days so the X-axis is
+    continuous."""
+    _assert_branch_scope(staff, branch_id)
+    result = ReportsService.sales_trend(db, staff["tenant_id"], branch_id, bs_from, bs_to)
+    if not result["success"]:
+        return _reports_error(result["error_code"])
+    return success_response(data=_serialize_trend(result["trend"]))
+
+
+@router.get("/branches/{branch_id}/reports/top-items")
+def reports_top_items(
+    branch_id: str,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    limit: int = 10,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Ranked items list for the ReportsView items tab. Grouped by
+    (name, variant_name) so different variants of the same item show
+    separately."""
+    _assert_branch_scope(staff, branch_id)
+    result = ReportsService.top_items(
+        db, staff["tenant_id"], branch_id, bs_from, bs_to, limit
+    )
+    if not result["success"]:
+        return _reports_error(result["error_code"])
+    return success_response(data=_serialize_top_items(result["items"]))
