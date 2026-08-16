@@ -66,16 +66,20 @@ def seed_default_menu_items(db: Session, tenant_id: str, branch_id: str) -> int:
         return 0
 
     # Build category name → id map from what's actually in the DB right now.
+    # Keyed by lowercased+stripped name so `"Fast Food"`, `"fast food"`, and
+    # `"  Fast Food "` all resolve — a small guard against typos and casing
+    # drift between seed data and manually-created categories.
     categories = CategoryRepository.list_for_branch(db, tenant_id, branch_id)
-    cat_by_name = {c.name: c.id for c in categories}
+    cat_by_name = {c.name.strip().lower(): c.id for c in categories}
 
     created = 0
     for row in DEFAULT_MENU:
-        cat_name = row.get("category")
-        cat_id = cat_by_name.get(cat_name)
+        cat_name = (row.get("category") or "").strip()
+        cat_id = cat_by_name.get(cat_name.lower())
         if not cat_id:
             logger.warning(
-                f"Skipping seed item '{row.get('name')}': category '{cat_name}' not found"
+                f"Skipping seed item '{row.get('name')}': category '{cat_name}' not found "
+                f"on this branch. Available: {sorted(cat_by_name.keys())}"
             )
             continue
 
