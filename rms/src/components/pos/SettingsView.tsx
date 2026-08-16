@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Building2, Info, Loader2, Lock } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Building2, Check, Info, Loader2, Lock } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +29,20 @@ export function SettingsView() {
     tenantLoading,
   } = usePos();
   const [isUploadingQr, setIsUploadingQr] = useState(false);
+  // Local mirror of the rate so we don't PATCH on every keystroke — we
+  // save on blur / Enter. Keeps the server call rate sane.
+  const [rateDraft, setRateDraft] = useState<string>(String(settings.vatRate ?? 13));
+  useEffect(() => {
+    setRateDraft(String(settings.vatRate ?? 13));
+  }, [settings.vatRate, branchId]);
+  // "Saved" pill next to the Tax card header — pops up briefly after any
+  // successful VAT change so the user knows their toggle stuck.
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  const flashSaved = () => {
+    setSavedFlash(true);
+    window.setTimeout(() => setSavedFlash(false), 1200);
+  };
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   const menuUrl = `${origin}/menu/${branchId}`;
 
@@ -133,7 +148,15 @@ export function SettingsView() {
 
       <div className="space-y-4">
         <div className="pos-card p-5">
-          <h2 className="font-display text-xl">Tax</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-display text-xl">Tax</h2>
+            {savedFlash && (
+              <span className="flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success">
+                <Check className="size-3" />
+                Saved
+              </span>
+            )}
+          </div>
           <div className="mt-3 rounded-xl border border-border bg-secondary/50 p-3 text-xs">
             <p className="flex items-center gap-1.5 font-medium text-foreground">
               <Info className="size-3.5" />
@@ -176,7 +199,10 @@ export function SettingsView() {
             <Switch
               checked={canToggleVat && settings.vatEnabled}
               disabled={!canToggleVat}
-              onCheckedChange={(v) => updateSettings({ vatEnabled: v })}
+              onCheckedChange={async (v) => {
+                await updateSettings({ vatEnabled: v });
+                flashSaved();
+              }}
             />
           </div>
           {canToggleVat && settings.vatEnabled && (
@@ -184,10 +210,38 @@ export function SettingsView() {
               <Label>VAT rate (%)</Label>
               <Input
                 type="number"
+                min={0}
+                max={100}
+                step="0.01"
                 className="h-12"
-                value={settings.vatRate}
-                onChange={(e) => updateSettings({ vatRate: Number(e.target.value) })}
+                value={rateDraft}
+                onChange={(e) => setRateDraft(e.target.value)}
+                onBlur={async () => {
+                  const next = Number(rateDraft);
+                  if (
+                    !Number.isFinite(next) ||
+                    next < 0 ||
+                    next > 100 ||
+                    next === Number(settings.vatRate)
+                  ) {
+                    // Reset the input if the typed value is invalid or a
+                    // no-op — avoids a stale-looking field.
+                    setRateDraft(String(settings.vatRate ?? 13));
+                    if (Number.isFinite(next) && (next < 0 || next > 100)) {
+                      toast.error("VAT rate must be between 0 and 100");
+                    }
+                    return;
+                  }
+                  await updateSettings({ vatRate: next });
+                  flashSaved();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                }}
               />
+              <p className="text-[11px] text-muted-foreground">
+                Auto-saves when you tab out or press Enter.
+              </p>
             </div>
           )}
         </div>
