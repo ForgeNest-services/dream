@@ -64,22 +64,28 @@ export type RestaurantTable = {
   reservation?: Reservation;
 };
 
-export type ExpenseCategory = "Utilities" | "Supplies" | "Rent" | "Maintenance" | "Other";
-
-export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
+// Suggested categories shown in the Add-expense dropdown. Backend accepts
+// any string so tenants can add their own labels later — the enum here is
+// just a curation, not a hard constraint.
+export const EXPENSE_CATEGORIES = [
   "Utilities",
   "Supplies",
   "Rent",
   "Maintenance",
   "Other",
-];
+] as const;
+export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number] | string;
 
 export type Expense = {
   id: string;
-  date: string;
-  category: ExpenseCategory;
+  // Business day the expense hits — stored server-side as `spent_at_bs`
+  // ("YYYY-MM-DD" in BS). Matches order.placedAtBs so reports can filter
+  // both by the same range picker.
+  spentAtBs: string;
+  category: string;
   amount: number;
   note: string;
+  actorName: string;
 };
 
 export type DeliveryStatus = "pending" | "out" | "delivered";

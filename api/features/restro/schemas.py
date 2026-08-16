@@ -565,6 +565,44 @@ class KhataHistoryResponse(BaseModel):
     settlements: list[KhataSettlementData]
 
 
+class ExpenseData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    category: str
+    amount: Decimal
+    note: str | None
+    spent_at_bs: str
+    actor_name: str
+    actor_cred_id: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateExpenseRequest(BaseModel):
+    category: str = "Other"
+    amount: Decimal
+    note: str | None = None
+    spent_at_bs: str
+
+    @field_validator("amount")
+    @classmethod
+    def amount_positive(cls, v: Decimal) -> Decimal:
+        if v <= 0:
+            raise ValueError("amount must be greater than zero")
+        return v
+
+
+class UpdateExpenseRequest(BaseModel):
+    category: str | None = None
+    amount: Decimal | None = None
+    note: str | None = None
+    spent_at_bs: str | None = None
+    clear_note: bool = False
+
+
 class BranchSettingsData(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

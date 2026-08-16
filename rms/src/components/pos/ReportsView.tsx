@@ -24,7 +24,7 @@ const TABS: { id: Tab; label: string }[] = [
 // the report reflects the exact BS date stamped on each order.
 
 export function ReportsView() {
-  const { orders, settings, categories, menu, tables } = usePos();
+  const { orders, expenses, settings, categories, menu, tables } = usePos();
   const [tab, setTab] = useState<Tab>("orders");
   // Default range: last 7 days in BS. Filter operates on placed_at_bs
   // (backend-stamped, "YYYY-MM-DD"), which sorts lexically.
@@ -89,11 +89,22 @@ export function ReportsView() {
       }, {}),
   ).sort((a, b) => b.amount - a.amount);
 
+  const expensesInRange = expenses.filter(
+    (e) => e.spentAtBs >= fromBs && e.spentAtBs <= toBs,
+  );
+  const expensesTotal = expensesInRange.reduce((s, e) => s + e.amount, 0);
+  const net = totalSales - expensesTotal;
+
   const stats = [
-    { label: "Orders", value: String(filtered.length) },
-    { label: "Closed", value: String(filtered.filter((o) => o.status === "paid").length) },
+    { label: "Closed bills", value: String(filtered.filter((o) => o.status === "paid").length) },
     { label: "Items sold", value: String(filtered.reduce((s, o) => s + o.lines.reduce((n, l) => n + l.qty, 0), 0)) },
-    { label: "Net sales", value: NPR(totalSales) },
+    { label: "Sales (gross)", value: NPR(totalSales) },
+    { label: "Expenses", value: NPR(expensesTotal) },
+    {
+      label: "Net (sales − expenses)",
+      value: NPR(net),
+      tone: net < 0 ? "danger" : "primary",
+    },
   ];
 
   return (
@@ -140,13 +151,22 @@ export function ReportsView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        {stats.map((s) => (
-          <div key={s.label} className="pos-card p-4">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">{s.label}</p>
-            <p className="mt-1 font-display text-xl font-semibold text-primary">{s.value}</p>
-          </div>
-        ))}
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        {stats.map((s) => {
+          const tone = "tone" in s ? s.tone : "default";
+          const valueClass =
+            tone === "danger"
+              ? "text-danger"
+              : tone === "primary"
+                ? "text-primary"
+                : "text-foreground";
+          return (
+            <div key={s.label} className="pos-card p-4">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">{s.label}</p>
+              <p className={`mt-1 font-display text-xl font-semibold ${valueClass}`}>{s.value}</p>
+            </div>
+          );
+        })}
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-1">

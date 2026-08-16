@@ -28,10 +28,10 @@ import {
   branchSettingsApi,
   type BranchSettingsDto,
 } from "../branch-settings-api";
+import { expensesApi, type ExpenseDto } from "../expenses-api";
 import { uploadsApi } from "../uploads-api";
 import { parseApiDate } from "./nepali-date";
 import {
-  EXPENSES,
   type Category,
   type Customer,
   type DeliveryStatus,
@@ -168,6 +168,17 @@ function toStockMovement(dto: StockMovementDto): StockMovement {
   if (dto.note) movement.note = dto.note;
   if (dto.cost !== null) movement.cost = Number(dto.cost);
   return movement;
+}
+
+function toExpense(dto: ExpenseDto): Expense {
+  return {
+    id: dto.id,
+    spentAtBs: dto.spent_at_bs,
+    category: dto.category,
+    amount: Number(dto.amount),
+    note: dto.note ?? "",
+    actorName: dto.actor_name,
+  };
 }
 
 function toEmployee(dto: EmployeeDto): Employee {
@@ -352,8 +363,9 @@ type Ctx = {
   ) => Promise<{ newBalance: number; amount: number; method: "cash" | "qr" } | null>;
 
   expenses: Expense[];
-  saveExpense: (expense: Expense) => void;
-  deleteExpense: (id: string) => void;
+  expensesLoading: boolean;
+  saveExpense: (expense: Expense) => Promise<void>;
+  deleteExpense: (id: string) => Promise<void>;
 };
 
 const PosContext = createContext<Ctx | null>(null);
@@ -597,7 +609,8 @@ export function PosProvider({ children }: { children: ReactNode }) {
   const [customersLoading, setCustomersLoading] = useState(false);
   const [tenant, setTenant] = useState<TenantInfoDto | null>(null);
   const [tenantLoading, setTenantLoading] = useState(false);
-  const [expenses, setExpenses] = useState<Expense[]>(EXPENSES);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expensesLoading, setExpensesLoading] = useState(false);
 
   const settings = settingsMap[branchId] ?? defaultSettings(branch);
 
@@ -713,6 +726,30 @@ export function PosProvider({ children }: { children: ReactNode }) {
       })
       .finally(() => {
         if (!cancelled) setCustomersLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, branchId]);
+
+  // Expenses list — no date filter here, we fetch all and let the reports
+  // filter client-side (same pattern as orders). Add server-side range
+  // filtering when a branch has thousands of expenses.
+  useEffect(() => {
+    if (!session || !branchId) {
+      setExpenses([]);
+      return;
+    }
+    let cancelled = false;
+    setExpensesLoading(true);
+    expensesApi
+      .list(branchId)
+      .then((response) => {
+        if (cancelled) return;
+        setExpenses((response.data ?? []).map(toExpense));
+      })
+      .finally(() => {
+        if (!cancelled) setExpensesLoading(false);
       });
     return () => {
       cancelled = true;
@@ -1525,13 +1562,49 @@ export function PosProvider({ children }: { children: ReactNode }) {
     },
 
     expenses,
-    saveExpense: (expense) =>
-      setExpenses((p) =>
-        p.some((e) => e.id === expense.id)
-          ? p.map((e) => (e.id === expense.id ? expense : e))
-          : [{ ...expense }, ...p],
-      ),
-    deleteExpense: (id) => setExpenses((p) => p.filter((e) => e.id !== id)),
+    expensesLoading,
+    saveExpense: async (expense) => {
+      if (!branchId) return;
+      try {
+        const existing = expenses.some((e) => e.id === expense.id);
+        if (existing) {
+          const response = await expensesApi.update(branchId, expense.id, {
+            category: expense.category,
+            amount: expense.amount,
+            note: expense.note || null,
+            spent_at_bs: expense.spentAtBs,
+            clear_note: !expense.note,
+          });
+          if (response.data) {
+            const updated = toExpense(response.data);
+            setExpenses((p) => p.map((e) => (e.id === expense.id ? updated : e)));
+          }
+        } else {
+          const response = await expensesApi.create(branchId, {
+            category: expense.category,
+            amount: expense.amount,
+            note: expense.note || null,
+            spent_at_bs: expense.spentAtBs,
+          });
+          if (response.data) {
+            const created = toExpense(response.data);
+            // Backend orders newest-first by spent_at_bs — prepend to match.
+            setExpenses((p) => [created, ...p]);
+          }
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to save expense");
+      }
+    },
+    deleteExpense: async (id) => {
+      if (!branchId) return;
+      try {
+        await expensesApi.remove(branchId, id);
+        setExpenses((p) => p.filter((e) => e.id !== id));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to delete expense");
+      }
+    },
   };
 
   return <PosContext.Provider value={value}>{children}</PosContext.Provider>;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,30 +18,44 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  EXPENSE_CATEGORIES,
-  NPR,
-  type Expense,
-  type ExpenseCategory,
-} from "@/lib/pos/data";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { EXPENSE_CATEGORIES, NPR, type Expense } from "@/lib/pos/data";
 import { usePos } from "@/lib/pos/store";
+import { bsIsoToPretty, toBsIso } from "@/lib/pos/nepali-date";
+import { BsDatePicker } from "./BsDatePicker";
 
 const blank = (): Expense => ({
   id: "",
-  date: new Date().toISOString().slice(0, 10),
+  spentAtBs: toBsIso(new Date()) ?? "",
   category: "Supplies",
   amount: 0,
   note: "",
+  actorName: "",
 });
 
 export function ExpensesView() {
-  const { expenses, saveExpense, deleteExpense } = usePos();
+  const { expenses, expensesLoading, saveExpense, deleteExpense } = usePos();
   const [draft, setDraft] = useState<Expense | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Expense | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const total = expenses.reduce((s, e) => s + e.amount, 0);
-  const byCategory = EXPENSE_CATEGORIES.map((c) => ({
-    category: c,
-    amount: expenses.filter((e) => e.category === c).reduce((s, e) => s + e.amount, 0),
-  })).filter((c) => c.amount > 0);
+  const total = useMemo(() => expenses.reduce((s, e) => s + e.amount, 0), [expenses]);
+  const byCategory = useMemo(() => {
+    const buckets: Record<string, number> = {};
+    for (const e of expenses) buckets[e.category] = (buckets[e.category] ?? 0) + e.amount;
+    return Object.entries(buckets)
+      .filter(([, amt]) => amt > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([category, amount]) => ({ category, amount }));
+  }, [expenses]);
 
   return (
     <div className="space-y-4">
@@ -61,7 +75,7 @@ export function ExpensesView() {
           <p className="text-xs uppercase tracking-wider text-muted-foreground">Total expenses</p>
           <p className="mt-1 font-display text-2xl font-semibold text-primary">{NPR(total)}</p>
         </div>
-        {byCategory.map((c) => (
+        {byCategory.slice(0, 3).map((c) => (
           <div key={c.category} className="pos-card p-4">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">{c.category}</p>
             <p className="mt-1 font-display text-xl">{NPR(c.amount)}</p>
@@ -69,13 +83,24 @@ export function ExpensesView() {
         ))}
       </div>
 
+      {expensesLoading && expenses.length === 0 && (
+        <p className="pos-card p-8 text-center text-sm text-muted-foreground">
+          Loading expenses…
+        </p>
+      )}
+
       <ul className="space-y-2">
         {expenses.map((e) => (
           <li key={e.id} className="pos-card flex items-center gap-3 p-3">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-md bg-secondary px-2 py-0.5 text-xs">{e.category}</span>
-                <span className="text-xs text-muted-foreground">{e.date}</span>
+                <span className="text-xs text-muted-foreground">
+                  {bsIsoToPretty(e.spentAtBs)}
+                </span>
+                {e.actorName && (
+                  <span className="text-[11px] text-muted-foreground">· by {e.actorName}</span>
+                )}
               </div>
               <p className="mt-1 truncate text-sm">{e.note || "—"}</p>
             </div>
@@ -84,7 +109,7 @@ export function ExpensesView() {
               variant="ghost"
               size="icon"
               className="size-10 shrink-0"
-              aria-label={`Edit ${e.note}`}
+              aria-label={`Edit expense`}
               onClick={() => setDraft(e)}
             >
               <Pencil className="size-4" />
@@ -93,21 +118,21 @@ export function ExpensesView() {
               variant="ghost"
               size="icon"
               className="size-10 shrink-0 text-danger"
-              aria-label={`Delete ${e.note}`}
-              onClick={() => deleteExpense(e.id)}
+              aria-label={`Delete expense`}
+              onClick={() => setConfirmDelete(e)}
             >
               <Trash2 className="size-4" />
             </Button>
           </li>
         ))}
-        {expenses.length === 0 && (
+        {!expensesLoading && expenses.length === 0 && (
           <li className="pos-card p-8 text-center text-sm text-muted-foreground">
             No expenses recorded yet.
           </li>
         )}
       </ul>
 
-      <Dialog open={!!draft} onOpenChange={(o) => !o && setDraft(null)}>
+      <Dialog open={!!draft} onOpenChange={(o) => !o && !isSaving && setDraft(null)}>
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="font-display text-xl">
@@ -117,19 +142,17 @@ export function ExpensesView() {
           {draft && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Date</Label>
-                <Input
-                  type="date"
-                  className="h-12"
-                  value={draft.date}
-                  onChange={(e) => setDraft({ ...draft, date: e.target.value })}
+                <Label>Date (BS)</Label>
+                <BsDatePicker
+                  value={draft.spentAtBs}
+                  onChange={(v) => setDraft({ ...draft, spentAtBs: v })}
                 />
               </div>
               <div className="space-y-2">
                 <Label>Category</Label>
                 <Select
                   value={draft.category}
-                  onValueChange={(v) => setDraft({ ...draft, category: v as ExpenseCategory })}
+                  onValueChange={(v) => setDraft({ ...draft, category: v })}
                 >
                   <SelectTrigger className="h-12">
                     <SelectValue />
@@ -144,39 +167,83 @@ export function ExpensesView() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Amount</Label>
+                <Label>Amount (NPR)</Label>
                 <Input
                   type="number"
                   inputMode="numeric"
+                  min={0}
+                  step="0.01"
                   className="h-12"
-                  value={draft.amount}
-                  onChange={(e) => setDraft({ ...draft, amount: Number(e.target.value) })}
+                  value={draft.amount || ""}
+                  onChange={(e) =>
+                    setDraft({ ...draft, amount: Math.max(0, Number(e.target.value)) })
+                  }
                 />
               </div>
               <div className="space-y-2">
-                <Label>Note</Label>
+                <Label>Note (optional)</Label>
                 <Input
                   className="h-12"
                   value={draft.note}
                   onChange={(e) => setDraft({ ...draft, note: e.target.value })}
+                  placeholder="e.g. electricity bill, vegetable restock"
                 />
               </div>
             </div>
           )}
           <DialogFooter>
             <Button
-              className="h-12 w-full"
-              onClick={() => {
+              variant="outline"
+              className="h-12"
+              onClick={() => setDraft(null)}
+              disabled={isSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="h-12"
+              disabled={!draft || draft.amount <= 0 || !draft.spentAtBs || isSaving}
+              onClick={async () => {
                 if (!draft) return;
-                saveExpense({ ...draft, id: draft.id || Math.random().toString(36).slice(2, 10) });
-                setDraft(null);
+                setIsSaving(true);
+                try {
+                  await saveExpense(draft);
+                  setDraft(null);
+                } finally {
+                  setIsSaving(false);
+                }
               }}
             >
-              Save expense
+              {isSaving ? "Saving…" : draft?.id ? "Save" : "Record expense"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this expense?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDelete?.category} · {NPR(confirmDelete?.amount ?? 0)} ·{" "}
+              {confirmDelete ? bsIsoToPretty(confirmDelete.spentAtBs) : ""}. This removes the
+              record permanently.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-danger text-danger-foreground hover:bg-danger/90"
+              onClick={async () => {
+                if (confirmDelete) await deleteExpense(confirmDelete.id);
+                setConfirmDelete(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

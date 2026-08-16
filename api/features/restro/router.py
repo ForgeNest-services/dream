@@ -55,6 +55,9 @@ from features.restro.schemas import (
     RestroTenantInfo,
     BranchSettingsData,
     UpdateBranchSettingsRequest,
+    ExpenseData,
+    CreateExpenseRequest,
+    UpdateExpenseRequest,
 )
 from shared_models import Tenant
 from features.restro.service import RestroCredentialService, RestroAuthService
@@ -70,6 +73,7 @@ from features.restro.customer_repository import CustomerRepository
 from features.restro.order_service import compute_order_total
 from features.restro.khata_settlement_repository import KhataSettlementRepository
 from features.restro.branch_settings_service import BranchSettingsService
+from features.restro.expense_service import ExpenseService
 from features.restro.repository import RestroCredentialRepository
 
 
@@ -169,6 +173,118 @@ def clear_branch_qr(
         data=BranchSettingsData.model_validate(result["settings"]).model_dump(mode="json"),
         message="QR removed",
     )
+
+
+# ---------------------------------------------------------------------------
+# Expenses — branch-scoped operating spend. Any staff can log an expense
+# (waiter buying utilities on the go); owner/manager can edit/delete.
+# ---------------------------------------------------------------------------
+
+_EXPENSE_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "EXPENSE_NOT_FOUND": ("EXPENSE_NOT_FOUND", "Expense not found.", 404),
+    "INVALID_AMOUNT": ("INVALID_AMOUNT", "Amount must be greater than zero.", 422),
+    "INVALID_DATE": ("INVALID_DATE", "Date must be a valid BS YYYY-MM-DD string.", 422),
+}
+
+
+def _expense_error(code: str):
+    mapped = _EXPENSE_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to save expense.", 500))
+    return error_response(*mapped)
+
+
+@router.get("/branches/{branch_id}/expenses")
+def list_expenses(
+    branch_id: str,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = ExpenseService.list_for_branch(
+        db, staff["tenant_id"], branch_id, bs_from, bs_to
+    )
+    if not result["success"]:
+        return _expense_error(result["error_code"])
+    return success_response(
+        data=[ExpenseData.model_validate(e).model_dump(mode="json") for e in result["expenses"]]
+    )
+
+
+@router.post("/branches/{branch_id}/expenses")
+def create_expense(
+    branch_id: str,
+    data: CreateExpenseRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    actor_name, cred_id = _actor_from_staff(db, staff)
+    result = ExpenseService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        category=data.category,
+        amount=data.amount,
+        note=data.note,
+        spent_at_bs=data.spent_at_bs,
+        actor_name=actor_name,
+        actor_cred_id=cred_id,
+    )
+    if not result["success"]:
+        return _expense_error(result["error_code"])
+    return success_response(
+        data=ExpenseData.model_validate(result["expense"]).model_dump(mode="json"),
+        message="Expense recorded",
+        status_code=201,
+    )
+
+
+@router.patch("/branches/{branch_id}/expenses/{expense_id}")
+def update_expense(
+    branch_id: str,
+    expense_id: str,
+    data: UpdateExpenseRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can edit expenses")
+    _assert_branch_scope(staff, branch_id)
+    result = ExpenseService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        expense_id=expense_id,
+        category=data.category,
+        amount=data.amount,
+        note=data.note,
+        spent_at_bs=data.spent_at_bs,
+        clear_note=data.clear_note,
+    )
+    if not result["success"]:
+        return _expense_error(result["error_code"])
+    return success_response(
+        data=ExpenseData.model_validate(result["expense"]).model_dump(mode="json"),
+        message="Expense updated",
+    )
+
+
+@router.delete("/branches/{branch_id}/expenses/{expense_id}")
+def delete_expense(
+    branch_id: str,
+    expense_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can delete expenses")
+    _assert_branch_scope(staff, branch_id)
+    result = ExpenseService.delete(db, staff["tenant_id"], branch_id, expense_id)
+    if not result["success"]:
+        return _expense_error(result["error_code"])
+    return success_response(data={"deleted": True}, message="Expense removed")
 
 
 @router.get("/tenant-info")

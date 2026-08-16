@@ -9,7 +9,7 @@ import { BsDatePicker } from "./BsDatePicker";
 // which sorts lexically — matches the filter comparisons directly, no
 // Gregorian conversion needed.
 export function DailySalesView() {
-  const { orders, settings, categories, menu } = usePos();
+  const { orders, expenses, settings, categories, menu } = usePos();
   const todayBs = toBsIso(new Date()) ?? "";
   const [fromBs, setFromBs] = useState(todayBs);
   const [toBs, setToBs] = useState(todayBs);
@@ -20,6 +20,13 @@ export function DailySalesView() {
   const paid = inRange.filter((o) => o.status === "paid");
   const sales = paid.reduce((s, o) => s + billTotals(o, settings.vatEnabled, settings.vatRate).total, 0);
   const items = inRange.reduce((s, o) => s + o.lines.reduce((n, l) => n + l.qty, 0), 0);
+
+  // Expenses filter uses the same BS range so the P&L view matches.
+  const expensesInRange = expenses.filter(
+    (e) => e.spentAtBs >= fromBs && e.spentAtBs <= toBs,
+  );
+  const expensesTotal = expensesInRange.reduce((s, e) => s + e.amount, 0);
+  const net = sales - expensesTotal;
 
   const byCategory = categories
     .map((c) => {
@@ -37,10 +44,15 @@ export function DailySalesView() {
     .sort((a, b) => b.amount - a.amount);
 
   const stats = [
-    { label: "Orders created", value: String(inRange.length) },
     { label: "Orders closed", value: String(paid.length) },
     { label: "Items sold", value: String(items) },
-    { label: "Total sales", value: NPR(sales) },
+    { label: "Sales (gross)", value: NPR(sales) },
+    { label: "Expenses", value: NPR(expensesTotal) },
+    {
+      label: "Net (sales − expenses)",
+      value: NPR(net),
+      tone: net < 0 ? "danger" : "primary",
+    },
   ];
 
   return (
@@ -61,14 +73,48 @@ export function DailySalesView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        {stats.map((s) => (
-          <div key={s.label} className="pos-card p-4">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">{s.label}</p>
-            <p className="mt-1 font-display text-xl font-semibold text-primary">{s.value}</p>
-          </div>
-        ))}
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        {stats.map((s) => {
+          const tone = "tone" in s ? s.tone : "default";
+          const valueClass =
+            tone === "danger"
+              ? "text-danger"
+              : tone === "primary"
+                ? "text-primary"
+                : "text-foreground";
+          return (
+            <div key={s.label} className="pos-card p-4">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">{s.label}</p>
+              <p className={`mt-1 font-display text-xl font-semibold ${valueClass}`}>{s.value}</p>
+            </div>
+          );
+        })}
       </div>
+
+      {expensesInRange.length > 0 && (
+        <div className="pos-card p-4">
+          <h3 className="font-display text-lg">Expenses breakdown</h3>
+          <ul className="mt-3 space-y-2">
+            {expensesInRange
+              .reduce<{ category: string; amount: number }[]>((acc, e) => {
+                const row = acc.find((r) => r.category === e.category);
+                if (row) row.amount += e.amount;
+                else acc.push({ category: e.category, amount: e.amount });
+                return acc;
+              }, [])
+              .sort((a, b) => b.amount - a.amount)
+              .map((c) => (
+                <li
+                  key={c.category}
+                  className="flex items-center justify-between gap-3 text-sm"
+                >
+                  <span className="min-w-0 truncate">{c.category}</span>
+                  <span className="shrink-0 font-medium">{NPR(c.amount)}</span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
 
       <div className="pos-card p-4">
         <h3 className="font-display text-lg">Category breakdown</h3>
