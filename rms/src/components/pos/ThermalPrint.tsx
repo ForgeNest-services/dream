@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -202,19 +203,25 @@ export function BillReceipt({
       </div>
       <Divider />
       <p>Payment: {paymentLabel}</p>
-      {settings.qrImage && (
-        <img src={settings.qrImage} alt="Payment QR" className="mx-auto mt-2 size-24 object-contain" />
-      )}
       <p className="mt-2 text-center">Thank you · Pheri aaunuhola!</p>
-      {/* Small "Powered By" branding at the very bottom. Kept tiny so it
-          doesn't compete with the restaurant's own branding at the top. */}
-      <div className="mt-2 flex flex-col items-center border-t border-dashed border-black pt-1.5">
+      {/* Promotional footer — "Powered By Srota" branding + a QR that opens
+          srotaapps.com. Payment QR intentionally removed from the receipt:
+          on-screen payment happens through the mark-paid dialog (which shows
+          a scannable QR big enough to actually work), so putting it on the
+          printed bill was redundant and ate valuable footer real-estate. */}
+      <div className="mt-2 flex flex-col items-center gap-1 border-t border-dashed border-black pt-1.5">
         <p className="text-[9px] uppercase tracking-widest opacity-60">Powered By</p>
         <img
           src="/RMS.png"
           alt="Srota RMS"
-          className="mt-0.5 h-5 w-auto opacity-80"
+          className="h-10 w-auto opacity-80"
         />
+        <img
+          src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https%3A%2F%2Fsrotaapps.com"
+          alt="Scan to visit srotaapps.com"
+          className="mt-1 size-20"
+        />
+        <p className="text-[9px] opacity-70">srotaapps.com</p>
       </div>
     </div>
   );
@@ -234,25 +241,51 @@ export function PrintDialog({
   title: string;
   children: React.ReactNode;
 }) {
+  // The receipt is rendered TWICE while the dialog is open:
+  //
+  //   1. Inside the Dialog for on-screen preview.
+  //   2. Portaled to document.body as `#thermal-print-area` for @media print.
+  //
+  // Why the portal: Radix Dialog wraps DialogContent in a transform-based
+  // centering shim. Any position:fixed descendant becomes positioned
+  // relative to that transformed ancestor (per the CSS containing-block
+  // spec) — which is why the printed receipt showed up in the middle of the
+  // page instead of the top-left, and why content past the viewport fold
+  // (Powered By footer, totals, QR) was silently clipped by Chrome. Moving
+  // the print-target out of the transform stack fixes both.
+  //
+  // The preview copy stays inside the dialog but doesn't carry the print id,
+  // so @media print rules only affect the portal copy.
+  const printTarget =
+    typeof document !== "undefined" && open
+      ? createPortal(
+          <div id="thermal-print-area">{children}</div>,
+          document.body,
+        )
+      : null;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="font-display text-xl">{title}</DialogTitle>
-        </DialogHeader>
-        <p className="text-xs text-muted-foreground">
-          Preview at 70mm thermal width. Tap print to send to the receipt printer.
-        </p>
-        <div className="rounded-xl border border-border bg-white p-2">
-          <div id="thermal-print-area">{children}</div>
-        </div>
-        <DialogFooter>
-          <Button size="lg" className="h-12 w-full" onClick={() => window.print()}>
-            <Printer className="size-5" />
-            Print
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-xl">{title}</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Preview at 70mm thermal width. Tap print to send to the receipt printer.
+          </p>
+          <div className="rounded-xl border border-border bg-white p-2">
+            {children}
+          </div>
+          <DialogFooter>
+            <Button size="lg" className="h-12 w-full" onClick={() => window.print()}>
+              <Printer className="size-5" />
+              Print
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {printTarget}
+    </>
   );
 }
