@@ -100,9 +100,13 @@ export function ReportsView() {
   const toBs = search.bs_to || todayBs;
 
   const patchSearch = (patch: Partial<ReportsSearch>) => {
+    // `resetScroll: false` keeps the user's scroll position when patching
+    // filters/tabs — otherwise TanStack's default is to scroll back to the
+    // top on every navigate, which makes tab-switching in a long report jarring.
     navigate({
       search: (prev: ReportsSearch) => ({ ...prev, ...patch }),
       replace: true,
+      resetScroll: false,
     });
   };
 
@@ -405,7 +409,8 @@ export function ReportsView() {
         </div>
       )}
 
-      {/* Tabs — larger, clearer */}
+      {/* Tabs — active state uses primary colour for high contrast against
+          the muted page bg. */}
       <div className="rounded-2xl bg-secondary/40 p-1.5">
         <div className="flex gap-1 overflow-x-auto">
           {TABS.map((t) => (
@@ -414,7 +419,7 @@ export function ReportsView() {
               onClick={() => patchSearch({ tab: t.id })}
               className={`min-h-11 flex-1 shrink-0 rounded-xl px-4 text-sm font-medium transition-colors ${
                 search.tab === t.id
-                  ? "bg-background text-foreground shadow-sm"
+                  ? "bg-primary text-primary-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >

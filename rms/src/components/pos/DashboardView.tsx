@@ -73,9 +73,14 @@ export function DashboardView() {
     // Do NOT pass `to: DASHBOARD_ROUTE` here — the router would resolve the
     // route ID "/_app/dashboard" as a literal URL and 404. Omitting `to`
     // keeps navigation on the current route and just patches the search.
+    //
+    // Return {} (not {bs: ""}) when going back to today so TanStack drops
+    // the key entirely — otherwise the URL keeps a dangling "?bs=".
+    // `resetScroll: false` keeps the user where they were on the page.
     navigate({
-      search: (): DashboardSearch => ({ bs: bs === todayBs ? "" : bs }),
+      search: (): DashboardSearch => (bs === todayBs ? {} : { bs }),
       replace: true,
+      resetScroll: false,
     });
   };
 
