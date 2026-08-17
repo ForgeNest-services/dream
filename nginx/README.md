@@ -11,6 +11,7 @@ SSL block + HTTP→HTTPS redirect on first run.
 | `srota-api.conf`    | api.srotaapps.com        | `127.0.0.1:8006`  |
 | `srota-pms.conf`    | pms.srotaapps.com        | `127.0.0.1:3007`  |
 | `srota-rms.conf`    | rms.srotaapps.com        | `127.0.0.1:3008`  |
+| `srota-ims.conf`    | ims.srotaapps.com        | `127.0.0.1:3010`  |
 | `srota-media.conf`  | media.srotaapps.com      | `127.0.0.1:9000`  |
 
 > `media.srotaapps.com` proxies **only** MinIO's S3 API on :9000, not the
@@ -30,6 +31,7 @@ certbot can't complete the HTTP-01 challenge.
 sudo cp nginx/srota-ui.conf /etc/nginx/sites-available/srota-ui
 sudo cp nginx/srota-admin.conf /etc/nginx/sites-available/srota-admin
 sudo cp nginx/srota-rms.conf /etc/nginx/sites-available/srota-rms
+sudo cp nginx/srota-ims.conf /etc/nginx/sites-available/srota-ims
 sudo cp nginx/srota-api.conf /etc/nginx/sites-available/srota-api
 sudo cp nginx/srota-pms.conf /etc/nginx/sites-available/srota-pms
 sudo cp nginx/srota-media.conf /etc/nginx/sites-available/srota-media
@@ -38,6 +40,7 @@ sudo cp nginx/srota-media.conf /etc/nginx/sites-available/srota-media
 sudo ln -sf /etc/nginx/sites-available/srota-ui /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/srota-admin /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/srota-rms /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/srota-ims /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/srota-api /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/srota-pms /etc/nginx/sites-enabled/
 sudo ln -sf /etc/nginx/sites-available/srota-media /etc/nginx/sites-enabled/
@@ -49,12 +52,13 @@ sudo nginx -t && sudo nginx -s reload
 sudo certbot --nginx -d srotaapps.com -d www.srotaapps.com
 sudo certbot --nginx -d app.srotaapps.com
 sudo certbot --nginx -d rms.srotaapps.com
+sudo certbot --nginx -d ims.srotaapps.com
 sudo certbot --nginx -d api.srotaapps.com
 sudo certbot --nginx -d pms.srotaapps.com
 sudo certbot --nginx -d media.srotaapps.com
 ```
 
-Repeat steps 1–4 for each of admin / api / pms / rms.
+Repeat steps 1–4 for each of admin / api / pms / rms / ims.
 
 Auto-renewal is already installed by certbot's package — verify with:
 
