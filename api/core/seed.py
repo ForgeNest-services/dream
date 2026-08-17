@@ -1,11 +1,24 @@
+from pathlib import Path
+
+from sqlalchemy import text
+
 from core.database import SessionLocal
 from core.configs import settings
 from core.security import hash_password
+from core.storage import upload_file_at_key, build_public_url
 from shared_models import PlatformAdmin, App
 from utils.logger import logger
 
 
+# Path to the on-disk assets directory. Bundled into the api/ image at build
+# time, so this resolves inside the container as /app/assets.
+_ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+
+
 def _app_catalog() -> list[dict]:
+    """The `icon_asset` key names a PNG in api/assets/ that gets uploaded to
+    MinIO on startup (see seed_app_icons). It's NOT persisted to the DB — the
+    resulting public URL lands in the app row's `icon_url` column."""
     return [
         {
             "code": "srota_pms",
@@ -18,6 +31,7 @@ def _app_catalog() -> list[dict]:
                 "unified across every property you manage."
             ),
             "icon": "Hotel",
+            "icon_asset": "PMS.png",
             "url": "https://pms.srotaapps.com",
             "screenshots": [],
             "features": [
@@ -42,6 +56,7 @@ def _app_catalog() -> list[dict]:
                 "reports — with Bikram Sambat dates and multi-branch support."
             ),
             "icon": "Restaurant",
+            "icon_asset": "RMS.png",
             "url": "https://rms.srotaapps.com",
             "screenshots": [],
             "features": [
@@ -53,6 +68,31 @@ def _app_catalog() -> list[dict]:
                 "Sales, category and staff performance reports",
             ],
             "display_order": 2,
+            "is_active": True,
+            "is_public": True,
+        },
+        {
+            "code": "srota_ims",
+            "slug": "srota-ims",
+            "name": "Srota IMS",
+            "tagline": "Inventory that stays in sync with the shop floor.",
+            "description": (
+                "Inventory management for retail and hospitality: SKU catalog, "
+                "stock movements with restock and adjustment history, low-stock "
+                "alerts, and multi-branch stock visibility."
+            ),
+            "icon": "Inventory",
+            "icon_asset": "IMS.png",
+            "url": "https://ims.srotaapps.com",
+            "screenshots": [],
+            "features": [
+                "SKU catalog with unit and threshold per item",
+                "Stock movements: restock, adjust, transfer",
+                "Low-stock alerts per branch",
+                "Movement audit trail with actor snapshot",
+                "Multi-branch stock visibility",
+            ],
+            "display_order": 3,
             "is_active": True,
             "is_public": True,
         },
@@ -95,16 +135,31 @@ def seed_superadmin():
         db.close()
 
 
+def _ensure_apps_schema(db) -> None:
+    """One-off idempotent column additions for the `apps` table. Base.create_all
+    only creates missing tables — it never ALTERs existing ones — so any new
+    columns added to the App model must be back-filled here. Uses Postgres's
+    ADD COLUMN IF NOT EXISTS so re-running is a no-op."""
+    db.execute(text(
+        "ALTER TABLE public.apps "
+        "ADD COLUMN IF NOT EXISTS icon_url VARCHAR(500)"
+    ))
+    db.commit()
+
+
 def seed_apps():
     db = SessionLocal()
     try:
+        _ensure_apps_schema(db)
         for entry in _app_catalog():
+            # icon_asset is a seed-time hint, not a DB column — strip before insert.
+            db_entry = {k: v for k, v in entry.items() if k != "icon_asset"}
             existing = db.query(App).filter(App.code == entry["code"]).first()
             if existing:
                 logger.info(f"App exists: {entry['code']}")
                 continue
 
-            app_row = App(**entry)
+            app_row = App(**db_entry)
             db.add(app_row)
             db.commit()
             db.refresh(app_row)
@@ -114,5 +169,54 @@ def seed_apps():
         db.rollback()
         logger.error(f"Failed to seed apps: {type(e).__name__}: {str(e)}")
         raise
+    finally:
+        db.close()
+
+
+def seed_app_icons():
+    """Uploads each app's icon PNG from api/assets/ to MinIO at a stable key
+    (platform/app-icons/{code}.png) and stores the resulting URL on the app
+    row's `icon_url` column.
+
+    Idempotent: skips upload when the app already has an `icon_url` pointing
+    at our current public URL. Re-uploads if the URL is missing, points at a
+    stale bucket/host (env change), or the asset is present but the DB row
+    isn't tracking it yet."""
+    db = SessionLocal()
+    try:
+        current_prefix = f"{settings.S3_PUBLIC_URL}/{settings.S3_BUCKET}/"
+        for entry in _app_catalog():
+            asset_name = entry.get("icon_asset")
+            if not asset_name:
+                continue
+            asset_path = _ASSETS_DIR / asset_name
+            if not asset_path.exists():
+                logger.warning(f"App icon asset missing on disk: {asset_path}")
+                continue
+
+            app_row = db.query(App).filter(App.code == entry["code"]).first()
+            if not app_row:
+                logger.warning(f"App row not found for icon seed: {entry['code']}")
+                continue
+
+            key = f"platform/app-icons/{entry['code']}.png"
+            expected_url = build_public_url(key)
+
+            if app_row.icon_url == expected_url:
+                logger.info(f"App icon up to date: {entry['code']}")
+                continue
+
+            with asset_path.open("rb") as fp:
+                content = fp.read()
+            uploaded_url = upload_file_at_key(key, content, "image/png")
+            app_row.icon_url = uploaded_url
+            db.commit()
+            logger.info(f"App icon uploaded: {entry['code']} → {uploaded_url}")
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to seed app icons: {type(e).__name__}: {str(e)}")
+        # Don't re-raise — a missing/broken MinIO shouldn't block API startup.
+        # Frontend falls back to the react-icons `icon` field when icon_url is null.
     finally:
         db.close()

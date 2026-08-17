@@ -7,7 +7,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from utils.helpers import success_response, error_response, format_validation_errors
 from utils.logger import logger
 from core.database import Base, engine
-from core.seed import seed_superadmin, seed_apps
+from core.seed import seed_superadmin, seed_apps, seed_app_icons
 from core.storage import ensure_bucket
 import shared_models
 from features.auth import router as auth_router
@@ -51,6 +51,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to set up storage bucket: {type(e).__name__}: {str(e)}")
         raise
+
+    # App icons depend on both the apps table + MinIO being ready, so this
+    # runs last. Failures are logged but non-fatal (see seed_app_icons).
+    try:
+        logger.info("Seeding app icons...")
+        seed_app_icons()
+        logger.info("App icon seeding completed")
+    except Exception as e:
+        logger.error(f"Failed to seed app icons: {type(e).__name__}: {str(e)}")
 
     yield
 

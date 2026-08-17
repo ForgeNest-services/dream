@@ -120,9 +120,19 @@ export function AppDetailContent({ slug }: { slug: string }) {
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
+            overflow: 'hidden',
           }}
         >
-          <Icon size={32} />
+          {app.icon_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={app.icon_url}
+              alt={`${app.name} logo`}
+              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+            />
+          ) : (
+            <Icon size={32} />
+          )}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1

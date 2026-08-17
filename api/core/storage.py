@@ -57,6 +57,20 @@ def upload_file(prefix: str, filename: str, content: bytes, content_type: str) -
     return build_public_url(key)
 
 
+def upload_file_at_key(key: str, content: bytes, content_type: str) -> str:
+    """Uploads bytes at an exact key (no UUID prefix) and returns the public
+    URL. Overwrites any existing object at the same key — used for seed
+    assets (app icons) where we want a stable, cache-friendly URL that
+    survives restarts without accumulating orphaned objects."""
+    _client.put_object(
+        Bucket=settings.S3_BUCKET,
+        Key=key.strip("/"),
+        Body=content,
+        ContentType=content_type,
+    )
+    return build_public_url(key.strip("/"))
+
+
 def delete_file(key: str) -> None:
     _client.delete_object(Bucket=settings.S3_BUCKET, Key=key)
 

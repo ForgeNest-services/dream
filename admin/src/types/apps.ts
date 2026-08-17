@@ -4,7 +4,12 @@ export interface App {
   slug: string;
   name: string;
   description?: string | null;
+  // Legacy react-icons name (e.g. "Hotel", "Restaurant"). Kept as a fallback
+  // when icon_url isn't set.
   icon?: string | null;
+  // Public MinIO URL of the app's logo/icon PNG. Preferred over the icon-name
+  // fallback when both are present.
+  icon_url?: string | null;
   url: string;
   is_active: boolean;
 }

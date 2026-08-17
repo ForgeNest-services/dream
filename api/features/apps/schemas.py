@@ -10,5 +10,6 @@ class AppData(BaseModel):
     name: str
     description: str | None = None
     icon: str | None = None
+    icon_url: str | None = None
     url: str
     is_active: bool
