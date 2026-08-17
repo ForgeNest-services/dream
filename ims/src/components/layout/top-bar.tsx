@@ -20,7 +20,6 @@ import {
   Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import logoAsset from "@/assets/srota-ims-logo.png.asset.json";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -80,7 +79,7 @@ export function TopBar({ onOpenCommand }: { onOpenCommand: () => void }) {
     <header className="no-print sticky top-0 z-40 border-b bg-ink text-ink-foreground">
       <div className="flex h-14 items-center gap-2 px-3 sm:px-4">
         <Link to="/dashboard" className="shrink-0" aria-label="SROTA IMS home">
-          <img src={logoAsset.url} alt="SROTA IMS" className="h-12 w-auto rounded-md px-2 py-1" />
+          <img src="/srota-ims-logo.png" alt="SROTA IMS" className="h-12 w-auto rounded-md px-2 py-1" />
         </Link>
 
         <nav className="hidden min-w-0 items-center gap-0.5 lg:flex">

@@ -133,6 +133,10 @@ export interface Product {
   /** VAT treatment — taxable items attract VAT for VAT-registered companies.
    *  Undefined is treated as taxable. */
   taxable?: boolean | undefined;
+  /** Per-product tax rate override, as a percentage (e.g. 13). Undefined
+   *  means "use the company's VAT rate" — only a handful of exempt/reduced
+   *  items usually need to differ. Ignored when taxable is false. */
+  taxRate?: number | undefined;
   createdAt: string;
 }
 
@@ -242,7 +246,14 @@ export interface PurchaseLine {
   description: string;
   qty: number;
   unitId: string;
+  /** excl. tax */
   unitCost: number;
+  /** snapshot from the product at purchase time — never live-looked-up, so
+   *  historical bills don't change if the product's tax settings change later */
+  taxable: boolean;
+  taxRate: number;
+  /** qty * unitCost * taxRate/100, snapshot alongside taxable/taxRate */
+  vatAmount: number;
 }
 
 export interface Purchase {
