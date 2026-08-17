@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { usePos } from "@/lib/pos/store";
+import { MenuQrPrintButton } from "./MenuQrPrint";
 
 export function SettingsView() {
   const {
@@ -322,9 +323,10 @@ export function SettingsView() {
               >
                 Preview public menu
               </a>
-              <Button variant="outline" className="h-11" onClick={() => window.print()}>
-                Print QR
-              </Button>
+              <MenuQrPrintButton
+                menuUrl={menuUrl}
+                branchName={branch?.name ?? "Menu"}
+              />
             </div>
           </div>
         </div>

@@ -200,33 +200,96 @@
 }
 
 @media print {
-  body * {
-    visibility: hidden;
-  }
-  #thermal-print-area,
-  #thermal-print-area * {
-    visibility: visible;
-  }
-  #thermal-print-area {
-    position: fixed;
-    top: 0;
-    left: 0;
-    margin: 0;
-    width: 70mm;
-    padding: 0;
-    text-align: left;
-  }
-  #thermal-print-area .thermal-receipt {
-    margin-left: 0;
-    margin-right: 0;
+  /* Nuke everything except whichever print portal is currently mounted.
+     Two allowed exceptions:
+       - #thermal-print-area — bill / KOT receipts (default @page 72mm auto)
+       - #menu-qr-print-area — public menu QR poster (A4 @page injected by
+         MenuQrPrintButton at print time to override the thermal size)
+     `display: none` collapses the hidden nodes to zero size so the A4
+     fallback layout doesn't push the receipt to the middle of the page. */
+  body > *:not(#thermal-print-area):not(#menu-qr-print-area) {
+    display: none !important;
   }
   html, body {
     margin: 0 !important;
     padding: 0 !important;
     background: #fff;
   }
+  /* Portaled to document.body by PrintDialog, so this element is a direct
+     child of <body> with no transformed ancestors — position:absolute
+     top:0/left:0 lands where you'd expect (top-left of the sheet). */
+  #thermal-print-area {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 72mm !important;
+    max-width: 72mm !important;
+    text-align: left !important;
+  }
+  #thermal-print-area .thermal-receipt {
+    margin: 0 !important;
+    padding: 2mm !important;
+    width: 72mm !important;
+    max-width: 72mm !important;
+  }
+  /* Menu QR poster — fills the (A4) sheet, centered. The @page override
+     that flips 72mm auto → A4 portrait is injected by the print button. */
+  #menu-qr-print-area {
+    position: absolute !important;
+    inset: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    color: #000;
+  }
+  #menu-qr-print-area .menu-qr-poster {
+    text-align: center;
+    max-width: 170mm;
+  }
+  #menu-qr-print-area .menu-qr-brand {
+    font-family: "Roboto Mono", ui-monospace, monospace;
+    font-size: 11pt;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    opacity: 0.7;
+    margin: 0;
+  }
+  #menu-qr-print-area .menu-qr-branch {
+    font-size: 32pt;
+    font-weight: 700;
+    margin: 4mm 0 2mm;
+    line-height: 1.1;
+  }
+  #menu-qr-print-area .menu-qr-cta {
+    font-size: 14pt;
+    margin: 0 0 8mm;
+    opacity: 0.75;
+  }
+  #menu-qr-print-area .menu-qr-image {
+    width: 120mm;
+    height: 120mm;
+    max-width: 100%;
+    display: block;
+    margin: 0 auto;
+  }
+  #menu-qr-print-area .menu-qr-url {
+    margin: 6mm 0 0;
+    font-family: "Roboto Mono", ui-monospace, monospace;
+    font-size: 10pt;
+    word-break: break-all;
+  }
+  #menu-qr-print-area .menu-qr-footnote {
+    margin: 8mm 0 0;
+    font-size: 9pt;
+    opacity: 0.55;
+  }
   @page {
-    size: 70mm auto;
+    size: 72mm auto;
     margin: 0;
   }
 }

@@ -322,9 +322,11 @@ export function OrderScreen(props: OrderScreenProps) {
           }
         }}
       >
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+        <DialogContent className="max-h-[95vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle className="font-display text-lg">Payment · {NPR(totals.total)}</DialogTitle>
+            <DialogTitle className="font-display text-xl">
+              Payment · {NPR(totals.total)}
+            </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-3 gap-2">
             {(["cash", "qr", "khata"] as const).map((m) => (
@@ -342,11 +344,28 @@ export function OrderScreen(props: OrderScreenProps) {
             ))}
           </div>
           {method === "qr" && (
-            <div className="grid place-items-center rounded-xl bg-secondary p-4">
+            <div className="grid place-items-center rounded-2xl bg-secondary p-6">
               {settings.qrImage ? (
-                <img src={settings.qrImage} alt="Payment QR" className="size-40 object-contain" />
+                <>
+                  <img
+                    src={settings.qrImage}
+                    alt="Payment QR"
+                    // Sized so a customer can scan comfortably at arm's length
+                    // on a tablet. Caps out via max-width so mobile viewports
+                    // don't blow past the dialog edge.
+                    className="h-72 w-72 max-w-full object-contain"
+                  />
+                  <p className="mt-3 text-center text-sm font-medium text-foreground">
+                    Scan to pay {NPR(totals.total)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Confirm the amount on the customer's screen before marking paid.
+                  </p>
+                </>
               ) : (
-                <p className="text-sm text-muted-foreground">No QR uploaded in Settings yet.</p>
+                <p className="py-16 text-sm text-muted-foreground">
+                  No QR uploaded in Settings yet.
+                </p>
               )}
             </div>
           )}
