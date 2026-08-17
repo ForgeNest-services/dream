@@ -75,6 +75,7 @@ from features.restro.khata_settlement_repository import KhataSettlementRepositor
 from features.restro.branch_settings_service import BranchSettingsService
 from features.restro.expense_service import ExpenseService
 from features.restro.reports_service import ReportsService
+from features.restro.public_service import get_public_menu
 from features.restro.repository import RestroCredentialRepository
 
 
@@ -2323,3 +2324,19 @@ def reports_top_items(
     if not result["success"]:
         return _reports_error(result["error_code"])
     return success_response(data=_serialize_top_items(result["items"]))
+
+
+# ---------------------------------------------------------------------------
+# Public (unauthenticated) — QR-menu page. Reachable by anyone with a branch
+# UUID, which is what the printed QR resolves to. No tenant scope on the
+# request itself since guests don't have accounts; branch lookup verifies
+# active status and returns 404 otherwise.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/public/branches/{branch_id}/menu")
+def public_menu(branch_id: str, db: Session = Depends(get_db)):
+    result = get_public_menu(db, branch_id)
+    if result is None:
+        return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
+    return success_response(data=result)
