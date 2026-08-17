@@ -221,19 +221,23 @@ export function OrderScreen(props: OrderScreenProps) {
             </TabsList>
           </Tabs>
 
-          {/* Cards: denser + smaller image on mobile so more items fit above
-              the fold. Scales up on tablets / desktops. */}
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-2.5 md:grid-cols-5 xl:grid-cols-4 2xl:grid-cols-5">
+          {/* Mobile: horizontal-scrolling strip of compact cards, one row
+              per category (waiter swipes left/right to browse). Snap so
+              cards align neatly under the thumb. Tablet+ falls back to the
+              regular grid, which stays denser as viewport grows.
+              Negative margins bleed the scroll edge past the parent's
+              padding so the first card starts at the section edge. */}
+          <div className="-mx-1 flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-2 sm:mx-0 sm:grid sm:snap-none sm:grid-cols-4 sm:gap-2.5 sm:overflow-visible sm:px-0 sm:pb-0 md:grid-cols-5 xl:grid-cols-4 2xl:grid-cols-5">
             {items.map((item) => (
               <button
                 key={item.id}
                 disabled={item.soldOut}
                 onClick={() => (item.hasVariants ? setVariantItem(item) : add(item))}
-                className={`pos-card flex flex-col overflow-hidden text-left transition-transform active:scale-[0.98] ${
+                className={`pos-card flex w-24 shrink-0 snap-start flex-col overflow-hidden text-left transition-transform active:scale-[0.98] sm:w-auto sm:shrink ${
                   item.soldOut ? "cursor-not-allowed opacity-45 grayscale" : "hover:border-primary"
                 }`}
               >
-                <div className="flex h-20 w-full items-center justify-center bg-secondary sm:h-28 md:h-32 xl:h-32">
+                <div className="flex h-16 w-full items-center justify-center bg-secondary sm:h-28 md:h-32 xl:h-32">
                   <img
                     src={item.image || placeholder}
                     alt={item.name}
@@ -244,10 +248,10 @@ export function OrderScreen(props: OrderScreenProps) {
                   />
                 </div>
                 <div className="flex-1 p-1.5 sm:p-2">
-                  <p className="line-clamp-2 text-[11px] font-medium leading-tight sm:text-sm">
+                  <p className="line-clamp-2 text-[10px] font-medium leading-tight sm:text-sm">
                     {item.name}
                   </p>
-                  <p className="mt-0.5 text-[11px] font-semibold text-primary sm:mt-1 sm:text-sm">
+                  <p className="mt-0.5 text-[10px] font-semibold text-primary sm:mt-1 sm:text-sm">
                     {item.hasVariants ? `${item.variants.length} opts` : NPR(item.price ?? 0)}
                   </p>
                   {item.soldOut && (
@@ -259,7 +263,7 @@ export function OrderScreen(props: OrderScreenProps) {
               </button>
             ))}
             {items.length === 0 && (
-              <p className="pos-card col-span-full p-6 text-center text-sm text-muted-foreground">
+              <p className="pos-card w-full p-6 text-center text-sm text-muted-foreground sm:col-span-full">
                 No items in this category.
               </p>
             )}

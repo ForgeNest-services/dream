@@ -53,6 +53,10 @@ export function OrdersView({ showControls = false }: { showControls?: boolean })
         <ReserveDialog />
       </div>
 
+      {/* On mobile each tab is `flex-1` — two equal-width segments that
+          fill the row (proper thumb-sized targets, no dead space on the
+          right). On tablet+ they shrink back to auto-width chips so the
+          bar doesn't stretch across a wide viewport. */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {(
           [
@@ -63,7 +67,7 @@ export function OrdersView({ showControls = false }: { showControls?: boolean })
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`min-h-11 shrink-0 rounded-xl px-4 text-sm transition-colors ${
+            className={`min-h-11 flex-1 rounded-xl px-4 text-sm font-medium transition-colors sm:flex-none sm:shrink-0 ${
               search.tab === t.id ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground"
             }`}
           >
