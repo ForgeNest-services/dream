@@ -37,8 +37,21 @@ const DialogContent = React.forwardRef<
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      // Mobile-friendly defaults:
+      //   - `w-[calc(100%-16px)]` leaves an 8px gutter each side so the
+      //     dialog visually detaches from the viewport edge (feels less
+      //     "screen-glued", easier to reach the close X with a thumb).
+      //   - `max-h-[calc(100dvh-16px)]` caps height at the viewport so a
+      //     tall dialog can never bleed under the bottom system bar on
+      //     mobile browsers (dvh accounts for URL-bar collapse on scroll).
+      //   - `rounded-2xl` always applied — the original `sm:rounded-lg`
+      //     left mobile dialogs with square corners against the black
+      //     overlay, which read as "OS-level modal" rather than app UI.
+      //   - Padding tightened on mobile (`p-4`) → normal on tablet+
+      //     (`sm:p-6`) so short dialogs don't waste vertical space on a
+      //     phone.
       className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:rounded-lg",
+        "fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-16px)] max-h-[calc(100dvh-16px)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-2xl border bg-background p-4 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:p-6",
         className,
       )}
       {...props}
