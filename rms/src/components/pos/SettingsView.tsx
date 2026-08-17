@@ -59,9 +59,10 @@ export function SettingsView() {
         <h2 className="font-display text-xl">Restaurant & branch</h2>
         <p className="text-sm text-muted-foreground">Viewing settings for {branch?.name ?? "—"}</p>
         <div className="mt-4 space-y-4">
-          {/* Branch switcher — the primary place to change branch since the
-              header switcher was removed for mobile clarity. Owner-only:
-              managers/waiters/chefs are locked to their branch by their JWT. */}
+          {/* Branch switcher — mobile users switch here since the header
+              switcher is hidden below the `sm` breakpoint (see Header.tsx).
+              Owner-only: managers/waiters/chefs are locked to their branch
+              by their JWT. */}
           {canSwitchBranch && branches.length > 1 && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">

@@ -1,4 +1,4 @@
-import { ChevronDown, Eye, LogOut } from "lucide-react";
+import { Building2, ChevronDown, Eye, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InstallAppButton } from "./InstallAppButton";
 import {
@@ -9,6 +9,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ROLE_LABELS, type Role } from "@/lib/pos/data";
 import { usePos } from "@/lib/pos/store";
 import { formatBikramSambat, formatGregorian } from "@/lib/pos/nepali-date";
@@ -24,6 +31,10 @@ export function PosHeader() {
     effectiveRole,
     setViewAsRole,
     branch,
+    branchId,
+    branches,
+    canSwitchBranch,
+    setBranchId,
   } = usePos();
   if (!session) return null;
   const today = new Date();
@@ -53,10 +64,46 @@ export function PosHeader() {
             alt="Srota RMS"
             className="h-10 w-auto shrink-0 sm:h-11"
           />
-          {branch && (
-            <p className="hidden truncate text-sm font-medium text-navy-foreground/80 sm:block">
-              {branch.name}
-            </p>
+          {/* Branch chip on tablet+ only. For Owners with multiple branches
+              this is a switcher; for everyone else (or single-branch tenants)
+              it's a read-only label. On mobile the switcher lives on the
+              Settings page — matches the "hide in mobile" convention. */}
+          {canSwitchBranch && branches.length > 1 ? (
+            <div className="hidden min-w-0 sm:block">
+              <Select value={branchId} onValueChange={setBranchId}>
+                <SelectTrigger
+                  aria-label="Switch branch"
+                  className="h-9 min-w-[9rem] max-w-[16rem] justify-start gap-2 rounded-lg border-navy-soft/60 bg-navy-soft/40 px-2.5 text-left text-sm font-medium text-navy-foreground hover:bg-navy-soft/70"
+                >
+                  <Building2 className="size-[18px] shrink-0 opacity-70" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start">
+                  {branches.map((b) => (
+                    <SelectItem
+                      key={b.id}
+                      value={b.id}
+                      className="justify-start py-2.5 text-left"
+                    >
+                      <div className="flex min-w-0 flex-col items-start justify-start">
+                        <p className="truncate font-semibold">{b.name}</p>
+                        {b.address && (
+                          <p className="truncate text-xs text-muted-foreground">
+                            {b.address}
+                          </p>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            branch && (
+              <p className="hidden truncate text-sm font-medium text-navy-foreground/80 sm:block">
+                {branch.name}
+              </p>
+            )
           )}
         </div>
 
