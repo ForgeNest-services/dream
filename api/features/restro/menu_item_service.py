@@ -130,12 +130,13 @@ class MenuItemService:
         if category_id is None and not search:
             existing = MenuItemRepository.list_for_branch(db, tenant_id, branch_id, None)
             if not existing:
-                try:
-                    from features.restro.menu_seeder import seed_default_menu_items
-                    seed_default_menu_items(db, tenant_id, branch_id)
-                except Exception as e:
-                    from utils.logger import logger
-                    logger.error(f"Menu seed failed for branch {branch_id}: {e}")
+                # Delegates to the shared "seed categories + menu items"
+                # helper. Crucially, this ensures categories are seeded FIRST
+                # if they don't exist yet — otherwise the menu seeder would
+                # skip every item with 'category not found' when /menu-items
+                # races ahead of /categories on a fresh branch.
+                from features.restro.seed_lock import ensure_branch_seeded
+                ensure_branch_seeded(db, tenant_id, branch_id)
         items = MenuItemRepository.list_for_branch(
             db, tenant_id, branch_id, category_id, search
         )
