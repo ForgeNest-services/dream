@@ -463,6 +463,20 @@ export function PosProvider({ children }: { children: ReactNode }) {
   }, [session, branchId]);
 
   // Load menu items for the active branch.
+  //
+  // Depends on `categories.length` as well as branchId — so when a fresh
+  // branch's categories transition from 0 → 8 (backend just auto-seeded
+  // them), the menu-items effect re-runs and pulls the freshly-seeded
+  // items. This is defensive against two failure modes on first login:
+  //   1. The initial GET /menu-items races /categories and returns 0
+  //      items because backend's ensure_branch_seeded is still running.
+  //   2. The initial fetch gets aborted mid-mount by React's cleanup
+  //      timing (seen in prod: OPTIONS preflight in logs but no GET
+  //      follow-up). Categories fetch survives the same timing because
+  //      it triggers the server-side seed and its own response reflects
+  //      the seeded state.
+  // Either way, categories arriving is the reliable "menu is now seeded"
+  // signal — refetching then guarantees the UI converges.
   useEffect(() => {
     if (!session || !branchId) {
       setMenu([]);
@@ -482,7 +496,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [session, branchId]);
+  }, [session, branchId, categories.length]);
 
   // Load zones (server auto-provisions "Main Floor" if none exist).
   useEffect(() => {

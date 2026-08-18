@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from features.restro.category_repository import CategoryRepository
+from features.restro.seed_lock import ensure_branch_seeded
 from features.branches.repository import BranchRepository
 from utils.logger import logger
 
@@ -31,21 +32,12 @@ class CategoryService:
 
         categories = CategoryRepository.list_for_branch(db, tenant_id, branch_id)
         if not categories:
-            for i, name in enumerate(DEFAULT_CATEGORIES):
-                CategoryRepository.create(db, tenant_id, branch_id, name, display_order=i)
-            logger.info(
-                f"Auto-provisioned default categories for branch {branch_id}",
-                extra={"tenant_id": tenant_id, "branch_id": branch_id},
-            )
+            # Delegates to the shared "seed categories + menu items together"
+            # helper — same call as MenuItemService uses, so whichever endpoint
+            # fires first on a fresh branch, both categories and menu items
+            # end up seeded atomically before the response returns.
+            ensure_branch_seeded(db, tenant_id, branch_id)
             categories = CategoryRepository.list_for_branch(db, tenant_id, branch_id)
-            # Seed the default menu right after the categories exist —
-            # deferred import breaks the circular dependency (menu_seeder
-            # imports MenuItemRepository which lives in the same package).
-            try:
-                from features.restro.menu_seeder import seed_default_menu_items
-                seed_default_menu_items(db, tenant_id, branch_id)
-            except Exception as e:
-                logger.error(f"Default menu seeding failed for branch {branch_id}: {e}")
 
         return {"success": True, "categories": categories}
 
