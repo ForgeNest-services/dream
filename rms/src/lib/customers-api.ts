@@ -46,6 +46,28 @@ export interface KhataHistoryDto {
   settlements: KhataSettlementDto[];
 }
 
+// Full customer history — superset of KhataOrderEntryDto adding bill_number,
+// status, and payment_method so a manager can see cash/qr/khata activity in
+// one timeline.
+export interface CustomerOrderEntryDto {
+  id: string;
+  bill_number: number;
+  type: "dine-in" | "delivery";
+  status: "draft" | "paid" | "cancelled";
+  payment_method: "cash" | "qr" | "khata" | null;
+  placed_at: string;
+  placed_at_bs: string;
+  total: string;
+  line_count: number;
+}
+
+export interface CustomerHistoryDto {
+  total_orders: number;
+  total_spent: string;
+  outstanding_balance: string;
+  orders: CustomerOrderEntryDto[];
+}
+
 export interface CreateKhataSettlementPayload {
   amount: number;
   method: "cash" | "qr";
@@ -108,6 +130,14 @@ export const customersApi = {
   khataHistory(branchId: string, customerId: string) {
     return apiClient.get<KhataHistoryDto>(
       `/restro/branches/${branchId}/customers/${customerId}/khata-history`,
+    );
+  },
+  // Superset of khataHistory — every attached order regardless of payment
+  // method or status. Backs the customer-detail history view so a manager
+  // can see the whole activity for a repeat customer (not just khata).
+  history(branchId: string, customerId: string) {
+    return apiClient.get<CustomerHistoryDto>(
+      `/restro/branches/${branchId}/customers/${customerId}/history`,
     );
   },
 };

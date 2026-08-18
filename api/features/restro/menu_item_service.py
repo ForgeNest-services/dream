@@ -115,16 +115,19 @@ class MenuItemService:
 
     @staticmethod
     def list_for_branch(
-        db: Session, tenant_id: str, branch_id: str, category_id: str | None = None
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        category_id: str | None = None,
+        search: str | None = None,
     ) -> dict:
         if not MenuItemService._assert_branch(db, tenant_id, branch_id):
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
         # Auto-provision the default menu for branches that have categories
-        # but no items yet — covers the case where categories were seeded on
-        # older code (before menu seeding existed). Only fires on an unfiltered
-        # list (category_id is None) so a category-scoped fetch doesn't
-        # accidentally trigger it.
-        if category_id is None:
+        # but no items yet. Skipped when a filter is active (search or
+        # category) so a first "search for X" on a fresh branch doesn't seed
+        # then return an empty match set.
+        if category_id is None and not search:
             existing = MenuItemRepository.list_for_branch(db, tenant_id, branch_id, None)
             if not existing:
                 try:
@@ -133,7 +136,9 @@ class MenuItemService:
                 except Exception as e:
                     from utils.logger import logger
                     logger.error(f"Menu seed failed for branch {branch_id}: {e}")
-        items = MenuItemRepository.list_for_branch(db, tenant_id, branch_id, category_id)
+        items = MenuItemRepository.list_for_branch(
+            db, tenant_id, branch_id, category_id, search
+        )
         return {"success": True, "items": items}
 
     @staticmethod

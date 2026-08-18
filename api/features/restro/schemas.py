@@ -565,6 +565,34 @@ class KhataHistoryResponse(BaseModel):
     settlements: list[KhataSettlementData]
 
 
+class CustomerOrderEntry(BaseModel):
+    """Slim per-order row for the full customer history — all payment
+    methods, all statuses. Superset of KhataOrderEntry with the extra
+    fields needed to render a full timeline (status, payment_method,
+    bill_number for print/lookup)."""
+
+    id: str
+    bill_number: int
+    type: str
+    status: str
+    payment_method: str | None
+    placed_at: datetime
+    placed_at_bs: str
+    total: Decimal
+    line_count: int
+
+
+class CustomerHistoryResponse(BaseModel):
+    """All orders attached to a customer regardless of payment method.
+    Includes aggregate spend so the customer-detail header can show
+    'N visits · Rs X spent' at a glance without a second call."""
+
+    total_orders: int
+    total_spent: Decimal
+    outstanding_balance: Decimal
+    orders: list[CustomerOrderEntry]
+
+
 class ExpenseData(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

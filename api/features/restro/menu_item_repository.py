@@ -62,8 +62,14 @@ class MenuItemRepository:
 
     @staticmethod
     def list_for_branch(
-        db: Session, tenant_id: str, branch_id: str, category_id: str | None = None
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        category_id: str | None = None,
+        search: str | None = None,
     ) -> list[RestroMenuItem]:
+        from sqlalchemy import func, or_
+
         query = (
             db.query(RestroMenuItem)
             .options(
@@ -78,6 +84,12 @@ class MenuItemRepository:
         )
         if category_id:
             query = query.filter(RestroMenuItem.category_id == category_id)
+        if search:
+            # Case-insensitive name match. Variant names would need a subquery
+            # join — worth adding later if searching "Buff" should hit every
+            # buff momo variant; for now item name is enough.
+            term = f"%{search.strip().lower()}%"
+            query = query.filter(func.lower(RestroMenuItem.name).like(term))
         return query.order_by(RestroMenuItem.name).all()
 
     @staticmethod

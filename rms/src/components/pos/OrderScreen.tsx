@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowLeft, Minus, Plus, Printer, Receipt, Send, Trash2, UtensilsCrossed, Wallet } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Loader2, Minus, Plus, Printer, Receipt, Search, Send, Trash2, UtensilsCrossed, Wallet, X } from "lucide-react";
 import placeholder from "@/assets/menu-placeholder.jpg";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,9 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserPlus, X as XIcon } from "lucide-react";
 import { NPR, type MenuItem, type Order, type OrderCustomerRef, type RestaurantTable } from "@/lib/pos/data";
-import { useBillTotals, usePos } from "@/lib/pos/store";
+import { useBillTotals, usePos, toMenuItem } from "@/lib/pos/store";
+import { menuItemsApi } from "@/lib/menu-items-api";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { BillReceipt, KotReceipt, PrintDialog } from "./ThermalPrint";
 import { CustomerPicker } from "./CustomerPicker";
 
@@ -35,6 +37,7 @@ export function OrderScreen(props: OrderScreenProps) {
   const {
     categories,
     menu,
+    branchId: activeBranchId,
     orderForTable,
     orderById,
     addLine,
@@ -47,6 +50,7 @@ export function OrderScreen(props: OrderScreenProps) {
   } = usePos();
 
   const [activeCat, setActiveCat] = useState<string>(ALL_CATEGORY);
+  const [menuQuery, setMenuQuery] = useState("");
   const [variantItem, setVariantItem] = useState<MenuItem | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
@@ -68,8 +72,49 @@ export function OrderScreen(props: OrderScreenProps) {
   const totals = useBillTotals(order, settings.vatEnabled, settings.vatRate);
   const unsent = order?.lines.filter((l) => !l.sent).length ?? 0;
   const qty = order?.lines.reduce((s, l) => s + l.qty, 0) ?? 0;
-  const items =
-    activeCat === ALL_CATEGORY ? menu : menu.filter((m) => m.categoryId === activeCat);
+  // Browsing (empty query) uses the cached `menu` from the store — instant,
+  // no network. Search hits the backend (`?q=` on /menu-items) via a 300ms
+  // debounce so a fresh DB match set is authoritative even when the waiter
+  // is typing quickly. This is deliberately hybrid: category browsing stays
+  // instant, search proves backend-integration and stays honest to server
+  // truth (sold-out flips, renames, etc.).
+  const debouncedQuery = useDebouncedValue(menuQuery.trim(), 300);
+  const [searchResults, setSearchResults] = useState<MenuItem[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  useEffect(() => {
+    if (!activeBranchId) return;
+    if (!debouncedQuery) {
+      setSearchResults(null);
+      setSearchLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setSearchLoading(true);
+    menuItemsApi
+      .list(activeBranchId, { q: debouncedQuery })
+      .then((r) => {
+        if (cancelled) return;
+        setSearchResults((r.data ?? []).map(toMenuItem));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSearchResults([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSearchLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBranchId, debouncedQuery]);
+
+  const items = useMemo(() => {
+    if (debouncedQuery) return searchResults ?? [];
+    return activeCat === ALL_CATEGORY
+      ? menu
+      : menu.filter((m) => m.categoryId === activeCat);
+  }, [menu, debouncedQuery, searchResults, activeCat]);
   const tableLabel =
     props.mode === "dine-in" ? mergedGroup(props.table).map((t) => t.label).join(" + ") : "";
   // Dine-in: header shows table label; if a customer has been attached
@@ -120,7 +165,14 @@ export function OrderScreen(props: OrderScreenProps) {
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-      <section className="space-y-3">
+      {/* `min-w-0` is load-bearing: without it the section is a grid child
+          with default `min-width: auto` and any inner overflow-x container
+          (the menu-items scroll strip) stretches the whole section past
+          the viewport — which in turn stretched the Menu/Bill segmented
+          control off both edges of the screen. With min-w-0 the section
+          can shrink to viewport width and inner overflow-x actually clips
+          + scrolls, as intended. */}
+      <section className="min-w-0 space-y-3">
         {/* Order header — back, table label, attach-customer chip. */}
         <div className="flex items-center gap-2">
           <Button
@@ -161,83 +213,123 @@ export function OrderScreen(props: OrderScreenProps) {
           )}
         </div>
 
-        {/* Mobile-only Menu ↔ Bill toggle. Bill button shows the running
-            total so waiters see at a glance whether they need to jump over.
-            Hidden on xl+ where the split layout renders both side-by-side. */}
-        <div className="grid grid-cols-2 gap-2 xl:hidden">
+        {/* Mobile-only Menu ↔ Bill segmented control. Both buttons sit in a
+            shared background pill; active one flips to the primary color.
+            This pattern (vs two standalone buttons with alternating bgs)
+            guarantees the boundary between them stays visible even when the
+            inactive tint is near-transparent, and keeps the whole strip
+            visually recognizable as a single "switcher". Hidden on xl+
+            where the split layout renders both panels side-by-side. */}
+        <div className="flex gap-1 rounded-xl border border-border bg-secondary/60 p-1 xl:hidden">
           <button
             type="button"
             onClick={() => setMobileView("menu")}
-            className={`flex min-h-12 items-center justify-center gap-2 rounded-xl text-sm font-medium transition-colors ${
+            aria-pressed={showMenuOnMobile}
+            className={`flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors ${
               showMenuOnMobile
-                ? "bg-primary text-primary-foreground"
-                : "bg-secondary text-foreground"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-transparent text-foreground"
             }`}
           >
             <UtensilsCrossed className="size-4" />
-            Menu
+            <span>Menu</span>
           </button>
           <button
             type="button"
             onClick={() => setMobileView("bill")}
-            className={`flex min-h-12 items-center justify-between gap-2 rounded-xl px-3 text-sm font-medium transition-colors ${
+            aria-pressed={showBillOnMobile}
+            className={`flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg px-2 text-sm font-medium transition-colors ${
               showBillOnMobile
-                ? "bg-primary text-primary-foreground"
-                : "bg-secondary text-foreground"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-transparent text-foreground"
             }`}
           >
-            <span className="flex items-center gap-2">
-              <Receipt className="size-4" />
-              Bill
-              {qty > 0 && (
-                <span
-                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-                    showBillOnMobile ? "bg-white/25" : "bg-primary/15 text-primary"
-                  }`}
-                >
-                  {qty}
-                </span>
-              )}
-            </span>
-            <span className="font-display text-sm">{NPR(totals.total)}</span>
+            <Receipt className="size-4" />
+            <span>Bill</span>
+            {qty > 0 && (
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
+                  showBillOnMobile ? "bg-white/25" : "bg-primary/15 text-primary"
+                }`}
+              >
+                {qty}
+              </span>
+            )}
+            {totals.total > 0 && (
+              <span className="ml-auto font-display text-sm">
+                {NPR(totals.total)}
+              </span>
+            )}
           </button>
         </div>
 
         {/* Menu grid — hidden on mobile when Bill tab is active. */}
         <div className={showMenuOnMobile ? "space-y-3" : "hidden xl:block xl:space-y-3"}>
-          <Tabs value={activeCat} onValueChange={setActiveCat}>
-            <TabsList className="h-11 w-full justify-start overflow-x-auto">
-              <TabsTrigger
-                value={ALL_CATEGORY}
-                className="h-9 shrink-0 px-3 text-xs sm:text-sm"
+          {/* Search — instant client-side filter across the whole menu.
+              Matches item name AND variant names ("Buff" hits every buff
+              momo variant). Search wins over the category filter when
+              active, so waiters can find an item without knowing which
+              category it's in. */}
+          <div className="relative">
+            {searchLoading ? (
+              <Loader2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+            ) : (
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            )}
+            <Input
+              value={menuQuery}
+              onChange={(e) => setMenuQuery(e.target.value)}
+              placeholder="Search menu…"
+              className="h-11 pl-9 pr-9"
+            />
+            {menuQuery && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setMenuQuery("")}
+                className="absolute right-2 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
               >
-                All
-              </TabsTrigger>
-              {categories.map((c) => (
-                <TabsTrigger key={c.id} value={c.id} className="h-9 shrink-0 px-3 text-xs sm:text-sm">
-                  {c.name}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+                <X className="size-4" />
+              </button>
+            )}
+          </div>
 
-          {/* Mobile: horizontal-scrolling strip of compact cards, one row
-              per category (waiter swipes left/right to browse). Snap so
-              cards align neatly under the thumb. Tablet+ falls back to the
-              regular grid, which stays denser as viewport grows.
-              Negative margins bleed the scroll edge past the parent's
-              padding so the first card starts at the section edge. */}
-          <div className="-mx-1 flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-2 sm:mx-0 sm:grid sm:snap-none sm:grid-cols-4 sm:gap-2.5 sm:overflow-visible sm:px-0 sm:pb-0 md:grid-cols-5 xl:grid-cols-4 2xl:grid-cols-5">
+          {/* Categories are hidden while a search is active — the results
+              are already cross-category, category chips would be misleading
+              (they'd suggest filtering results, but search overrides them). */}
+          {!menuQuery && (
+            <Tabs value={activeCat} onValueChange={setActiveCat}>
+              <TabsList className="h-11 w-full justify-start overflow-x-auto">
+                <TabsTrigger
+                  value={ALL_CATEGORY}
+                  className="h-9 shrink-0 px-3 text-xs sm:text-sm"
+                >
+                  All
+                </TabsTrigger>
+                {categories.map((c) => (
+                  <TabsTrigger key={c.id} value={c.id} className="h-9 shrink-0 px-3 text-xs sm:text-sm">
+                    {c.name}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          )}
+
+          {/* Wrapping grid — 3 columns on mobile (compact cards, plenty per
+              screen), scales up on wider viewports. No horizontal scroll:
+              items wrap onto new rows so the waiter can scan vertically
+              like a normal menu. */}
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-2.5 md:grid-cols-5 xl:grid-cols-4 2xl:grid-cols-5">
             {items.map((item) => (
               <button
                 key={item.id}
                 disabled={item.soldOut}
                 onClick={() => (item.hasVariants ? setVariantItem(item) : add(item))}
-                className={`pos-card flex w-24 shrink-0 snap-start flex-col overflow-hidden text-left transition-transform active:scale-[0.98] sm:w-auto sm:shrink ${
+                className={`pos-card flex flex-col overflow-hidden text-left transition-transform active:scale-[0.98] ${
                   item.soldOut ? "cursor-not-allowed opacity-45 grayscale" : "hover:border-primary"
                 }`}
               >
-                <div className="flex h-16 w-full items-center justify-center bg-secondary sm:h-28 md:h-32 xl:h-32">
+                <div className="flex h-20 w-full items-center justify-center bg-secondary sm:h-28 md:h-32 xl:h-32">
                   <img
                     src={item.image || placeholder}
                     alt={item.name}
@@ -248,10 +340,10 @@ export function OrderScreen(props: OrderScreenProps) {
                   />
                 </div>
                 <div className="flex-1 p-1.5 sm:p-2">
-                  <p className="line-clamp-2 text-[10px] font-medium leading-tight sm:text-sm">
+                  <p className="line-clamp-2 text-[11px] font-medium leading-tight sm:text-sm">
                     {item.name}
                   </p>
-                  <p className="mt-0.5 text-[10px] font-semibold text-primary sm:mt-1 sm:text-sm">
+                  <p className="mt-0.5 text-[11px] font-semibold text-primary sm:mt-1 sm:text-sm">
                     {item.hasVariants ? `${item.variants.length} opts` : NPR(item.price ?? 0)}
                   </p>
                   {item.soldOut && (
@@ -263,8 +355,8 @@ export function OrderScreen(props: OrderScreenProps) {
               </button>
             ))}
             {items.length === 0 && (
-              <p className="pos-card w-full p-6 text-center text-sm text-muted-foreground sm:col-span-full">
-                No items in this category.
+              <p className="pos-card col-span-full p-6 text-center text-sm text-muted-foreground">
+                {menuQuery ? `No items match "${menuQuery}".` : "No items in this category."}
               </p>
             )}
           </div>

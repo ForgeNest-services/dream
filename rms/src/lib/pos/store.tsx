@@ -206,7 +206,11 @@ function toCustomer(dto: CustomerDto): Customer {
   };
 }
 
-function toMenuItem(m: MenuItemDto): MenuItem {
+// Exported so consumers that hit /menu-items directly (e.g. OrderScreen's
+// backend-search path) can normalize server DTOs into the same in-memory
+// shape the rest of the app uses. Kept internal-flavoured — not for random
+// call sites — but sharing beats duplicating the mapping.
+export function toMenuItem(m: MenuItemDto): MenuItem {
   return {
     id: m.id,
     name: m.name,

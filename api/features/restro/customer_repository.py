@@ -98,6 +98,25 @@ class CustomerRepository:
         )
 
     @staticmethod
+    def list_all_orders(
+        db: Session, tenant_id: str, customer_id: str, limit: int = 100
+    ) -> list[RestroOrder]:
+        """Every order attached to this customer, regardless of payment
+        method or status — cash, qr, khata, draft, cancelled, all of it.
+        Used by the customer-detail history view so a manager can see the
+        full activity for a repeat visitor (not just khata)."""
+        return (
+            db.query(RestroOrder)
+            .filter(
+                RestroOrder.tenant_id == tenant_id,
+                RestroOrder.customer_id == customer_id,
+            )
+            .order_by(desc(RestroOrder.placed_at))
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
     def update(
         db: Session,
         customer: RestroCustomer,
