@@ -70,9 +70,19 @@ export interface UpdateMenuItemPayload {
 }
 
 export const menuItemsApi = {
-  list(branchId: string, categoryId?: string) {
-    const query = categoryId ? `?category_id=${encodeURIComponent(categoryId)}` : "";
-    return apiClient.get<MenuItemDto[]>(`/restro/branches/${branchId}/menu-items${query}`);
+  // `q` is a case-insensitive substring match on item name. Optional —
+  // the OrderScreen uses a client-side filter over the cached menu (faster,
+  // no round-trip per keystroke). `q` here is for any caller that doesn't
+  // have the whole menu cached, or for a future "search across all
+  // branches" flow.
+  list(branchId: string, opts: { categoryId?: string; q?: string } = {}) {
+    const params = new URLSearchParams();
+    if (opts.categoryId) params.set("category_id", opts.categoryId);
+    if (opts.q) params.set("q", opts.q);
+    const qs = params.toString();
+    return apiClient.get<MenuItemDto[]>(
+      `/restro/branches/${branchId}/menu-items${qs ? `?${qs}` : ""}`,
+    );
   },
   create(branchId: string, payload: CreateMenuItemPayload) {
     return apiClient.post<MenuItemDto>(`/restro/branches/${branchId}/menu-items`, payload);

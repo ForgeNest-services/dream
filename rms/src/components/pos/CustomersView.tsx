@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { NPR, type Customer } from "@/lib/pos/data";
 import { usePos } from "@/lib/pos/store";
-import { KhataHistoryDialog } from "./KhataHistoryDialog";
+import { CustomerDetailDialog } from "./CustomerDetailDialog";
 import { KhataSettleDialog } from "./KhataSettleDialog";
 
 const blank = (): Customer => ({
@@ -182,7 +182,7 @@ export function CustomersView() {
       )}
 
       {historyTarget && (
-        <KhataHistoryDialog
+        <CustomerDetailDialog
           customer={historyTarget}
           onClose={() => setHistoryTarget(null)}
         />

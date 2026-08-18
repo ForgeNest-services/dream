@@ -52,6 +52,8 @@ from features.restro.schemas import (
     KhataSettlementData,
     KhataOrderEntry,
     KhataHistoryResponse,
+    CustomerOrderEntry,
+    CustomerHistoryResponse,
     RestroTenantInfo,
     BranchSettingsData,
     UpdateBranchSettingsRequest,
@@ -631,11 +633,16 @@ def _menu_item_error(code: str):
 def list_menu_items(
     branch_id: str,
     category_id: str | None = None,
+    q: str | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
+    """`q` is a case-insensitive substring match on the item name. Kept
+    optional so existing callers that only pass category_id still work."""
     _assert_branch_scope(staff, branch_id)
-    result = MenuItemService.list_for_branch(db, staff["tenant_id"], branch_id, category_id)
+    result = MenuItemService.list_for_branch(
+        db, staff["tenant_id"], branch_id, category_id, q
+    )
     if not result["success"]:
         return _menu_item_error(result["error_code"])
     return success_response(
@@ -2105,6 +2112,54 @@ def khata_history(
         credits_total=credits_total,
         orders=order_entries,
         settlements=[KhataSettlementData.model_validate(s) for s in settlements],
+    )
+    return success_response(data=payload.model_dump(mode="json"))
+
+
+@router.get("/branches/{branch_id}/customers/{customer_id}/history")
+def customer_history(
+    branch_id: str,
+    customer_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """All orders attached to a customer — cash, qr, khata, draft, cancelled.
+    Superset of /khata-history. Backs the customer-detail view so a manager
+    can see the full activity for a repeat visitor, not just khata debts.
+
+    `total_spent` sums closed (paid) orders only — draft/cancelled don't
+    count toward lifetime value. `outstanding_balance` is the live khata
+    balance (same value as /khata-history's balance field)."""
+    _assert_branch_scope(staff, branch_id)
+    tenant_id = staff["tenant_id"]
+    customer = CustomerRepository.get_by_id(db, tenant_id, customer_id)
+    if not customer or customer.branch_id != branch_id or not customer.is_active:
+        return error_response("CUSTOMER_NOT_FOUND", "Customer not found.", 404)
+
+    orders = CustomerRepository.list_all_orders(db, tenant_id, customer_id)
+    entries = [
+        CustomerOrderEntry(
+            id=o.id,
+            bill_number=o.bill_number,
+            type=o.type,
+            status=o.status,
+            payment_method=o.payment_method,
+            placed_at=o.placed_at,
+            placed_at_bs=o.placed_at_bs,
+            total=compute_order_total(o),
+            line_count=sum(1 for l in o.lines if not l.is_voided),
+        )
+        for o in orders
+    ]
+    total_spent = sum(
+        (e.total for e in entries if e.status == "paid"), Decimal("0")
+    )
+    balance = OrderService.outstanding_balance(db, tenant_id, customer_id)
+    payload = CustomerHistoryResponse(
+        total_orders=len(entries),
+        total_spent=total_spent,
+        outstanding_balance=balance,
+        orders=entries,
     )
     return success_response(data=payload.model_dump(mode="json"))
 

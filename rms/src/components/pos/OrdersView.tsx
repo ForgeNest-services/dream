@@ -159,10 +159,14 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
     per_page: search.per_page,
   });
 
-  const label = (o: OrderDto) =>
-    o.type === "delivery"
-      ? (o.customer?.name ?? "Delivery")
-      : (tables.find((t) => t.id === o.table_id)?.label ?? "Walk-in");
+  // Dine-in with a customer attached shows "T1 · Sabin" so the customer's
+  // name surfaces on the bills list — previously the row read just "T1"
+  // and the attach-customer action looked like it did nothing.
+  const label = (o: OrderDto) => {
+    if (o.type === "delivery") return o.customer?.name ?? "Delivery";
+    const table = tables.find((t) => t.id === o.table_id)?.label ?? "Walk-in";
+    return o.customer?.name ? `${table} · ${o.customer.name}` : table;
+  };
 
   // Convert a DTO order → the client-side `Order` shape that BillReceipt +
   // billTotals expect. Only the fields those consumers actually read.
