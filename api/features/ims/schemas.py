@@ -60,3 +60,49 @@ class StaffLoginResponse(BaseModel):
     tenant_id: str
     branch_id: str | None
     expires_at: datetime
+
+
+class CategoryData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    parent_id: str | None
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateCategoryRequest(BaseModel):
+    name: str
+    parent_id: str | None = None
+
+
+class UpdateCategoryRequest(BaseModel):
+    name: str
+
+
+class BrandData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateBrandRequest(BaseModel):
+    name: str
+
+
+class UnitData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    name: str
+    symbol: str
+    allows_decimals: bool
+    created_at: datetime
+    updated_at: datetime

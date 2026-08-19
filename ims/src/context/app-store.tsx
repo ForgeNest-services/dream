@@ -10,9 +10,17 @@ import {
 import { createSeedData, makeFiscalYear, type SeedData } from "@/data/mock";
 import { authApi } from "@/lib/auth-api";
 import { authStorage } from "@/lib/auth-storage";
+import { branchesApi, branchCode, type BranchDto } from "@/lib/branches-api";
+import { categoriesApi, type CategoryDto } from "@/lib/categories-api";
+import { brandsApi, type BrandDto } from "@/lib/brands-api";
+import { unitsApi, type UnitDto } from "@/lib/units-api";
+import { ApiError } from "@/lib/api-client";
+import { toast } from "sonner";
 import {
   ROLE_MODULES,
   ROLE_PERMISSIONS,
+  type Branch,
+  type Brand,
   type Category,
   type CompanyProfile,
   type DateSystem,
@@ -28,9 +36,29 @@ import {
   type PurchaseLine,
   type PaymentMethod,
   type StockMovement,
+  type Unit,
   type User,
   type Variant,
 } from "@/data/types";
+
+const toBranch = (b: BranchDto): Branch => ({
+  id: b.id,
+  name: b.name,
+  code: branchCode(b.name),
+  address: b.address ?? "",
+});
+const toCategory = (c: CategoryDto): Category => ({
+  id: c.id,
+  name: c.name,
+  parentId: c.parent_id,
+});
+const toBrand = (b: BrandDto): Brand => ({ id: b.id, name: b.name });
+const toUnit = (u: UnitDto): Unit => ({
+  id: u.id,
+  name: u.name,
+  symbol: u.symbol,
+  allowsDecimals: u.allows_decimals,
+});
 
 /** A product entered on a purchase bill — either an existing one or a brand new one. */
 export type PurchaseDraftItem =
@@ -113,10 +141,10 @@ interface AppContextValue extends AppState {
     stockBranchId: string,
   ) => void;
   updateProduct: (id: string, patch: Partial<Product>, variants: Variant[]) => void;
-  addCategory: (name: string, parentId: string | null) => void;
-  renameCategory: (id: string, name: string) => void;
-  deleteCategory: (id: string) => void;
-  addBrand: (name: string) => void;
+  addCategory: (name: string, parentId: string | null) => Promise<{ ok: boolean; error?: string }>;
+  renameCategory: (id: string, name: string) => Promise<{ ok: boolean; error?: string }>;
+  deleteCategory: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  addBrand: (name: string) => Promise<{ ok: boolean; error?: string }>;
   addMedia: (item: Omit<MediaItem, "id" | "uploadedAt">) => MediaItem;
   adjustStock: (input: {
     variantId: string;
@@ -223,6 +251,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
     authStorage.clear();
     setState((s) => ({ ...s, currentUser: null, viewAsRole: null }));
   }, []);
+
+  // Once real staff auth is in place, branches/categories/brands/units are
+  // real per-tenant data — fetch them whenever a session becomes active.
+  // Everything else (products, purchases, invoices, parties...) stays on
+  // mock data until its own phase.
+  useEffect(() => {
+    if (!state.currentUser) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [branchesRes, categoriesRes, brandsRes, unitsRes] = await Promise.all([
+          branchesApi.listMine(),
+          categoriesApi.list(),
+          brandsApi.list(),
+          unitsApi.list(),
+        ]);
+        if (cancelled) return;
+        setState((s) => ({
+          ...s,
+          branches: (branchesRes.data ?? []).map(toBranch),
+          categories: (categoriesRes.data ?? []).map(toCategory),
+          brands: (brandsRes.data ?? []).map(toBrand),
+          units: (unitsRes.data ?? []).map(toUnit),
+        }));
+      } catch (e) {
+        if (e instanceof ApiError) {
+          toast.error("Could not load branches/categories", { description: e.message });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.currentUser?.id]);
 
   const value = useMemo<AppContextValue>(() => {
     const fiscalYear =
@@ -364,23 +427,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
           variants: [...s.variants.filter((v) => v.productId !== id), ...vs],
         })),
 
-      addCategory: (name, parentId) =>
-        setState((s) => ({
-          ...s,
-          categories: [...s.categories, { id: nextId("c"), name, parentId }],
-        })),
-      renameCategory: (id, name) =>
-        setState((s) => ({
-          ...s,
-          categories: s.categories.map((c) => (c.id === id ? { ...c, name } : c)),
-        })),
-      deleteCategory: (id) =>
-        setState((s) => ({
-          ...s,
-          categories: s.categories.filter((c) => c.id !== id && c.parentId !== id),
-        })),
-      addBrand: (name) =>
-        setState((s) => ({ ...s, brands: [...s.brands, { id: nextId("b"), name }] })),
+      addCategory: async (name, parentId) => {
+        try {
+          const res = await categoriesApi.create(name, parentId);
+          if (!res.success || !res.data) return { ok: false, error: "Failed to create category" };
+          const created = toCategory(res.data);
+          setState((s) => ({ ...s, categories: [...s.categories, created] }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to create category" };
+        }
+      },
+      renameCategory: async (id, name) => {
+        try {
+          const res = await categoriesApi.rename(id, name);
+          if (!res.success || !res.data) return { ok: false, error: "Failed to rename category" };
+          const updated = toCategory(res.data);
+          setState((s) => ({
+            ...s,
+            categories: s.categories.map((c) => (c.id === id ? updated : c)),
+          }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to rename category" };
+        }
+      },
+      deleteCategory: async (id) => {
+        try {
+          const res = await categoriesApi.delete(id);
+          if (!res.success) return { ok: false, error: "Failed to delete category" };
+          setState((s) => ({ ...s, categories: s.categories.filter((c) => c.id !== id) }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to delete category" };
+        }
+      },
+      addBrand: async (name) => {
+        try {
+          const res = await brandsApi.create(name);
+          if (!res.success || !res.data) return { ok: false, error: "Failed to create brand" };
+          const created = toBrand(res.data);
+          setState((s) => ({ ...s, brands: [...s.brands, created] }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to create brand" };
+        }
+      },
       addMedia: (item) => {
         const created: MediaItem = {
           ...item,

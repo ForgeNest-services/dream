@@ -74,6 +74,8 @@ export interface User {
 export interface Branch {
   id: string;
   name: string;
+  /** Short display code — derived client-side (first letters of the name),
+   *  not stored on the backend, which has no use for it beyond IMS's UI. */
   code: string;
   address: string;
 }
