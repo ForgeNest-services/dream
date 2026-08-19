@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_ims_staff
 from utils.helpers import success_response, error_response
+from utils.paging import parse_paging, build_meta
 from features.ims.schemas import (
     CreateCredentialRequest,
     UpdateCredentialRequest,
@@ -15,11 +16,21 @@ from features.ims.schemas import (
     BrandData,
     CreateBrandRequest,
     UnitData,
+    ProductData,
+    CreateProductRequest,
+    UpdateProductRequest,
+    StockMovementData,
+    AdjustStockRequest,
+    RestockRequest,
+    MediaData,
 )
 from features.ims.service import IMSCredentialService, IMSAuthService
 from features.ims.category_service import IMSCategoryService
 from features.ims.brand_service import IMSBrandService
 from features.ims.unit_service import IMSUnitService
+from features.ims.product_service import IMSProductService
+from features.ims.media_service import IMSMediaService
+from features.ims.stock_service import IMSStockService
 
 
 router = APIRouter(prefix="/ims", tags=["ims"])
@@ -295,3 +306,277 @@ def list_units(
     return success_response(
         data=[UnitData.model_validate(u).model_dump(mode="json") for u in units]
     )
+
+
+# ---------------------------------------------------------------------------
+# Products (staff-facing, tenant-wide catalog; stock is per-branch)
+# ---------------------------------------------------------------------------
+
+_PRODUCT_ERROR_MAP = {
+    "PRODUCT_NOT_FOUND": ("PRODUCT_NOT_FOUND", "Product not found.", 404),
+    "CATEGORY_NOT_FOUND": ("CATEGORY_NOT_FOUND", "Category not found.", 404),
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "SKU_TAKEN": ("SKU_TAKEN", "This SKU is already in use.", 409),
+    "VARIANTS_REQUIRED": ("VARIANTS_REQUIRED", "Add at least one variant.", 422),
+    "VARIANT_HAS_HISTORY": (
+        "VARIANT_HAS_HISTORY",
+        "That variant has stock movement history and can't be removed.",
+        409,
+    ),
+}
+
+
+def _product_error(code: str):
+    mapped = _PRODUCT_ERROR_MAP.get(code, ("CREATION_FAILED", "Failed to save product.", 500))
+    return error_response(*mapped)
+
+
+@router.get("/products")
+def list_products(
+    q: str | None = None,
+    category_id: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    paging = parse_paging(page, per_page)
+    result = IMSProductService.list_for_tenant(
+        db, staff["tenant_id"], q, category_id, paging["offset"], paging["limit"]
+    )
+    return success_response(
+        data=[ProductData.from_orm_with_variants(p).model_dump(mode="json") for p in result["products"]],
+        meta=build_meta(result["total"], paging["page"], paging["per_page"]),
+    )
+
+
+@router.get("/products/{product_id}")
+def get_product(
+    product_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    result = IMSProductService.get(db, staff["tenant_id"], product_id)
+    if not result["success"]:
+        return _product_error(result["error_code"])
+    return success_response(data=ProductData.from_orm_with_variants(result["product"]).model_dump(mode="json"))
+
+
+@router.post("/products")
+def create_product(
+    data: CreateProductRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager", "storekeeper"):
+        raise HTTPException(403, "Not allowed to create products")
+    result = IMSProductService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id_for_stock=data.branch_id_for_stock,
+        user_id=staff.get("cred_id") or "",
+        name=data.name,
+        sku=data.sku,
+        category_id=data.category_id,
+        brand_id=data.brand_id,
+        media_id=data.media_id,
+        description=data.description,
+        taxable=data.taxable,
+        tax_rate=data.tax_rate,
+        variants=[v.model_dump() for v in data.variants],
+    )
+    if not result["success"]:
+        return _product_error(result["error_code"])
+    return success_response(
+        data=ProductData.from_orm_with_variants(result["product"]).model_dump(mode="json"),
+        message="Product created",
+        status_code=201,
+    )
+
+
+@router.patch("/products/{product_id}")
+def update_product(
+    product_id: str,
+    data: UpdateProductRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager", "storekeeper"):
+        raise HTTPException(403, "Not allowed to edit products")
+    result = IMSProductService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        product_id=product_id,
+        name=data.name,
+        sku=data.sku,
+        category_id=data.category_id,
+        brand_id=data.brand_id,
+        media_id=data.media_id,
+        description=data.description,
+        taxable=data.taxable,
+        tax_rate=data.tax_rate,
+        variants=[v.model_dump() for v in data.variants],
+    )
+    if not result["success"]:
+        return _product_error(result["error_code"])
+    return success_response(
+        data=ProductData.from_orm_with_variants(result["product"]).model_dump(mode="json"),
+        message="Product updated",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Stock movements (staff-facing) — adjust, restock, and the audit trail list
+# ---------------------------------------------------------------------------
+
+_STOCK_ERROR_MAP = {
+    "VARIANT_NOT_FOUND": ("VARIANT_NOT_FOUND", "Variant not found.", 404),
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "INVALID_QTY": ("INVALID_QTY", "Quantity must be greater than zero.", 422),
+}
+
+
+def _stock_error(code: str):
+    mapped = _STOCK_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to update stock.", 500))
+    return error_response(*mapped)
+
+
+@router.post("/stock/adjust")
+def adjust_stock(
+    data: AdjustStockRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager", "storekeeper"):
+        raise HTTPException(403, "Not allowed to adjust stock")
+    result = IMSStockService.adjust(
+        db,
+        tenant_id=staff["tenant_id"],
+        variant_id=data.variant_id,
+        branch_id=data.branch_id,
+        qty=data.qty,
+        reason=data.reason,
+        date=data.date,
+        user_id=staff.get("cred_id") or "",
+    )
+    if not result["success"]:
+        return _stock_error(result["error_code"])
+    return success_response(
+        data=StockMovementData.model_validate(result["movement"]).model_dump(mode="json"),
+        message="Stock adjusted",
+    )
+
+
+@router.post("/stock/restock")
+def restock(
+    data: RestockRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager", "storekeeper"):
+        raise HTTPException(403, "Not allowed to restock")
+    result = IMSStockService.restock(
+        db,
+        tenant_id=staff["tenant_id"],
+        variant_id=data.variant_id,
+        branch_id=data.branch_id,
+        qty=data.qty,
+        unit_cost=data.unit_cost,
+        date=data.date,
+        user_id=staff.get("cred_id") or "",
+        supplier_id=data.supplier_id,
+        reference=data.reference,
+    )
+    if not result["success"]:
+        return _stock_error(result["error_code"])
+    return success_response(
+        data=StockMovementData.model_validate(result["movement"]).model_dump(mode="json"),
+        message="Stock received",
+    )
+
+
+@router.get("/stock/movements")
+def list_movements(
+    branch_id: str | None = None,
+    variant_id: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    paging = parse_paging(page, per_page)
+    result = IMSStockService.list_movements(
+        db, staff["tenant_id"], branch_id, variant_id, paging["offset"], paging["limit"]
+    )
+    return success_response(
+        data=[StockMovementData.model_validate(m).model_dump(mode="json") for m in result["movements"]],
+        meta=build_meta(result["total"], paging["page"], paging["per_page"]),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Media Center (staff-facing, tenant-wide reusable image library)
+# ---------------------------------------------------------------------------
+
+_MEDIA_ERROR_MAP = {
+    "UNSUPPORTED_FILE_TYPE": ("UNSUPPORTED_FILE_TYPE", "File type not allowed.", 415),
+    "FILE_TOO_LARGE": ("FILE_TOO_LARGE", "File must be 5MB or smaller.", 413),
+    "MEDIA_NOT_FOUND": ("MEDIA_NOT_FOUND", "Image not found.", 404),
+    "MEDIA_IN_USE": ("MEDIA_IN_USE", "This image is used by one or more products.", 409),
+}
+
+
+def _media_error(code: str):
+    mapped = _MEDIA_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to process image.", 500))
+    return error_response(*mapped)
+
+
+@router.get("/media")
+def list_media(
+    q: str | None = None,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    items = IMSMediaService.list_for_tenant(db, staff["tenant_id"], q)
+    return success_response(data=[MediaData.model_validate(m).model_dump(mode="json") for m in items])
+
+
+@router.post("/media")
+async def upload_media(
+    folder: str = Form("Uploads"),
+    file: UploadFile = File(...),
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager", "storekeeper"):
+        raise HTTPException(403, "Not allowed to upload images")
+    content = await file.read()
+    result = IMSMediaService.upload(
+        db,
+        tenant_id=staff["tenant_id"],
+        filename=file.filename or "upload",
+        content=content,
+        content_type=file.content_type or "",
+        folder=folder,
+    )
+    if not result["success"]:
+        return _media_error(result["error_code"])
+    return success_response(
+        data=MediaData.model_validate(result["media"]).model_dump(mode="json"),
+        message="Image uploaded",
+        status_code=201,
+    )
+
+
+@router.delete("/media/{media_id}")
+def delete_media(
+    media_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can delete images")
+    result = IMSMediaService.delete(db, staff["tenant_id"], media_id)
+    if not result["success"]:
+        return _media_error(result["error_code"])
+    return success_response(data={"deleted": True}, message="Image removed")

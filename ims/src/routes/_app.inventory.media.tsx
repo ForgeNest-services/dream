@@ -19,7 +19,7 @@ import {
 import { useApp } from "@/context/app-store";
 import { createFileRoute } from "@tanstack/react-router";
 import { Search, Upload } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/inventory/media")({
@@ -48,9 +48,10 @@ function MediaPage() {
   const [q, setQ] = useState("");
   const [folder, setFolder] = useState("all");
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
   const [newFolder, setNewFolder] = useState("General");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const folders = useMemo(
     () => Array.from(new Set(app.media.map((m) => m.folder))),
@@ -124,28 +125,33 @@ function MediaPage() {
         </div>
       )}
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o);
+          if (!o) setSelectedFile(null);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Upload image</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+            />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex w-full flex-col items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground hover:border-primary/50"
+            >
               <Upload className="mb-2 h-5 w-5" />
-              Drop a file here — in this prototype, paste an image URL below.
-            </div>
-            <div className="space-y-1.5">
-              <Label>Image name</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Image URL</Label>
-              <Input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://…"
-              />
-            </div>
+              {selectedFile ? selectedFile.name : "Click to choose an image"}
+            </button>
             <div className="space-y-1.5">
               <Label>Folder</Label>
               <Input value={newFolder} onChange={(e) => setNewFolder(e.target.value)} />
@@ -156,24 +162,28 @@ function MediaPage() {
               Cancel
             </Button>
             <Button
-              onClick={() => {
-                if (!name.trim() || !url.trim()) {
-                  toast.error("Name and image URL are required");
+              disabled={uploading}
+              onClick={async () => {
+                if (!selectedFile) {
+                  toast.error("Choose an image first");
                   return;
                 }
-                app.addMedia({
-                  name: name.trim(),
-                  url: url.trim(),
-                  folder: newFolder.trim() || "General",
-                  sizeKb: 120,
-                });
-                setName("");
-                setUrl("");
-                setOpen(false);
-                toast.success("Image added to Media Center");
+                setUploading(true);
+                try {
+                  const res = await app.addMedia(selectedFile, newFolder.trim() || "General");
+                  if (!res.ok) {
+                    toast.error(res.error ?? "Upload failed");
+                    return;
+                  }
+                  setSelectedFile(null);
+                  setOpen(false);
+                  toast.success("Image added to Media Center");
+                } finally {
+                  setUploading(false);
+                }
               }}
             >
-              Add to library
+              {uploading ? "Uploading…" : "Add to library"}
             </Button>
           </DialogFooter>
         </DialogContent>

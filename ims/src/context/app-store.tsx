@@ -14,6 +14,7 @@ import { branchesApi, branchCode, type BranchDto } from "@/lib/branches-api";
 import { categoriesApi, type CategoryDto } from "@/lib/categories-api";
 import { brandsApi, type BrandDto } from "@/lib/brands-api";
 import { unitsApi, type UnitDto } from "@/lib/units-api";
+import { mediaApi, type MediaDto } from "@/lib/media-api";
 import { ApiError } from "@/lib/api-client";
 import { toast } from "sonner";
 import {
@@ -53,6 +54,14 @@ const toCategory = (c: CategoryDto): Category => ({
   parentId: c.parent_id,
 });
 const toBrand = (b: BrandDto): Brand => ({ id: b.id, name: b.name });
+const toMedia = (m: MediaDto): MediaItem => ({
+  id: m.id,
+  name: m.name,
+  url: m.url,
+  folder: m.folder,
+  sizeKb: m.size_kb,
+  uploadedAt: m.uploaded_at,
+});
 const toUnit = (u: UnitDto): Unit => ({
   id: u.id,
   name: u.name,
@@ -145,7 +154,7 @@ interface AppContextValue extends AppState {
   renameCategory: (id: string, name: string) => Promise<{ ok: boolean; error?: string }>;
   deleteCategory: (id: string) => Promise<{ ok: boolean; error?: string }>;
   addBrand: (name: string) => Promise<{ ok: boolean; error?: string }>;
-  addMedia: (item: Omit<MediaItem, "id" | "uploadedAt">) => MediaItem;
+  addMedia: (file: File, folder: string) => Promise<{ ok: boolean; media?: MediaItem; error?: string }>;
   adjustStock: (input: {
     variantId: string;
     branchId: string;
@@ -261,11 +270,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const [branchesRes, categoriesRes, brandsRes, unitsRes] = await Promise.all([
+        const [branchesRes, categoriesRes, brandsRes, unitsRes, mediaRes] = await Promise.all([
           branchesApi.listMine(),
           categoriesApi.list(),
           brandsApi.list(),
           unitsApi.list(),
+          mediaApi.list(),
         ]);
         if (cancelled) return;
         setState((s) => ({
@@ -274,6 +284,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           categories: (categoriesRes.data ?? []).map(toCategory),
           brands: (brandsRes.data ?? []).map(toBrand),
           units: (unitsRes.data ?? []).map(toUnit),
+          media: (mediaRes.data ?? []).map(toMedia),
         }));
       } catch (e) {
         if (e instanceof ApiError) {
@@ -473,14 +484,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return { ok: false, error: e instanceof ApiError ? e.message : "Failed to create brand" };
         }
       },
-      addMedia: (item) => {
-        const created: MediaItem = {
-          ...item,
-          id: nextId("m"),
-          uploadedAt: new Date().toISOString(),
-        };
-        setState((s) => ({ ...s, media: [created, ...s.media] }));
-        return created;
+      addMedia: async (file, folder) => {
+        try {
+          const dto = await mediaApi.upload(file, folder);
+          const created = toMedia(dto);
+          setState((s) => ({ ...s, media: [created, ...s.media] }));
+          return { ok: true, media: created };
+        } catch (e) {
+          return { ok: false, error: e instanceof Error ? e.message : "Upload failed" };
+        }
       },
 
       adjustStock: ({ variantId, branchId, qty, reason, date }) =>

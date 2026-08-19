@@ -27,6 +27,11 @@ from .ims_credential import IMSCredential
 from .ims_category import IMSCategory
 from .ims_brand import IMSBrand
 from .ims_unit import IMSUnit
+from .ims_product import IMSProduct
+from .ims_variant import IMSVariant
+from .ims_variant_stock import IMSVariantStock
+from .ims_stock_movement import IMSStockMovement
+from .ims_media import IMSMedia
 from .app import App
 
 __all__ = [
@@ -59,5 +64,10 @@ __all__ = [
     "IMSCategory",
     "IMSBrand",
     "IMSUnit",
+    "IMSProduct",
+    "IMSVariant",
+    "IMSVariantStock",
+    "IMSStockMovement",
+    "IMSMedia",
     "App",
 ]

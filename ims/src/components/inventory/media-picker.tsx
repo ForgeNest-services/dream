@@ -70,19 +70,21 @@ export function MediaPicker({
     `${m.name} ${m.folder}`.toLowerCase().includes(q.trim().toLowerCase()),
   );
 
-  const upload = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const created = app.addMedia({
-        name: file.name.replace(/\.[^.]+$/, ""),
-        url: String(reader.result),
-        folder: "Uploads",
-        sizeKb: Math.round(file.size / 1024),
-      });
-      setSel(created.id);
+  const [uploading, setUploading] = useState(false);
+
+  const upload = async (file: File) => {
+    setUploading(true);
+    try {
+      const res = await app.addMedia(file, "Uploads");
+      if (!res.ok || !res.media) {
+        toast.error(res.error ?? "Upload failed");
+        return;
+      }
+      setSel(res.media.id);
       toast.success("Uploaded to Media Center");
-    };
-    reader.readAsDataURL(file);
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -119,9 +121,10 @@ export function MediaPicker({
               type="button"
               variant="outline"
               size="sm"
+              disabled={uploading}
               onClick={() => fileRef.current?.click()}
             >
-              <Upload className="mr-2 h-4 w-4" /> Upload new image
+              <Upload className="mr-2 h-4 w-4" /> {uploading ? "Uploading…" : "Upload new image"}
             </Button>
             <p className="text-xs text-muted-foreground">
               Uploads are saved to the Media Center so they can be reused later.

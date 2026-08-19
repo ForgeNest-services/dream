@@ -13,6 +13,7 @@ ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 APP_PREFIXES = {
     "restro": True,
     "hotel_pms": True,
+    "ims": False,
     "admin": False,
 }
 
