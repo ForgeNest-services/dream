@@ -15,6 +15,7 @@ import { categoriesApi, type CategoryDto } from "@/lib/categories-api";
 import { brandsApi, type BrandDto } from "@/lib/brands-api";
 import { unitsApi, type UnitDto } from "@/lib/units-api";
 import { mediaApi, type MediaDto } from "@/lib/media-api";
+import { fiscalYearsApi, type FiscalYearDto } from "@/lib/fiscal-years-api";
 import {
   productsApi,
   type ProductDto,
@@ -116,6 +117,10 @@ const toMovement = (m: StockMovementDto): StockMovement => ({
   supplierId: m.supplier_id ?? undefined,
   userId: m.user_id,
 });
+const toFiscalYear = (f: FiscalYearDto): FiscalYear => ({
+  ...makeFiscalYear(f.start_year),
+  id: f.id,
+});
 
 /** A product entered on a purchase bill — either an existing one or a brand new one. */
 export type PurchaseDraftItem =
@@ -177,8 +182,8 @@ interface AppContextValue extends AppState {
   setCurrency: (c: string) => void;
   setDateSystem: (d: DateSystem) => void;
   setBranchId: (b: string) => void;
-  setFiscalYearId: (id: string) => void;
-  addFiscalYear: (startYear: number) => FiscalYear | null;
+  setFiscalYearId: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  addFiscalYear: (startYear: number) => Promise<{ ok: boolean; fiscalYear?: FiscalYear; error?: string }>;
   fiscalYear: FiscalYear;
   inFiscalYear: (iso: string) => boolean;
   setViewAsRole: (r: User["role"] | null) => void;
@@ -322,18 +327,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const [branchesRes, categoriesRes, brandsRes, unitsRes, mediaRes, productsRes, movementsRes] =
-          await Promise.all([
-            branchesApi.listMine(),
-            categoriesApi.list(),
-            brandsApi.list(),
-            unitsApi.list(),
-            mediaApi.list(),
-            productsApi.list({ per_page: 100 }),
-            stockApi.movements({ per_page: 100 }),
-          ]);
+        const [
+          branchesRes,
+          categoriesRes,
+          brandsRes,
+          unitsRes,
+          mediaRes,
+          productsRes,
+          movementsRes,
+          fiscalYearsRes,
+        ] = await Promise.all([
+          branchesApi.listMine(),
+          categoriesApi.list(),
+          brandsApi.list(),
+          unitsApi.list(),
+          mediaApi.list(),
+          productsApi.list({ per_page: 100 }),
+          stockApi.movements({ per_page: 100 }),
+          fiscalYearsApi.list(),
+        ]);
         if (cancelled) return;
         const productDtos = productsRes.data ?? [];
+        const fyDtos = fiscalYearsRes.data ?? [];
+        const activeFy = fyDtos.find((f) => f.is_active) ?? fyDtos[fyDtos.length - 1];
         setState((s) => ({
           ...s,
           branches: (branchesRes.data ?? []).map(toBranch),
@@ -344,6 +360,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           products: productDtos.map(toProduct),
           variants: productDtos.flatMap((p) => p.variants.map(toVariant)),
           movements: (movementsRes.data ?? []).map(toMovement),
+          fiscalYears: fyDtos.map(toFiscalYear),
+          fiscalYearId: activeFy ? activeFy.id : s.fiscalYearId,
         }));
       } catch (e) {
         if (e instanceof ApiError) {
@@ -401,20 +419,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setBranchId: (b) => setState((s) => ({ ...s, branchId: b })),
       fiscalYear,
       inFiscalYear: (iso) => iso >= fiscalYear.startDate && iso <= fiscalYear.endDate,
-      setFiscalYearId: (id) => setState((s) => ({ ...s, fiscalYearId: id })),
-      addFiscalYear: (startYear) => {
-        const fy = makeFiscalYear(startYear);
-        let created: FiscalYear | null = null;
-        setState((s) => {
-          if (s.fiscalYears.some((f) => f.startYear === startYear)) return s;
-          created = fy;
-          return {
+      setFiscalYearId: async (id) => {
+        try {
+          const res = await fiscalYearsApi.activate(id);
+          if (!res.success || !res.data) return { ok: false, error: "Failed to switch fiscal year" };
+          const activated = res.data;
+          setState((s) => ({
             ...s,
-            fiscalYears: [...s.fiscalYears, fy].sort((a, b) => a.startYear - b.startYear),
-            fiscalYearId: fy.id,
+            fiscalYears: s.fiscalYears.map((f) =>
+              f.id === activated.id ? toFiscalYear(activated) : f,
+            ),
+            fiscalYearId: activated.id,
+          }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to switch fiscal year" };
+        }
+      },
+      addFiscalYear: async (startYear) => {
+        try {
+          const res = await fiscalYearsApi.create(startYear);
+          if (!res.success || !res.data) {
+            return { ok: false, error: "Failed to add fiscal year" };
+          }
+          const created = toFiscalYear(res.data);
+          setState((s) => ({
+            ...s,
+            fiscalYears: [...s.fiscalYears, created].sort((a, b) => a.startYear - b.startYear),
+          }));
+          return { ok: true, fiscalYear: created };
+        } catch (e) {
+          const isYearExists = e instanceof ApiError && e.code === "YEAR_EXISTS";
+          return {
+            ok: false,
+            error: isYearExists
+              ? `Fiscal year ${startYear} already exists`
+              : e instanceof ApiError
+                ? e.message
+                : "Failed to add fiscal year",
           };
-        });
-        return created;
+        }
       },
       setViewAsRole: (r) => setState((s) => ({ ...s, viewAsRole: r })),
       categoryPath,

@@ -251,3 +251,17 @@ class MediaData(BaseModel):
     folder: str
     size_kb: int
     uploaded_at: datetime
+
+
+class FiscalYearData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    start_year: int
+    is_active: bool
+    created_at: datetime
+
+
+class CreateFiscalYearRequest(BaseModel):
+    start_year: int

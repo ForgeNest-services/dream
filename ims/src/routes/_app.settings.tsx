@@ -226,7 +226,14 @@ function SettingsPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => app.setFiscalYearId(f.id)}
+                            onClick={async () => {
+                              const res = await app.setFiscalYearId(f.id);
+                              if (!res.ok) {
+                                toast.error(res.error ?? "Failed to switch fiscal year");
+                                return;
+                              }
+                              toast.success(`${f.label} set active`);
+                            }}
                           >
                             Set active
                           </Button>
@@ -248,18 +255,18 @@ function SettingsPage() {
                 />
               </div>
               <Button
-                onClick={() => {
+                onClick={async () => {
                   const year = Number(fyStart);
                   if (!year || year < 2075 || year > 2089) {
                     toast.error("Enter a BS year between 2075 and 2089");
                     return;
                   }
-                  const created = app.addFiscalYear(year);
-                  if (!created) {
-                    toast.error(`Fiscal year ${year} already exists`);
+                  const res = await app.addFiscalYear(year);
+                  if (!res.ok || !res.fiscalYear) {
+                    toast.error(res.error ?? `Fiscal year ${year} already exists`);
                     return;
                   }
-                  toast.success(`Fiscal year ${created.label} created and set active`);
+                  toast.success(`Fiscal year ${res.fiscalYear.label} created`);
                   setFyStart("");
                 }}
               >

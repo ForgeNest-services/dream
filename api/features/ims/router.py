@@ -23,6 +23,8 @@ from features.ims.schemas import (
     AdjustStockRequest,
     RestockRequest,
     MediaData,
+    FiscalYearData,
+    CreateFiscalYearRequest,
 )
 from features.ims.service import IMSCredentialService, IMSAuthService
 from features.ims.category_service import IMSCategoryService
@@ -31,6 +33,7 @@ from features.ims.unit_service import IMSUnitService
 from features.ims.product_service import IMSProductService
 from features.ims.media_service import IMSMediaService
 from features.ims.stock_service import IMSStockService
+from features.ims.fiscal_year_service import IMSFiscalYearService
 
 
 router = APIRouter(prefix="/ims", tags=["ims"])
@@ -580,3 +583,80 @@ def delete_media(
     if not result["success"]:
         return _media_error(result["error_code"])
     return success_response(data={"deleted": True}, message="Image removed")
+
+
+# ---------------------------------------------------------------------------
+# Fiscal years (staff-facing, tenant-wide) — drives document numbering for
+# purchases/invoices/quotations (Phase 4/5). Auto-seeded with the current +
+# prior 2 BS years on first list call, current one active.
+# ---------------------------------------------------------------------------
+
+_FISCAL_YEAR_ERROR_MAP = {
+    "FISCAL_YEAR_NOT_FOUND": ("FISCAL_YEAR_NOT_FOUND", "Fiscal year not found.", 404),
+    "YEAR_EXISTS": ("YEAR_EXISTS", "This fiscal year already exists.", 409),
+    "NO_FISCAL_YEAR": ("NO_FISCAL_YEAR", "No fiscal year is set up yet.", 404),
+}
+
+
+def _fiscal_year_error(code: str):
+    mapped = _FISCAL_YEAR_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to process fiscal year.", 500))
+    return error_response(*mapped)
+
+
+@router.get("/fiscal-years")
+def list_fiscal_years(
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    years = IMSFiscalYearService.list_for_tenant(db, staff["tenant_id"])
+    return success_response(
+        data=[FiscalYearData.model_validate(y).model_dump(mode="json") for y in years]
+    )
+
+
+@router.get("/fiscal-years/active")
+def get_active_fiscal_year(
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    result = IMSFiscalYearService.get_active(db, staff["tenant_id"])
+    if not result["success"]:
+        return _fiscal_year_error(result["error_code"])
+    return success_response(
+        data=FiscalYearData.model_validate(result["fiscal_year"]).model_dump(mode="json")
+    )
+
+
+@router.post("/fiscal-years")
+def create_fiscal_year(
+    data: CreateFiscalYearRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] != "owner":
+        raise HTTPException(403, "Only the Owner can add fiscal years")
+    result = IMSFiscalYearService.create(db, staff["tenant_id"], data.start_year)
+    if not result["success"]:
+        return _fiscal_year_error(result["error_code"])
+    return success_response(
+        data=FiscalYearData.model_validate(result["fiscal_year"]).model_dump(mode="json"),
+        message="Fiscal year created",
+        status_code=201,
+    )
+
+
+@router.post("/fiscal-years/{fy_id}/activate")
+def activate_fiscal_year(
+    fy_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] != "owner":
+        raise HTTPException(403, "Only the Owner can switch the active fiscal year")
+    result = IMSFiscalYearService.set_active(db, staff["tenant_id"], fy_id)
+    if not result["success"]:
+        return _fiscal_year_error(result["error_code"])
+    return success_response(
+        data=FiscalYearData.model_validate(result["fiscal_year"]).model_dump(mode="json"),
+        message="Fiscal year activated",
+    )
