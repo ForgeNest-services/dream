@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from "react";
 import { createSeedData, makeFiscalYear, type SeedData } from "@/data/mock";
+import { authApi } from "@/lib/auth-api";
+import { authStorage } from "@/lib/auth-storage";
 import {
   ROLE_MODULES,
   ROLE_PERMISSIONS,
@@ -85,7 +87,7 @@ interface AppContextValue extends AppState {
   effectiveRole: User["role"];
   modules: ModuleKey[];
   can: (p: Permission) => boolean;
-  login: (username: string, password: string) => boolean;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   setCurrency: (c: string) => void;
   setDateSystem: (d: DateSystem) => void;
@@ -167,29 +169,58 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }));
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("ims-session");
+    const stored = authStorage.read();
     if (stored) {
-      setState((s) => {
-        const u = s.users.find((x) => x.username === stored);
-        return u ? { ...s, currentUser: u } : s;
-      });
+      const u: User = {
+        id: stored.username,
+        username: stored.username,
+        name: stored.username,
+        role: stored.role as User["role"],
+        branchIds: stored.branchId ? [stored.branchId] : [],
+        active: true,
+      };
+      setState((s) => ({
+        ...s,
+        currentUser: u,
+        branchId: stored.role === "owner" ? "all" : (stored.branchId ?? "all"),
+      }));
     }
   }, []);
 
-  const login = useCallback((username: string, password: string) => {
-    let ok = false;
-    setState((s) => {
-      const u = s.users.find((x) => x.username === username.trim().toLowerCase());
-      if (!u || password.length < 4) return s;
-      ok = true;
-      window.localStorage.setItem("ims-session", u.username);
-      return { ...s, currentUser: u, branchId: u.role === "owner" ? "all" : (u.branchIds[0] ?? "all") };
-    });
-    return ok;
+  const login = useCallback(async (username: string, password: string) => {
+    try {
+      const res = await authApi.login(username.trim(), password);
+      if (!res.success || !res.data) return false;
+      const { token, role, branch_id, expires_at } = res.data;
+      authStorage.save({
+        token,
+        role,
+        tenantId: res.data.tenant_id,
+        branchId: branch_id,
+        username: username.trim(),
+        expiresAt: expires_at,
+      });
+      const u: User = {
+        id: username.trim(),
+        username: username.trim(),
+        name: username.trim(),
+        role: role as User["role"],
+        branchIds: branch_id ? [branch_id] : [],
+        active: true,
+      };
+      setState((s) => ({
+        ...s,
+        currentUser: u,
+        branchId: role === "owner" ? "all" : (branch_id ?? "all"),
+      }));
+      return true;
+    } catch {
+      return false;
+    }
   }, []);
 
   const logout = useCallback(() => {
-    window.localStorage.removeItem("ims-session");
+    authStorage.clear();
     setState((s) => ({ ...s, currentUser: null, viewAsRole: null }));
   }, []);
 

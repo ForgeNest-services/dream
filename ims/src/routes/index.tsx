@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useApp } from "@/context/app-store";
-import { ROLE_LABELS } from "@/data/types";
 import { Boxes, LockKeyhole } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,21 +29,28 @@ export const Route = createFileRoute("/")({
 function LoginPage() {
   const app = useApp();
   const navigate = useNavigate();
-  const [username, setUsername] = useState("owner");
-  const [password, setPassword] = useState("demo1234");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (app.currentUser) void navigate({ to: "/dashboard", replace: true });
   }, [app.currentUser, navigate]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (app.login(username, password)) {
-      void navigate({ to: "/dashboard", replace: true });
-    } else {
-      toast.error("Invalid credentials", {
-        description: "Use one of the demo accounts with any password of 4+ characters.",
-      });
+    setSubmitting(true);
+    try {
+      const ok = await app.login(username, password);
+      if (ok) {
+        void navigate({ to: "/dashboard", replace: true });
+      } else {
+        toast.error("Invalid credentials", {
+          description: "Check your username and password and try again.",
+        });
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -114,32 +120,10 @@ function LoginPage() {
                 required
               />
             </div>
-            <Button type="submit" className="w-full">
-              <LockKeyhole className="mr-2 h-4 w-4" /> Sign in
+            <Button type="submit" className="w-full" disabled={submitting}>
+              <LockKeyhole className="mr-2 h-4 w-4" /> {submitting ? "Signing in…" : "Sign in"}
             </Button>
           </form>
-
-          <div className="mt-8 rounded-lg border bg-card p-3">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Demo accounts (any password)
-            </p>
-            <div className="space-y-1">
-              {app.users.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => {
-                    setUsername(u.username);
-                    setPassword("demo1234");
-                  }}
-                  className="flex w-full items-center justify-between rounded px-2 py-1 text-sm hover:bg-accent"
-                >
-                  <span className="num">{u.username}</span>
-                  <span className="text-xs text-muted-foreground">{ROLE_LABELS[u.role]}</span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </main>
