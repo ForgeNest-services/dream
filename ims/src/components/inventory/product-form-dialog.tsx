@@ -21,7 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { generateBarcode } from "@/lib/barcode";
 import { useApp } from "@/context/app-store";
-import type { Product, Variant } from "@/data/types";
+import type { Product } from "@/data/types";
 import { Barcode, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -164,7 +164,9 @@ export function ProductFormDialog({
       9: "sm:grid-cols-9",
     }[gridCols] ?? "sm:grid-cols-9";
 
-  const submit = () => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
     if (!name.trim() || !categoryId) {
       toast.error("Product name and category are required");
       return;
@@ -184,28 +186,27 @@ export function ProductFormDialog({
       taxRate: taxRate === "" || Number(taxRate) === app.company.vatRate ? undefined : Number(taxRate),
     };
 
-    if (product) {
-      const existing = app.variantsOf(product.id);
-      const sourceRows = hasVariants
-        ? variants
-        : [
-            {
-              id: existing[0]?.id,
-              name: "Default",
-              modelNo: sku,
-              barcode: existing[0]?.barcode ?? "",
-              unitId: baseUnit || app.units[0]!.id,
-              costPrice: baseCost,
-              sellingPrice: basePrice,
-              lowStockAt: baseLowStockAt,
-              initialStock: 0,
-            },
-          ];
-      const merged: Variant[] = sourceRows.map((v, i) => {
-        const prev = existing.find((e) => e.id === v.id);
-        return {
-          id: v.id ?? `${product.id}-v${existing.length + i + 1}`,
-          productId: product.id,
+    setSubmitting(true);
+    try {
+      if (product) {
+        const existing = app.variantsOf(product.id);
+        const sourceRows = hasVariants
+          ? variants
+          : [
+              {
+                id: existing[0]?.id,
+                name: "Default",
+                modelNo: sku,
+                barcode: existing[0]?.barcode ?? "",
+                unitId: baseUnit || app.units[0]!.id,
+                costPrice: baseCost,
+                sellingPrice: basePrice,
+                lowStockAt: baseLowStockAt,
+                initialStock: 0,
+              },
+            ];
+        const rows = sourceRows.map((v) => ({
+          id: v.id,
           name: v.name || "Default",
           modelNo: v.modelNo,
           barcode: v.barcode,
@@ -215,46 +216,55 @@ export function ProductFormDialog({
           costPrice: Number(v.costPrice) || 0,
           sellingPrice: Number(v.sellingPrice) || 0,
           lowStockAt: Number(v.lowStockAt) || 0,
-          stock: prev?.stock ?? Object.fromEntries(app.branches.map((b) => [b.id, 0])),
-        };
-      });
-      app.updateProduct(product.id, payload, merged);
-      toast.success("Product updated");
-    } else {
-      const vs = (
-        hasVariants
-          ? variants
-          : [
-              {
-                name: "Default",
-                modelNo: sku,
-                barcode: "",
-                unitId: baseUnit || app.units[0]!.id,
-                costPrice: baseCost,
-                sellingPrice: basePrice,
-                lowStockAt: baseLowStockAt,
-                initialStock: baseStock,
-              },
-            ]
-      ).map((v) => ({
-        name: v.name || "Default",
-        modelNo: v.modelNo,
-        barcode: v.barcode,
-        unitId: v.unitId,
-        purchaseUnitId: v.purchaseUnitId,
-        conversionFactor: v.conversionFactor,
-        costPrice: Number(v.costPrice) || 0,
-        sellingPrice: Number(v.sellingPrice) || 0,
-        lowStockAt: Number(v.lowStockAt) || 0,
-        initialStock: Number(v.initialStock) || 0,
-      }));
-      app.addProduct(payload, vs, defaultBranch);
-      const anyStock = vs.some((v) => v.initialStock > 0);
-      toast.success(
-        anyStock ? "Product created with opening stock" : "Product created — stock starts at 0",
-      );
+        }));
+        const res = await app.updateProduct(product.id, payload, rows);
+        if (!res.ok) {
+          toast.error(res.error ?? "Failed to update product");
+          return;
+        }
+        toast.success("Product updated");
+      } else {
+        const vs = (
+          hasVariants
+            ? variants
+            : [
+                {
+                  name: "Default",
+                  modelNo: sku,
+                  barcode: "",
+                  unitId: baseUnit || app.units[0]!.id,
+                  costPrice: baseCost,
+                  sellingPrice: basePrice,
+                  lowStockAt: baseLowStockAt,
+                  initialStock: baseStock,
+                },
+              ]
+        ).map((v) => ({
+          name: v.name || "Default",
+          modelNo: v.modelNo,
+          barcode: v.barcode,
+          unitId: v.unitId,
+          purchaseUnitId: v.purchaseUnitId,
+          conversionFactor: v.conversionFactor,
+          costPrice: Number(v.costPrice) || 0,
+          sellingPrice: Number(v.sellingPrice) || 0,
+          lowStockAt: Number(v.lowStockAt) || 0,
+          initialStock: Number(v.initialStock) || 0,
+        }));
+        const res = await app.addProduct(payload, vs, defaultBranch);
+        if (!res.ok) {
+          toast.error(res.error ?? "Failed to create product");
+          return;
+        }
+        const anyStock = vs.some((v) => v.initialStock > 0);
+        toast.success(
+          anyStock ? "Product created with opening stock" : "Product created — stock starts at 0",
+        );
+      }
+      onOpenChange(false);
+    } finally {
+      setSubmitting(false);
     }
-    onOpenChange(false);
   };
 
   return (
@@ -558,7 +568,9 @@ export function ProductFormDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit}>{editing ? "Save changes" : "Create product"}</Button>
+          <Button onClick={submit} disabled={submitting}>
+            {submitting ? "Saving…" : editing ? "Save changes" : "Create product"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

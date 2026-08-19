@@ -15,6 +15,13 @@ import { categoriesApi, type CategoryDto } from "@/lib/categories-api";
 import { brandsApi, type BrandDto } from "@/lib/brands-api";
 import { unitsApi, type UnitDto } from "@/lib/units-api";
 import { mediaApi, type MediaDto } from "@/lib/media-api";
+import {
+  productsApi,
+  type ProductDto,
+  type VariantDto,
+  type VariantInput,
+} from "@/lib/products-api";
+import { stockApi, type StockMovementDto } from "@/lib/stock-api";
 import { ApiError } from "@/lib/api-client";
 import { toast } from "sonner";
 import {
@@ -67,6 +74,47 @@ const toUnit = (u: UnitDto): Unit => ({
   name: u.name,
   symbol: u.symbol,
   allowsDecimals: u.allows_decimals,
+});
+const toVariant = (v: VariantDto): Variant => ({
+  id: v.id,
+  productId: v.product_id,
+  name: v.name,
+  modelNo: v.model_no ?? "",
+  barcode: v.barcode ?? "",
+  unitId: v.unit_id,
+  purchaseUnitId: v.purchase_unit_id ?? undefined,
+  conversionFactor: v.conversion_factor ?? undefined,
+  costPrice: v.cost_price,
+  sellingPrice: v.selling_price,
+  stock: Object.fromEntries(v.stock.map((s) => [s.branch_id, s.qty])),
+  lowStockAt: v.low_stock_at,
+});
+const toProduct = (p: ProductDto): Product => ({
+  id: p.id,
+  name: p.name,
+  sku: p.sku,
+  categoryId: p.category_id,
+  brandId: p.brand_id ?? undefined,
+  mediaId: p.media_id ?? undefined,
+  description: p.description ?? undefined,
+  taxable: p.taxable ?? undefined,
+  taxRate: p.tax_rate ?? undefined,
+  createdAt: p.created_at,
+});
+const toMovement = (m: StockMovementDto): StockMovement => ({
+  id: m.id,
+  date: m.date,
+  branchId: m.branch_id,
+  productId: m.product_id,
+  variantId: m.variant_id,
+  type: m.type,
+  qty: m.qty,
+  unitCost: m.unit_cost ?? undefined,
+  balanceAfter: m.balance_after,
+  reason: m.reason ?? undefined,
+  reference: m.reference ?? undefined,
+  supplierId: m.supplier_id ?? undefined,
+  userId: m.user_id,
 });
 
 /** A product entered on a purchase bill — either an existing one or a brand new one. */
@@ -148,8 +196,12 @@ interface AppContextValue extends AppState {
     p: Omit<Product, "id" | "createdAt">,
     variants: (Omit<Variant, "id" | "productId" | "stock"> & { initialStock?: number | undefined })[],
     stockBranchId: string,
-  ) => void;
-  updateProduct: (id: string, patch: Partial<Product>, variants: Variant[]) => void;
+  ) => Promise<{ ok: boolean; error?: string }>;
+  updateProduct: (
+    id: string,
+    patch: Omit<Product, "id" | "createdAt">,
+    variants: (Omit<Variant, "productId" | "stock"> & { id?: string | undefined })[],
+  ) => Promise<{ ok: boolean; error?: string }>;
   addCategory: (name: string, parentId: string | null) => Promise<{ ok: boolean; error?: string }>;
   renameCategory: (id: string, name: string) => Promise<{ ok: boolean; error?: string }>;
   deleteCategory: (id: string) => Promise<{ ok: boolean; error?: string }>;
@@ -161,7 +213,7 @@ interface AppContextValue extends AppState {
     qty: number;
     reason: string;
     date: string;
-  }) => void;
+  }) => Promise<{ ok: boolean; error?: string }>;
   restock: (input: {
     variantId: string;
     branchId: string;
@@ -173,7 +225,7 @@ interface AppContextValue extends AppState {
     /** when true, post the bill amount to the supplier ledger */
     postToLedger?: boolean | undefined;
     billAmount?: number | undefined;
-  }) => void;
+  }) => Promise<{ ok: boolean; error?: string }>;
   createPurchase: (input: PurchaseInput) => Purchase;
   addParty: (p: Omit<Party, "id">) => Party;
 
@@ -270,14 +322,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const [branchesRes, categoriesRes, brandsRes, unitsRes, mediaRes] = await Promise.all([
-          branchesApi.listMine(),
-          categoriesApi.list(),
-          brandsApi.list(),
-          unitsApi.list(),
-          mediaApi.list(),
-        ]);
+        const [branchesRes, categoriesRes, brandsRes, unitsRes, mediaRes, productsRes, movementsRes] =
+          await Promise.all([
+            branchesApi.listMine(),
+            categoriesApi.list(),
+            brandsApi.list(),
+            unitsApi.list(),
+            mediaApi.list(),
+            productsApi.list({ per_page: 100 }),
+            stockApi.movements({ per_page: 100 }),
+          ]);
         if (cancelled) return;
+        const productDtos = productsRes.data ?? [];
         setState((s) => ({
           ...s,
           branches: (branchesRes.data ?? []).map(toBranch),
@@ -285,10 +341,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           brands: (brandsRes.data ?? []).map(toBrand),
           units: (unitsRes.data ?? []).map(toUnit),
           media: (mediaRes.data ?? []).map(toMedia),
+          products: productDtos.map(toProduct),
+          variants: productDtos.flatMap((p) => p.variants.map(toVariant)),
+          movements: (movementsRes.data ?? []).map(toMovement),
         }));
       } catch (e) {
         if (e instanceof ApiError) {
-          toast.error("Could not load branches/categories", { description: e.message });
+          toast.error("Could not load catalogue data", { description: e.message });
         }
       }
     })();
@@ -377,66 +436,100 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
       invoiceTotal,
 
-      addProduct: (p, vs, stockBranchId) =>
-        setState((s) => {
-          const id = nextId("p");
-          const variants: Variant[] = (
-            vs.length > 0
-              ? vs
-              : [
-                  {
-                    name: "Default",
-                    modelNo: p.sku,
-                    barcode: "",
-                    unitId: s.units[0]!.id,
-                    costPrice: 0,
-                    sellingPrice: 0,
-                    lowStockAt: 10,
-                  } as Omit<Variant, "id" | "productId" | "stock"> & {
-                    initialStock?: number | undefined;
-                  },
-                ]
-          ).map((v, i) => {
-            const { initialStock, ...rest } = v;
-            return {
-              ...rest,
-              id: `${id}-v${i + 1}`,
-              productId: id,
-              stock: {
-                ...Object.fromEntries(s.branches.map((b) => [b.id, 0])),
-                ...(initialStock ? { [stockBranchId]: initialStock } : {}),
-              },
-            };
+      addProduct: async (p, vs, stockBranchId) => {
+        const variants: VariantInput[] = (
+          vs.length > 0
+            ? vs
+            : [
+                {
+                  name: "Default",
+                  modelNo: p.sku,
+                  barcode: "",
+                  unitId: state.units[0]?.id ?? "",
+                  costPrice: 0,
+                  sellingPrice: 0,
+                  lowStockAt: 10,
+                  initialStock: 0,
+                },
+              ]
+        ).map((v) => ({
+          name: v.name,
+          model_no: v.modelNo || undefined,
+          barcode: v.barcode || undefined,
+          unit_id: v.unitId,
+          purchase_unit_id: v.purchaseUnitId,
+          conversion_factor: v.conversionFactor,
+          cost_price: v.costPrice,
+          selling_price: v.sellingPrice,
+          low_stock_at: v.lowStockAt,
+          initial_stock: v.initialStock,
+        }));
+        try {
+          const res = await productsApi.create({
+            name: p.name,
+            sku: p.sku,
+            category_id: p.categoryId,
+            brand_id: p.brandId,
+            media_id: p.mediaId,
+            description: p.description,
+            taxable: p.taxable !== false,
+            tax_rate: p.taxRate,
+            branch_id_for_stock: stockBranchId,
+            variants,
           });
-          const movements: StockMovement[] = variants
-            .filter((v) => (v.stock[stockBranchId] ?? 0) > 0)
-            .map((v) => ({
-              id: nextId("mv"),
-              date: new Date().toISOString(),
-              branchId: stockBranchId,
-              productId: v.productId,
-              variantId: v.id,
-              type: "adjust-in",
-              qty: v.stock[stockBranchId] ?? 0,
-              unitCost: v.costPrice,
-              balanceAfter: v.stock[stockBranchId] ?? 0,
-              reason: "Initial stock on product creation",
-              userId: s.currentUser?.id ?? "u-1",
-            }));
-          return {
+          if (!res.success || !res.data) return { ok: false, error: "Failed to create product" };
+          const created = res.data;
+          setState((s) => ({
             ...s,
-            products: [{ ...p, id, createdAt: new Date().toISOString() }, ...s.products],
-            variants: [...s.variants, ...variants],
-            movements: [...movements, ...s.movements],
-          };
-        }),
+            products: [toProduct(created), ...s.products],
+            variants: [...created.variants.map(toVariant), ...s.variants],
+          }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to create product" };
+        }
+      },
 
-      updateProduct: (id, patch, vs) =>
-        setState((s) => ({
-          ...s,
-          products: s.products.map((p) => (p.id === id ? { ...p, ...patch } : p)),
-          variants: [...s.variants.filter((v) => v.productId !== id), ...vs],
-        })),
+      updateProduct: async (id, patch, vs) => {
+        const variants: VariantInput[] = vs.map((v) => ({
+          id: v.id,
+          name: v.name,
+          model_no: v.modelNo || undefined,
+          barcode: v.barcode || undefined,
+          unit_id: v.unitId,
+          purchase_unit_id: v.purchaseUnitId,
+          conversion_factor: v.conversionFactor,
+          cost_price: v.costPrice,
+          selling_price: v.sellingPrice,
+          low_stock_at: v.lowStockAt,
+        }));
+        try {
+          const res = await productsApi.update(id, {
+            name: patch.name,
+            sku: patch.sku,
+            category_id: patch.categoryId,
+            brand_id: patch.brandId,
+            media_id: patch.mediaId,
+            description: patch.description,
+            taxable: patch.taxable !== false,
+            tax_rate: patch.taxRate,
+            variants,
+          });
+          if (!res.success || !res.data) return { ok: false, error: "Failed to update product" };
+          const updated = res.data;
+          setState((s) => ({
+            ...s,
+            products: s.products.map((p) => (p.id === id ? toProduct(updated) : p)),
+            variants: [
+              ...s.variants.filter((v) => v.productId !== id),
+              ...updated.variants.map(toVariant),
+            ],
+          }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to update product" };
+        }
+      },
 
       addCategory: async (name, parentId) => {
         try {
@@ -495,33 +588,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       },
 
-      adjustStock: ({ variantId, branchId, qty, reason, date }) =>
-        setState((s) => {
-          const variant = s.variants.find((v) => v.id === variantId);
-          if (!variant) return s;
-          const balance = (variant.stock[branchId] ?? 0) + qty;
-          const movement: StockMovement = {
-            id: nextId("mv"),
-            date,
-            branchId,
-            productId: variant.productId,
-            variantId,
-            type: qty >= 0 ? "adjust-in" : "adjust-out",
+      adjustStock: async ({ variantId, branchId, qty, reason, date }) => {
+        try {
+          const res = await stockApi.adjust({
+            variant_id: variantId,
+            branch_id: branchId,
             qty,
-            balanceAfter: balance,
             reason,
-            userId: s.currentUser?.id ?? "u-1",
-          };
-          return {
+            date,
+          });
+          if (!res.success || !res.data) return { ok: false, error: "Failed to adjust stock" };
+          const movement = res.data;
+          setState((s) => ({
             ...s,
             variants: s.variants.map((v) =>
-              v.id === variantId ? { ...v, stock: { ...v.stock, [branchId]: balance } } : v,
+              v.id === variantId
+                ? { ...v, stock: { ...v.stock, [branchId]: movement.balance_after } }
+                : v,
             ),
-            movements: [movement, ...s.movements],
-          };
-        }),
+            movements: [toMovement(movement), ...s.movements],
+          }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to adjust stock" };
+        }
+      },
 
-      restock: ({
+      restock: async ({
         variantId,
         branchId,
         qty,
@@ -530,51 +623,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
         reference,
         date,
         postToLedger,
-        billAmount,
-      }) =>
-        setState((s) => {
-          const variant = s.variants.find((v) => v.id === variantId);
-          if (!variant) return s;
-          const balance = (variant.stock[branchId] ?? 0) + qty;
-          const movement: StockMovement = {
-            id: nextId("mv"),
-            date,
-            branchId,
-            productId: variant.productId,
-            variantId,
-            type: "restock",
+      }) => {
+        // Party ledger posting isn't built yet (parties/ledger are still
+        // Phase 3 mock-only) — supplierId/postToLedger/billAmount are
+        // accepted for UI compatibility but have no ledger effect until
+        // that phase lands. Stock itself is real.
+        if (supplierId && postToLedger) {
+          toast.warning("Stock received, but ledger posting isn't wired up yet — no ledger entry was created.");
+        }
+        try {
+          const res = await stockApi.restock({
+            variant_id: variantId,
+            branch_id: branchId,
             qty,
-            unitCost,
-            balanceAfter: balance,
+            unit_cost: unitCost,
+            date,
+            supplier_id: supplierId,
             reference,
-            supplierId,
-            userId: s.currentUser?.id ?? "u-1",
-          };
-          // Ledger posting is never automatic — the operator opts in and states the bill amount.
-          const ledger: LedgerEntry[] =
-            supplierId && postToLedger
-              ? [
-                  {
-                    id: nextId("le"),
-                    partyId: supplierId,
-                    date,
-                    description: "Purchase — goods received",
-                    reference,
-                    debit: 0,
-                    credit: billAmount ?? qty * unitCost,
-                  },
-                  ...s.ledger,
-                ]
-              : s.ledger;
-          return {
+          });
+          if (!res.success || !res.data) return { ok: false, error: "Failed to restock" };
+          const movement = res.data;
+          setState((s) => ({
             ...s,
             variants: s.variants.map((v) =>
-              v.id === variantId ? { ...v, stock: { ...v.stock, [branchId]: balance } } : v,
+              v.id === variantId
+                ? { ...v, costPrice: unitCost, stock: { ...v.stock, [branchId]: movement.balance_after } }
+                : v,
             ),
-            movements: [movement, ...s.movements],
-            ledger,
-          };
-        }),
+            movements: [toMovement(movement), ...s.movements],
+          }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to restock" };
+        }
+      },
 
       createPurchase: (input) => {
         const purchaseId = nextId("pu");

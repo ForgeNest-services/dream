@@ -78,7 +78,9 @@ export function AdjustStockDialog({
   const variant = app.variants.find((v) => v.id === vid);
   const current = variant?.stock[branchId] ?? 0;
 
-  const submit = () => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
     if (!variant || qty <= 0) {
       toast.error("Pick a variant and a quantity above zero");
       return;
@@ -88,15 +90,24 @@ export function AdjustStockDialog({
       toast.error("Adjustment would make stock negative");
       return;
     }
-    app.adjustStock({
-      variantId: variant.id,
-      branchId,
-      qty: signed,
-      reason,
-      date: date ?? new Date().toISOString(),
-    });
-    toast.success(`Stock adjusted — new balance ${current + signed}`);
-    onOpenChange(false);
+    setSubmitting(true);
+    try {
+      const res = await app.adjustStock({
+        variantId: variant.id,
+        branchId,
+        qty: signed,
+        reason,
+        date: date ?? new Date().toISOString(),
+      });
+      if (!res.ok) {
+        toast.error(res.error ?? "Failed to adjust stock");
+        return;
+      }
+      toast.success(`Stock adjusted — new balance ${current + signed}`);
+      onOpenChange(false);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -204,7 +215,9 @@ export function AdjustStockDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit}>Post adjustment</Button>
+          <Button onClick={submit} disabled={submitting}>
+            {submitting ? "Posting…" : "Post adjustment"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -261,27 +274,38 @@ export function RestockDialog({
   const suppliers = app.parties.filter((p) => p.kind === "supplier");
   const lineTotal = (Number(qty) || 0) * (Number(cost) || 0);
 
-  const submit = () => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
     if (!variant || qty <= 0) {
       toast.error("Pick a variant and a quantity above zero");
       return;
     }
     const tracking = supplierId !== "none" && postToLedger;
-    app.restock({
-      variantId: variant.id,
-      branchId,
-      qty,
-      unitCost: Number(cost) || 0,
-      supplierId: supplierId === "none" ? undefined : supplierId,
-      reference: reference.trim() || undefined,
-      date: date ?? new Date().toISOString(),
-      postToLedger: tracking,
-      billAmount: billAmount === "" ? lineTotal : Number(billAmount),
-    });
-    toast.success(
-      tracking ? "Stock received — party ledger updated" : "Stock received",
-    );
-    onOpenChange(false);
+    setSubmitting(true);
+    try {
+      const res = await app.restock({
+        variantId: variant.id,
+        branchId,
+        qty,
+        unitCost: Number(cost) || 0,
+        supplierId: supplierId === "none" ? undefined : supplierId,
+        reference: reference.trim() || undefined,
+        date: date ?? new Date().toISOString(),
+        postToLedger: tracking,
+        billAmount: billAmount === "" ? lineTotal : Number(billAmount),
+      });
+      if (!res.ok) {
+        toast.error(res.error ?? "Failed to receive stock");
+        return;
+      }
+      toast.success(
+        tracking ? "Stock received — party ledger updated" : "Stock received",
+      );
+      onOpenChange(false);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
 
@@ -425,7 +449,9 @@ export function RestockDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit}>Receive stock</Button>
+          <Button onClick={submit} disabled={submitting}>
+            {submitting ? "Receiving…" : "Receive stock"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
