@@ -107,6 +107,8 @@ export function CustomerDialog({
           <div className="sm:col-span-2">
             <Label className="text-xs">Name</Label>
             <Input
+              name="party-name"
+              autoComplete="off"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               className="mt-1"
@@ -115,6 +117,12 @@ export function CustomerDialog({
           <div>
             <Label className="text-xs">Phone</Label>
             <Input
+              name="party-phone"
+              // Chrome ignores a literal autocomplete="off" on fields it
+              // heuristically detects as contact info (a deliberate Chrome
+              // policy, not a bug) — a nonsense token it doesn't recognize
+              // as a real autofill category is the actual way to opt out.
+              autoComplete="new-party-phone"
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
               className="mt-1"
@@ -123,6 +131,8 @@ export function CustomerDialog({
           <div>
             <Label className="text-xs">Email</Label>
             <Input
+              name="party-email"
+              autoComplete="new-party-email"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               className="mt-1"
@@ -131,6 +141,8 @@ export function CustomerDialog({
           <div className="sm:col-span-2">
             <Label className="text-xs">Address</Label>
             <Input
+              name="party-address"
+              autoComplete="off"
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
               className="mt-1"
@@ -139,6 +151,8 @@ export function CustomerDialog({
           <div>
             <Label className="text-xs">PAN / VAT no.</Label>
             <Input
+              name="party-pan"
+              autoComplete="off"
               value={form.pan}
               onChange={(e) => setForm({ ...form, pan: e.target.value })}
               className="num mt-1"
@@ -155,6 +169,8 @@ export function CustomerDialog({
             <div>
               <Label className="text-xs">Credit limit</Label>
               <Input
+                name="party-credit-limit"
+                autoComplete="off"
                 value={form.creditLimit}
                 onChange={(e) => setForm({ ...form, creditLimit: Number(e.target.value) || 0 })}
                 className="num mt-1"
@@ -164,6 +180,8 @@ export function CustomerDialog({
             <div>
               <Label className="text-xs">Payment terms</Label>
               <Input
+                name="party-terms"
+                autoComplete="off"
                 value={form.terms}
                 onChange={(e) => setForm({ ...form, terms: e.target.value })}
                 className="mt-1"
@@ -176,6 +194,8 @@ export function CustomerDialog({
               Opening balance ({kind === "supplier" ? "payable to them" : "receivable"})
             </Label>
             <Input
+              name="party-opening-balance"
+              autoComplete="off"
               value={form.openingBalance}
               onChange={(e) => setForm({ ...form, openingBalance: Number(e.target.value) || 0 })}
               className="num mt-1"

@@ -154,6 +154,8 @@ function CustomersPage() {
       <div className="relative mb-3 max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
+          name="customers-search"
+          autoComplete="new-customers-search"
           value={search.q}
           onChange={(e) => setSearch({ q: e.target.value, page: 1 })}
           placeholder="Search name, phone or PAN"
