@@ -306,6 +306,18 @@ class CreatePartyRequest(BaseModel):
         return v
 
 
+class UpdatePartyRequest(BaseModel):
+    name: str
+    phone: str | None = None
+    email: str | None = None
+    address: str | None = None
+    pan: str | None = None
+    is_vat_registered: bool | None = None
+    credit_limit: Decimal | None = None
+    opening_balance: Decimal = Decimal(0)
+    terms: str | None = None
+
+
 class LedgerEntryData(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -46,6 +46,19 @@ class IMSPartyRepository:
         items = query.order_by(IMSParty.name).offset(offset).limit(limit).all()
         return items, total
 
+    @staticmethod
+    def update(db: Session, party: IMSParty, **fields) -> IMSParty:
+        for key, value in fields.items():
+            setattr(party, key, value)
+        db.commit()
+        db.refresh(party)
+        return party
+
+    @staticmethod
+    def delete(db: Session, party: IMSParty) -> None:
+        db.delete(party)
+        db.commit()
+
 
 class IMSLedgerRepository:
     @staticmethod
@@ -73,3 +86,33 @@ class IMSLedgerRepository:
             .order_by(IMSLedgerEntry.date)
             .all()
         )
+
+    @staticmethod
+    def get_opening_balance_entry(
+        db: Session, tenant_id: str, party_id: str
+    ) -> IMSLedgerEntry | None:
+        """The one "Opening balance" row posted at party creation, if any —
+        used so editing opening_balance can correct that same entry in place
+        instead of leaving it to silently disagree with the party record."""
+        return (
+            db.query(IMSLedgerEntry)
+            .filter(
+                IMSLedgerEntry.tenant_id == tenant_id,
+                IMSLedgerEntry.party_id == party_id,
+                IMSLedgerEntry.description == "Opening balance",
+            )
+            .first()
+        )
+
+    @staticmethod
+    def update(db: Session, entry: IMSLedgerEntry, **fields) -> IMSLedgerEntry:
+        for key, value in fields.items():
+            setattr(entry, key, value)
+        db.commit()
+        db.refresh(entry)
+        return entry
+
+    @staticmethod
+    def delete(db: Session, entry: IMSLedgerEntry) -> None:
+        db.delete(entry)
+        db.commit()

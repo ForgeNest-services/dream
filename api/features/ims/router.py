@@ -27,6 +27,7 @@ from features.ims.schemas import (
     CreateFiscalYearRequest,
     PartyData,
     CreatePartyRequest,
+    UpdatePartyRequest,
     LedgerEntryData,
     RecordPaymentRequest,
 )
@@ -772,6 +773,49 @@ def create_party(
         message="Party created",
         status_code=201,
     )
+
+
+@router.patch("/parties/{party_id}")
+def update_party(
+    party_id: str,
+    data: UpdatePartyRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    result = IMSPartyService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        party_id=party_id,
+        name=data.name,
+        phone=data.phone,
+        email=data.email,
+        address=data.address,
+        pan=data.pan,
+        is_vat_registered=data.is_vat_registered,
+        credit_limit=data.credit_limit,
+        opening_balance=data.opening_balance,
+        terms=data.terms,
+    )
+    if not result["success"]:
+        return _party_error(result["error_code"])
+    return success_response(
+        data=PartyData.model_validate(result["party"]).model_dump(mode="json"),
+        message="Party updated",
+    )
+
+
+@router.delete("/parties/{party_id}")
+def delete_party(
+    party_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can delete parties")
+    result = IMSPartyService.delete(db, staff["tenant_id"], party_id)
+    if not result["success"]:
+        return _party_error(result["error_code"])
+    return success_response(data={"deleted": True}, message="Party removed")
 
 
 @router.get("/parties/{party_id}/ledger")

@@ -66,6 +66,8 @@ export function CustomerDialog({
 
   const [saving, setSaving] = useState(false);
 
+  const isEdit = Boolean(party);
+
   const save = async () => {
     if (!form.name.trim()) {
       toast.error("Name is required");
@@ -73,9 +75,8 @@ export function CustomerDialog({
     }
     setSaving(true);
     try {
-      const res = await app.addParty({
+      const payload = {
         name: form.name.trim(),
-        kind,
         phone: form.phone,
         email: form.email || undefined,
         address: form.address,
@@ -84,12 +85,15 @@ export function CustomerDialog({
         creditLimit: kind === "customer" ? form.creditLimit : undefined,
         openingBalance: form.openingBalance,
         terms: form.terms || undefined,
-      });
+      };
+      const res = isEdit
+        ? await app.updateParty(party!.id, payload)
+        : await app.addParty({ ...payload, kind });
       if (!res.ok || !res.party) {
-        toast.error(res.error ?? "Failed to add party");
+        toast.error(res.error ?? `Failed to ${isEdit ? "update" : "add"} party`);
         return;
       }
-      toast.success(`${kind === "customer" ? "Customer" : "Supplier"} added`);
+      toast.success(`${kind === "customer" ? "Customer" : "Supplier"} ${isEdit ? "updated" : "added"}`);
       onCreated?.(res.party);
       onOpenChange(false);
     } finally {
@@ -101,7 +105,9 @@ export function CustomerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>New {kind}</DialogTitle>
+          <DialogTitle>
+            {isEdit ? "Edit" : "New"} {kind}
+          </DialogTitle>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
@@ -207,7 +213,7 @@ export function CustomerDialog({
             Cancel
           </Button>
           <Button onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

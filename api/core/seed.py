@@ -176,6 +176,32 @@ def ensure_ims_products_schema() -> None:
         db.close()
 
 
+def ensure_ims_parties_schema() -> None:
+    """Back-fill ON DELETE CASCADE onto ims_ledger_entries.party_id so a
+    hard-deleted party (see IMSPartyService.delete) also removes its ledger
+    entries at the DB level. Base.create_all doesn't ALTER existing FKs, so
+    this drops and recreates the constraint — IF EXISTS/re-running is a
+    no-op once the cascade is in place."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.ims_ledger_entries "
+            "DROP CONSTRAINT IF EXISTS ims_ledger_entries_party_id_fkey"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.ims_ledger_entries "
+            "ADD CONSTRAINT ims_ledger_entries_party_id_fkey "
+            "FOREIGN KEY (party_id) REFERENCES public.ims_parties(id) ON DELETE CASCADE"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill ims_parties schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
 def seed_apps():
     db = SessionLocal()
     try:

@@ -272,6 +272,11 @@ interface AppContextValue extends AppState {
   }) => Promise<{ ok: boolean; error?: string }>;
   createPurchase: (input: PurchaseInput) => Purchase;
   addParty: (p: Omit<Party, "id">) => Promise<{ ok: boolean; party?: Party; error?: string }>;
+  updateParty: (
+    id: string,
+    p: Omit<Party, "id" | "kind">,
+  ) => Promise<{ ok: boolean; party?: Party; error?: string }>;
+  deleteParty: (id: string) => Promise<{ ok: boolean; error?: string }>;
 
   recordPayment: (input: {
     partyId: string;
@@ -986,6 +991,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return { ok: true, party: created };
         } catch (e) {
           return { ok: false, error: e instanceof ApiError ? e.message : "Failed to create party" };
+        }
+      },
+
+      updateParty: async (id, p) => {
+        try {
+          const res = await partiesApi.update(id, {
+            name: p.name,
+            phone: p.phone || undefined,
+            email: p.email,
+            address: p.address || undefined,
+            pan: p.pan,
+            is_vat_registered: p.isVatRegistered,
+            credit_limit: p.creditLimit,
+            opening_balance: p.openingBalance,
+            terms: p.terms,
+          });
+          if (!res.success || !res.data) return { ok: false, error: "Failed to update party" };
+          const updated = toParty(res.data);
+          // Opening-balance edits correct that party's "Opening balance"
+          // ledger row server-side (see IMSPartyService.update) — refetch
+          // just this party's ledger so the local cache matches.
+          const ledgerRes = await partiesApi.ledger(id);
+          const partyLedger = (ledgerRes.data ?? []).map(toLedgerEntry);
+          setState((s) => ({
+            ...s,
+            parties: s.parties.map((party) => (party.id === id ? updated : party)),
+            ledger: [...s.ledger.filter((entry) => entry.partyId !== id), ...partyLedger],
+          }));
+          return { ok: true, party: updated };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to update party" };
+        }
+      },
+
+      deleteParty: async (id) => {
+        try {
+          const res = await partiesApi.remove(id);
+          if (!res.success) return { ok: false, error: "Failed to delete party" };
+          setState((s) => ({
+            ...s,
+            parties: s.parties.filter((party) => party.id !== id),
+            ledger: s.ledger.filter((entry) => entry.partyId !== id),
+          }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to delete party" };
         }
       },
 

@@ -44,6 +44,18 @@ export interface CreatePartyPayload {
   terms?: string | undefined;
 }
 
+export interface UpdatePartyPayload {
+  name: string;
+  phone?: string | undefined;
+  email?: string | undefined;
+  address?: string | undefined;
+  pan?: string | undefined;
+  is_vat_registered?: boolean | undefined;
+  credit_limit?: number | undefined;
+  opening_balance: number;
+  terms?: string | undefined;
+}
+
 export const partiesApi = {
   list(
     kind?: "supplier" | "customer",
@@ -58,6 +70,15 @@ export const partiesApi = {
   },
   create(payload: CreatePartyPayload) {
     return apiClient.post<PartyDto>("/ims/parties", payload);
+  },
+  update(id: string, payload: UpdatePartyPayload) {
+    return apiClient.patch<PartyDto>(`/ims/parties/${id}`, payload);
+  },
+  remove(id: string) {
+    return apiClient.delete<{ deleted: boolean }>(`/ims/parties/${id}`);
+  },
+  ledger(id: string) {
+    return apiClient.get<LedgerEntryDto[]>(`/ims/parties/${id}/ledger`);
   },
 };
 

@@ -1,6 +1,16 @@
 import { TablePagination } from "@/components/common/table-pagination";
 import { EmptyState, Money, PageHeader } from "@/components/common/primitives";
 import { CustomerDialog, LedgerDialog, PaymentDialog } from "@/components/parties/party-dialogs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApp } from "@/context/app-store";
@@ -11,8 +21,9 @@ import type { Party } from "@/data/types";
 import { downloadCsv } from "@/lib/csv";
 import { computeTotals } from "@/lib/invoice";
 import { createFileRoute } from "@tanstack/react-router";
-import { BookOpen, Download, Plus, Search, Wallet } from "lucide-react";
+import { BookOpen, Download, Pencil, Plus, Search, Trash2, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 interface CustomersSearch {
   q: string;
@@ -94,6 +105,13 @@ function CustomersPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [ledgerFor, setLedgerFor] = useState<Party | undefined>(undefined);
   const [payFor, setPayFor] = useState<Party | undefined>(undefined);
+  const [editFor, setEditFor] = useState<Party | undefined>(undefined);
+  const [deleteFor, setDeleteFor] = useState<Party | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Backend only allows owner/manager to delete a party — matches the
+  // same restriction used for products.
+  const canDelete = app.effectiveRole === "owner" || app.effectiveRole === "manager";
 
   const debouncedQ = useDebouncedValue(search.q, 300);
 
@@ -205,6 +223,19 @@ function CustomersPage() {
                           <Wallet className="mr-1.5 h-3.5 w-3.5" /> Payment
                         </Button>
                       )}
+                      <Button variant="ghost" size="sm" onClick={() => setEditFor(r.party)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setDeleteFor(r.party)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -230,6 +261,17 @@ function CustomersPage() {
         }}
         kind="customer"
       />
+      <CustomerDialog
+        open={Boolean(editFor)}
+        onOpenChange={(o) => {
+          if (!o) {
+            setEditFor(undefined);
+            refetch();
+          }
+        }}
+        kind="customer"
+        party={editFor}
+      />
       <LedgerDialog
         open={Boolean(ledgerFor)}
         onOpenChange={(o) => !o && setLedgerFor(undefined)}
@@ -245,6 +287,43 @@ function CustomersPage() {
         }}
         party={payFor}
       />
+
+      <AlertDialog open={deleteFor !== null} onOpenChange={(o) => !o && setDeleteFor(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{deleteFor?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the customer and its full ledger history. This can't be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!deleteFor) return;
+                setDeleting(true);
+                try {
+                  const res = await app.deleteParty(deleteFor.id);
+                  if (!res.ok) {
+                    toast.error(res.error ?? "Failed to delete customer");
+                    return;
+                  }
+                  toast.success("Customer deleted");
+                  setDeleteFor(null);
+                  refetch();
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -7,7 +7,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from utils.helpers import success_response, error_response, format_validation_errors
 from utils.logger import logger
 from core.database import Base, engine
-from core.seed import seed_superadmin, seed_apps, seed_app_icons, ensure_ims_products_schema
+from core.seed import (
+    seed_superadmin,
+    seed_apps,
+    seed_app_icons,
+    ensure_ims_products_schema,
+    ensure_ims_parties_schema,
+)
 from core.storage import ensure_bucket
 import shared_models
 from features.auth import router as auth_router
@@ -35,6 +41,14 @@ async def lifespan(app: FastAPI):
         logger.info("ims_products schema backfill completed")
     except Exception as e:
         logger.error(f"Failed to backfill ims_products schema: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Backfilling ims_parties schema...")
+        ensure_ims_parties_schema()
+        logger.info("ims_parties schema backfill completed")
+    except Exception as e:
+        logger.error(f"Failed to backfill ims_parties schema: {type(e).__name__}: {str(e)}")
         raise
 
     try:

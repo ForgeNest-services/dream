@@ -1,4 +1,5 @@
 from sqlalchemy import Column, String, Boolean, Numeric, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import uuid
 from core.database import Base
@@ -29,6 +30,12 @@ class IMSParty(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
+    )
+
+    ledger_entries = relationship(
+        "IMSLedgerEntry",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     def __repr__(self):
