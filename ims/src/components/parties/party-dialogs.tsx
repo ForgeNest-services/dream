@@ -64,26 +64,37 @@ export function CustomerDialog({
     });
   }, [open, party]);
 
-  const save = () => {
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
     if (!form.name.trim()) {
       toast.error("Name is required");
       return;
     }
-    const created = app.addParty({
-      name: form.name.trim(),
-      kind,
-      phone: form.phone,
-      email: form.email || undefined,
-      address: form.address,
-      pan: form.pan || undefined,
-      isVatRegistered: form.isVatRegistered,
-      creditLimit: kind === "customer" ? form.creditLimit : undefined,
-      openingBalance: form.openingBalance,
-      terms: form.terms || undefined,
-    });
-    toast.success(`${kind === "customer" ? "Customer" : "Supplier"} added`);
-    onCreated?.(created);
-    onOpenChange(false);
+    setSaving(true);
+    try {
+      const res = await app.addParty({
+        name: form.name.trim(),
+        kind,
+        phone: form.phone,
+        email: form.email || undefined,
+        address: form.address,
+        pan: form.pan || undefined,
+        isVatRegistered: form.isVatRegistered,
+        creditLimit: kind === "customer" ? form.creditLimit : undefined,
+        openingBalance: form.openingBalance,
+        terms: form.terms || undefined,
+      });
+      if (!res.ok || !res.party) {
+        toast.error(res.error ?? "Failed to add party");
+        return;
+      }
+      toast.success(`${kind === "customer" ? "Customer" : "Supplier"} added`);
+      onCreated?.(res.party);
+      onOpenChange(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -175,7 +186,9 @@ export function CustomerDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={save}>Save</Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -203,18 +216,22 @@ export function PaymentDialog({
 
   if (!party) return null;
 
-  const save = () => {
+  const save = async () => {
     if (amount <= 0) {
       toast.error("Enter an amount");
       return;
     }
-    app.recordPayment({
+    const res = await app.recordPayment({
       partyId: party.id,
       amount,
       date: date ?? new Date().toISOString(),
       method,
       reference: reference || undefined,
     });
+    if (!res.ok) {
+      toast.error(res.error ?? "Failed to record payment");
+      return;
+    }
     toast.success("Payment recorded");
     onOpenChange(false);
     setReference("");

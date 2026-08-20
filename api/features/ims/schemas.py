@@ -265,3 +265,63 @@ class FiscalYearData(BaseModel):
 
 class CreateFiscalYearRequest(BaseModel):
     start_year: int
+
+
+class PartyData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    name: str
+    kind: str
+    phone: str | None
+    email: str | None
+    address: str | None
+    pan: str | None
+    is_vat_registered: bool | None
+    credit_limit: Decimal | None
+    opening_balance: Decimal
+    terms: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreatePartyRequest(BaseModel):
+    name: str
+    kind: str
+    phone: str | None = None
+    email: str | None = None
+    address: str | None = None
+    pan: str | None = None
+    is_vat_registered: bool | None = None
+    credit_limit: Decimal | None = None
+    opening_balance: Decimal = Decimal(0)
+    terms: str | None = None
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, v: str) -> str:
+        if v not in ("supplier", "customer"):
+            raise ValueError("kind must be 'supplier' or 'customer'")
+        return v
+
+
+class LedgerEntryData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    party_id: str
+    date: datetime
+    description: str
+    reference: str | None
+    debit: Decimal
+    credit: Decimal
+
+
+class RecordPaymentRequest(BaseModel):
+    party_id: str
+    amount: Decimal
+    date: datetime
+    method: str
+    reference: str | None = None

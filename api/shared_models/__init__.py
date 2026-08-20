@@ -33,6 +33,8 @@ from .ims_variant_stock import IMSVariantStock
 from .ims_stock_movement import IMSStockMovement
 from .ims_media import IMSMedia
 from .ims_fiscal_year import IMSFiscalYear
+from .ims_party import IMSParty
+from .ims_ledger_entry import IMSLedgerEntry
 from .app import App
 
 __all__ = [
@@ -71,5 +73,7 @@ __all__ = [
     "IMSStockMovement",
     "IMSMedia",
     "IMSFiscalYear",
+    "IMSParty",
+    "IMSLedgerEntry",
     "App",
 ]

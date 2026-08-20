@@ -23,6 +23,7 @@ import {
   type VariantInput,
 } from "@/lib/products-api";
 import { stockApi, type StockMovementDto } from "@/lib/stock-api";
+import { partiesApi, ledgerApi, type PartyDto, type LedgerEntryDto } from "@/lib/parties-api";
 import { ApiError } from "@/lib/api-client";
 import { toast } from "sonner";
 import {
@@ -120,6 +121,28 @@ const toMovement = (m: StockMovementDto): StockMovement => ({
 const toFiscalYear = (f: FiscalYearDto): FiscalYear => ({
   ...makeFiscalYear(f.start_year),
   id: f.id,
+});
+const toParty = (p: PartyDto): Party => ({
+  id: p.id,
+  name: p.name,
+  kind: p.kind,
+  phone: p.phone ?? "",
+  email: p.email ?? undefined,
+  address: p.address ?? "",
+  pan: p.pan ?? undefined,
+  isVatRegistered: p.is_vat_registered ?? undefined,
+  creditLimit: p.credit_limit ?? undefined,
+  openingBalance: p.opening_balance,
+  terms: p.terms ?? undefined,
+});
+const toLedgerEntry = (l: LedgerEntryDto): LedgerEntry => ({
+  id: l.id,
+  partyId: l.party_id,
+  date: l.date,
+  description: l.description,
+  reference: l.reference ?? undefined,
+  debit: l.debit,
+  credit: l.credit,
 });
 
 /** A product entered on a purchase bill — either an existing one or a brand new one. */
@@ -232,7 +255,7 @@ interface AppContextValue extends AppState {
     billAmount?: number | undefined;
   }) => Promise<{ ok: boolean; error?: string }>;
   createPurchase: (input: PurchaseInput) => Purchase;
-  addParty: (p: Omit<Party, "id">) => Party;
+  addParty: (p: Omit<Party, "id">) => Promise<{ ok: boolean; party?: Party; error?: string }>;
 
   recordPayment: (input: {
     partyId: string;
@@ -240,7 +263,7 @@ interface AppContextValue extends AppState {
     date: string;
     method: string;
     reference?: string | undefined;
-  }) => void;
+  }) => Promise<{ ok: boolean; error?: string }>;
   createInvoice: (inv: Omit<Invoice, "id" | "number" | "userId">) => Invoice;
   convertQuotation: (id: string) => void;
   updateCompany: (patch: Partial<CompanyProfile>) => void;
@@ -320,8 +343,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Once real staff auth is in place, branches/categories/brands/units are
   // real per-tenant data — fetch them whenever a session becomes active.
-  // Everything else (products, purchases, invoices, parties...) stays on
-  // mock data until its own phase.
+  // Everything else (purchases, invoices...) stays on mock data until its
+  // own phase.
   useEffect(() => {
     if (!state.currentUser) return;
     let cancelled = false;
@@ -336,6 +359,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           productsRes,
           movementsRes,
           fiscalYearsRes,
+          partiesRes,
+          ledgerRes,
         ] = await Promise.all([
           branchesApi.listMine(),
           categoriesApi.list(),
@@ -345,6 +370,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           productsApi.list({ per_page: 100 }),
           stockApi.movements({ per_page: 100 }),
           fiscalYearsApi.list(),
+          partiesApi.list(),
+          ledgerApi.listAll(),
         ]);
         if (cancelled) return;
         const productDtos = productsRes.data ?? [];
@@ -359,6 +386,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           media: (mediaRes.data ?? []).map(toMedia),
           products: productDtos.map(toProduct),
           variants: productDtos.flatMap((p) => p.variants.map(toVariant)),
+          parties: (partiesRes.data ?? []).map(toParty),
+          ledger: (ledgerRes.data ?? []).map(toLedgerEntry),
           movements: (movementsRes.data ?? []).map(toMovement),
           fiscalYears: fyDtos.map(toFiscalYear),
           fiscalYearId: activeFy ? activeFy.id : s.fiscalYearId,
@@ -872,43 +901,63 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
 
 
-      addParty: (p) => {
-        const party: Party = { ...p, id: nextId(p.kind === "supplier" ? "s" : "c") };
-        setState((s) => {
-          const ledger =
-            party.openingBalance && party.openingBalance !== 0
-              ? [
-                  {
+      addParty: async (p) => {
+        try {
+          const res = await partiesApi.create({
+            name: p.name,
+            kind: p.kind,
+            phone: p.phone || undefined,
+            email: p.email,
+            address: p.address || undefined,
+            pan: p.pan,
+            is_vat_registered: p.isVatRegistered,
+            credit_limit: p.creditLimit,
+            opening_balance: p.openingBalance,
+            terms: p.terms,
+          });
+          if (!res.success || !res.data) return { ok: false, error: "Failed to create party" };
+          const created = toParty(res.data);
+          setState((s) => {
+            const openingEntry: LedgerEntry | null =
+              created.openingBalance && created.openingBalance !== 0
+                ? {
                     id: nextId("le"),
-                    partyId: party.id,
+                    partyId: created.id,
                     date: new Date().toISOString(),
                     description: "Opening balance",
-                    debit: party.kind === "supplier" ? 0 : party.openingBalance,
-                    credit: party.kind === "supplier" ? party.openingBalance : 0,
-                  } as LedgerEntry,
-                  ...s.ledger,
-                ]
-              : s.ledger;
-          return { ...s, parties: [...s.parties, party], ledger };
-        });
-        return party;
+                    debit: created.kind === "supplier" ? 0 : created.openingBalance,
+                    credit: created.kind === "supplier" ? created.openingBalance : 0,
+                  }
+                : null;
+            return {
+              ...s,
+              parties: [...s.parties, created],
+              ledger: openingEntry ? [openingEntry, ...s.ledger] : s.ledger,
+            };
+          });
+          return { ok: true, party: created };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to create party" };
+        }
       },
 
-      recordPayment: ({ partyId, amount, date, method, reference }) =>
-        setState((s) => {
-          const party = s.parties.find((p) => p.id === partyId);
-          const isSupplier = party?.kind === "supplier";
-          const entry: LedgerEntry = {
-            id: nextId("le"),
-            partyId,
+      recordPayment: async ({ partyId, amount, date, method, reference }) => {
+        try {
+          const res = await ledgerApi.recordPayment({
+            party_id: partyId,
+            amount,
             date,
-            description: `Payment ${isSupplier ? "made" : "received"} (${method})`,
+            method,
             reference,
-            debit: isSupplier ? amount : 0,
-            credit: isSupplier ? 0 : amount,
-          };
-          return { ...s, ledger: [entry, ...s.ledger] };
-        }),
+          });
+          if (!res.success || !res.data) return { ok: false, error: "Failed to record payment" };
+          const entry = toLedgerEntry(res.data);
+          setState((s) => ({ ...s, ledger: [entry, ...s.ledger] }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to record payment" };
+        }
+      },
 
       createInvoice: (inv) => {
         const seq = 1000 + state.invoices.length + 1;

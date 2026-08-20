@@ -25,6 +25,10 @@ from features.ims.schemas import (
     MediaData,
     FiscalYearData,
     CreateFiscalYearRequest,
+    PartyData,
+    CreatePartyRequest,
+    LedgerEntryData,
+    RecordPaymentRequest,
 )
 from features.ims.service import IMSCredentialService, IMSAuthService
 from features.ims.category_service import IMSCategoryService
@@ -34,6 +38,8 @@ from features.ims.product_service import IMSProductService
 from features.ims.media_service import IMSMediaService
 from features.ims.stock_service import IMSStockService
 from features.ims.fiscal_year_service import IMSFiscalYearService
+from features.ims.party_service import IMSPartyService, IMSLedgerService
+from features.ims.party_repository import IMSLedgerRepository
 
 
 router = APIRouter(prefix="/ims", tags=["ims"])
@@ -659,4 +665,110 @@ def activate_fiscal_year(
     return success_response(
         data=FiscalYearData.model_validate(result["fiscal_year"]).model_dump(mode="json"),
         message="Fiscal year activated",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Parties (customers + suppliers, staff-facing, tenant-wide) + party ledger
+# ---------------------------------------------------------------------------
+
+_PARTY_ERROR_MAP = {
+    "PARTY_NOT_FOUND": ("PARTY_NOT_FOUND", "Party not found.", 404),
+    "INVALID_AMOUNT": ("INVALID_AMOUNT", "Amount must be greater than zero.", 422),
+}
+
+
+def _party_error(code: str):
+    mapped = _PARTY_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to process request.", 500))
+    return error_response(*mapped)
+
+
+@router.get("/parties")
+def list_parties(
+    kind: str | None = None,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    parties = IMSPartyService.list_for_tenant(db, staff["tenant_id"], kind)
+    return success_response(
+        data=[PartyData.model_validate(p).model_dump(mode="json") for p in parties]
+    )
+
+
+@router.post("/parties")
+def create_party(
+    data: CreatePartyRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    result = IMSPartyService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        name=data.name,
+        kind=data.kind,
+        phone=data.phone,
+        email=data.email,
+        address=data.address,
+        pan=data.pan,
+        is_vat_registered=data.is_vat_registered,
+        credit_limit=data.credit_limit,
+        opening_balance=data.opening_balance,
+        terms=data.terms,
+    )
+    return success_response(
+        data=PartyData.model_validate(result["party"]).model_dump(mode="json"),
+        message="Party created",
+        status_code=201,
+    )
+
+
+@router.get("/parties/{party_id}/ledger")
+def get_party_ledger(
+    party_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    result = IMSLedgerService.list_for_party(db, staff["tenant_id"], party_id)
+    if not result["success"]:
+        return _party_error(result["error_code"])
+    return success_response(
+        data=[LedgerEntryData.model_validate(e).model_dump(mode="json") for e in result["entries"]]
+    )
+
+
+@router.get("/ledger")
+def list_all_ledger_entries(
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """Full tenant ledger — lets the frontend compute every party's balance
+    client-side in one request instead of N calls, matching how partyBalance
+    is derived today (loop over the whole ledger array)."""
+    entries = IMSLedgerRepository.list_for_tenant(db, staff["tenant_id"])
+    return success_response(
+        data=[LedgerEntryData.model_validate(e).model_dump(mode="json") for e in entries]
+    )
+
+
+@router.post("/ledger/payments")
+def record_payment(
+    data: RecordPaymentRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    result = IMSLedgerService.record_payment(
+        db,
+        tenant_id=staff["tenant_id"],
+        party_id=data.party_id,
+        amount=data.amount,
+        date=data.date,
+        method=data.method,
+        reference=data.reference,
+    )
+    if not result["success"]:
+        return _party_error(result["error_code"])
+    return success_response(
+        data=LedgerEntryData.model_validate(result["entry"]).model_dump(mode="json"),
+        message="Payment recorded",
+        status_code=201,
     )
