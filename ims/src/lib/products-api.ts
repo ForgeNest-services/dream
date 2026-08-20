@@ -75,13 +75,25 @@ export interface UpdateProductPayload {
   variants: VariantInput[];
 }
 
+export interface ProductsQuery {
+  q?: string;
+  /** comma-separated category ids — pass a resolved root+descendants set */
+  category_id?: string;
+  brand_id?: string;
+  stock_status?: "in-stock" | "low" | "out" | "";
+  page?: number;
+  per_page?: number;
+}
+
 export const productsApi = {
-  list(params: { q?: string; category_id?: string; page?: number; per_page?: number } = {}) {
+  list(params: ProductsQuery = {}) {
     const qs = new URLSearchParams();
     if (params.q) qs.set("q", params.q);
     if (params.category_id) qs.set("category_id", params.category_id);
+    if (params.brand_id) qs.set("brand_id", params.brand_id);
+    if (params.stock_status) qs.set("stock_status", params.stock_status);
     qs.set("page", String(params.page ?? 1));
-    qs.set("per_page", String(params.per_page ?? 100));
+    qs.set("per_page", String(params.per_page ?? 25));
     return apiClient.get<ProductDto[]>(`/ims/products?${qs.toString()}`);
   },
   create(payload: CreateProductPayload) {

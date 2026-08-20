@@ -12,10 +12,17 @@ from utils.logger import logger
 class IMSProductService:
     @staticmethod
     def list_for_tenant(
-        db: Session, tenant_id: str, q: str | None, category_id: str | None, offset: int, limit: int
+        db: Session,
+        tenant_id: str,
+        q: str | None,
+        category_ids: list[str] | None,
+        brand_id: str | None,
+        stock_status: str | None,
+        offset: int,
+        limit: int,
     ) -> dict:
         items, total = IMSProductRepository.list_for_tenant(
-            db, tenant_id, q, category_id, offset, limit
+            db, tenant_id, q, category_ids, brand_id, stock_status, offset, limit
         )
         return {"success": True, "products": items, "total": total}
 

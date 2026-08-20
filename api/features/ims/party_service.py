@@ -7,8 +7,11 @@ from utils.logger import logger
 
 class IMSPartyService:
     @staticmethod
-    def list_for_tenant(db: Session, tenant_id: str, kind: str | None) -> list:
-        return IMSPartyRepository.list_for_tenant(db, tenant_id, kind)
+    def list_for_tenant(
+        db: Session, tenant_id: str, kind: str | None, q: str | None, offset: int, limit: int
+    ) -> dict:
+        items, total = IMSPartyRepository.list_for_tenant(db, tenant_id, kind, q, offset, limit)
+        return {"parties": items, "total": total}
 
     @staticmethod
     def create(

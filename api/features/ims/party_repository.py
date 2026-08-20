@@ -20,11 +20,31 @@ class IMSPartyRepository:
         )
 
     @staticmethod
-    def list_for_tenant(db: Session, tenant_id: str, kind: str | None) -> list[IMSParty]:
+    def list_for_tenant(
+        db: Session,
+        tenant_id: str,
+        kind: str | None,
+        q: str | None,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[IMSParty], int]:
+        from sqlalchemy import func, or_
+
         query = db.query(IMSParty).filter(IMSParty.tenant_id == tenant_id)
         if kind:
             query = query.filter(IMSParty.kind == kind)
-        return query.order_by(IMSParty.name).all()
+        if q:
+            term = f"%{q.strip().lower()}%"
+            query = query.filter(
+                or_(
+                    func.lower(IMSParty.name).like(term),
+                    func.lower(IMSParty.phone).like(term),
+                    func.lower(IMSParty.pan).like(term),
+                )
+            )
+        total = query.count()
+        items = query.order_by(IMSParty.name).offset(offset).limit(limit).all()
+        return items, total
 
 
 class IMSLedgerRepository:

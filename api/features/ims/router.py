@@ -344,14 +344,28 @@ def _product_error(code: str):
 def list_products(
     q: str | None = None,
     category_id: str | None = None,
+    brand_id: str | None = None,
+    stock_status: str | None = None,
     page: int = 1,
     per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
 ):
+    """category_id accepts a comma-separated list of ids — the frontend
+    resolves the category tree (a root + all its descendants) client-side
+    and sends the full set, since the category tree is small and already
+    loaded there. stock_status is one of: in-stock | low | out."""
+    category_ids = [c for c in category_id.split(",") if c] if category_id else None
     paging = parse_paging(page, per_page)
     result = IMSProductService.list_for_tenant(
-        db, staff["tenant_id"], q, category_id, paging["offset"], paging["limit"]
+        db,
+        staff["tenant_id"],
+        q,
+        category_ids,
+        brand_id,
+        stock_status,
+        paging["offset"],
+        paging["limit"],
     )
     return success_response(
         data=[ProductData.from_orm_with_variants(p).model_dump(mode="json") for p in result["products"]],
@@ -686,12 +700,19 @@ def _party_error(code: str):
 @router.get("/parties")
 def list_parties(
     kind: str | None = None,
+    q: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
 ):
-    parties = IMSPartyService.list_for_tenant(db, staff["tenant_id"], kind)
+    paging = parse_paging(page, per_page)
+    result = IMSPartyService.list_for_tenant(
+        db, staff["tenant_id"], kind, q, paging["offset"], paging["limit"]
+    )
     return success_response(
-        data=[PartyData.model_validate(p).model_dump(mode="json") for p in parties]
+        data=[PartyData.model_validate(p).model_dump(mode="json") for p in result["parties"]],
+        meta=build_meta(result["total"], paging["page"], paging["per_page"]),
     )
 
 

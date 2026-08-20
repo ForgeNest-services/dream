@@ -1,15 +1,24 @@
-import { PaginationBar, usePagination } from "@/components/common/pagination";
+import { TablePagination } from "@/components/common/table-pagination";
 import { EmptyState, Money, PageHeader } from "@/components/common/primitives";
 import { CustomerDialog, LedgerDialog, PaymentDialog } from "@/components/parties/party-dialogs";
 import { RestockDialog } from "@/components/inventory/stock-dialogs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApp } from "@/context/app-store";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { normalizeTableSearch } from "@/hooks/useTableQuery";
+import { useParties } from "@/hooks/useParties";
 import type { Party } from "@/data/types";
 import { downloadCsv } from "@/lib/csv";
 import { createFileRoute } from "@tanstack/react-router";
 import { BookOpen, Download, PackagePlus, Plus, Search, Wallet } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+
+interface SuppliersSearch {
+  q: string;
+  page: number;
+  perPage: number;
+}
 
 export const Route = createFileRoute("/_app/parties/suppliers")({
   head: () => ({
@@ -29,47 +38,90 @@ export const Route = createFileRoute("/_app/parties/suppliers")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>): SuppliersSearch => {
+    const normalized = normalizeTableSearch({
+      page: Number(search.page) || 1,
+      perPage: Number(search.perPage) || 25,
+    });
+    return {
+      q: typeof search.q === "string" ? search.q : "",
+      page: normalized.page,
+      perPage: normalized.perPage,
+    };
+  },
   component: SuppliersPage,
 });
 
+function dtoToParty(p: {
+  id: string;
+  name: string;
+  kind: "supplier" | "customer";
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  pan: string | null;
+  is_vat_registered: boolean | null;
+  credit_limit: number | null;
+  opening_balance: number;
+  terms: string | null;
+}): Party {
+  return {
+    id: p.id,
+    name: p.name,
+    kind: p.kind,
+    phone: p.phone ?? "",
+    email: p.email ?? undefined,
+    address: p.address ?? "",
+    pan: p.pan ?? undefined,
+    isVatRegistered: p.is_vat_registered ?? undefined,
+    creditLimit: p.credit_limit ?? undefined,
+    openingBalance: p.opening_balance,
+    terms: p.terms ?? undefined,
+  };
+}
+
 function SuppliersPage() {
   const app = useApp();
-  const [q, setQ] = useState("");
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+
+  const setSearch = (patch: Partial<SuppliersSearch>) => {
+    navigate({ search: (prev) => ({ ...prev, ...patch }) });
+  };
+
   const [addOpen, setAddOpen] = useState(false);
   const [restockOpen, setRestockOpen] = useState(false);
   const [ledgerFor, setLedgerFor] = useState<Party | undefined>(undefined);
   const [payFor, setPayFor] = useState<Party | undefined>(undefined);
 
-  const rows = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    return app.parties
-      .filter((p) => p.kind === "supplier")
-      .filter(
-        (p) =>
-          !term ||
-          p.name.toLowerCase().includes(term) ||
-          p.phone.includes(term) ||
-          (p.pan ?? "").includes(term),
-      )
-      .map((p) => {
-        const purchases = app.movements.filter((m) => m.supplierId === p.id);
-        const purchased = purchases.reduce((s, m) => s + (m.unitCost ?? 0) * m.qty, 0);
-        return {
-          party: p,
-          deliveries: purchases.length,
-          purchased,
-          balance: app.partyBalance(p.id),
-        };
-      });
-  }, [app, q]);
+  const debouncedQ = useDebouncedValue(search.q, 300);
 
-  const pag = usePagination(rows, 12);
+  const { parties, meta, isLoading, refetch } = useParties({
+    kind: "supplier",
+    q: debouncedQ || undefined,
+    page: search.page,
+    per_page: search.perPage,
+  });
+
+  useEffect(() => {
+    if (meta && search.page > meta.total_pages) {
+      setSearch({ page: 1 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta?.total_pages]);
+
+  const rows = parties.map((dto) => {
+    const party = dtoToParty(dto);
+    const purchases = app.movements.filter((m) => m.supplierId === party.id);
+    const purchased = purchases.reduce((s, m) => s + (m.unitCost ?? 0) * m.qty, 0);
+    return { party, deliveries: purchases.length, purchased, balance: app.partyBalance(party.id) };
+  });
 
   return (
     <div>
       <PageHeader
         title="Suppliers"
-        subtitle="Vendor accounts, goods received and outstanding payables."
+        subtitle={`${meta?.total ?? rows.length} vendor accounts, goods received and outstanding payables.`}
         actions={
           <>
             <Button
@@ -107,14 +159,14 @@ function SuppliersPage() {
       <div className="relative mb-3 max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
+          value={search.q}
+          onChange={(e) => setSearch({ q: e.target.value, page: 1 })}
           placeholder="Search name, phone or PAN"
           className="pl-9"
         />
       </div>
 
-      {rows.length === 0 ? (
+      {!isLoading && rows.length === 0 ? (
         <EmptyState title="No suppliers" description="Add a supplier to track purchases." />
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card">
@@ -132,7 +184,7 @@ function SuppliersPage() {
               </tr>
             </thead>
             <tbody>
-              {pag.slice.map((r) => (
+              {rows.map((r) => (
                 <tr key={r.party.id} className="border-b last:border-0 hover:bg-accent/40">
                   <td className="px-3 py-2.5">
                     <p className="font-medium">{r.party.name}</p>
@@ -166,17 +218,25 @@ function SuppliersPage() {
               ))}
             </tbody>
           </table>
-          <PaginationBar
-            page={pag.page}
-            pageCount={pag.pageCount}
-            total={pag.total}
-            pageSize={pag.pageSize}
-            onChange={pag.setPage}
+          <TablePagination
+            page={meta?.page ?? search.page}
+            perPage={meta?.per_page ?? search.perPage}
+            totalItems={meta?.total ?? rows.length}
+            totalPages={meta?.total_pages ?? 1}
+            onPageChange={(p) => setSearch({ page: p })}
+            onPerPageChange={(pp) => setSearch({ perPage: pp, page: 1 })}
           />
         </div>
       )}
 
-      <CustomerDialog open={addOpen} onOpenChange={setAddOpen} kind="supplier" />
+      <CustomerDialog
+        open={addOpen}
+        onOpenChange={(o) => {
+          setAddOpen(o);
+          if (!o) refetch();
+        }}
+        kind="supplier"
+      />
       <RestockDialog open={restockOpen} onOpenChange={setRestockOpen} />
       <LedgerDialog
         open={Boolean(ledgerFor)}
@@ -185,7 +245,12 @@ function SuppliersPage() {
       />
       <PaymentDialog
         open={Boolean(payFor)}
-        onOpenChange={(o) => !o && setPayFor(undefined)}
+        onOpenChange={(o) => {
+          if (!o) {
+            setPayFor(undefined);
+            refetch();
+          }
+        }}
         party={payFor}
       />
     </div>

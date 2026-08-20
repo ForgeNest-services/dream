@@ -113,6 +113,8 @@ export function ProductFormDialog({
   const [baseCost, setBaseCost] = useState(0);
   const [basePrice, setBasePrice] = useState(0);
   const [baseUnit, setBaseUnit] = useState("");
+  const [baseModelNo, setBaseModelNo] = useState("");
+  const [baseBarcode, setBaseBarcode] = useState("");
   const [baseStock, setBaseStock] = useState(0);
   const [baseLowStockAt, setBaseLowStockAt] = useState(10);
 
@@ -121,6 +123,8 @@ export function ProductFormDialog({
       setBaseCost(0);
       setBasePrice(0);
       setBaseUnit(app.units[0]?.id ?? "");
+      setBaseModelNo("");
+      setBaseBarcode("");
       setBaseStock(0);
       setBaseLowStockAt(10);
     } else if (open && product) {
@@ -128,6 +132,8 @@ export function ProductFormDialog({
       setBaseCost(first?.costPrice ?? 0);
       setBasePrice(first?.sellingPrice ?? 0);
       setBaseUnit(first?.unitId ?? app.units[0]?.id ?? "");
+      setBaseModelNo(first?.modelNo ?? "");
+      setBaseBarcode(first?.barcode ?? "");
       setBaseLowStockAt(first?.lowStockAt ?? 10);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -196,8 +202,8 @@ export function ProductFormDialog({
               {
                 id: existing[0]?.id,
                 name: "Default",
-                modelNo: sku,
-                barcode: existing[0]?.barcode ?? "",
+                modelNo: baseModelNo,
+                barcode: baseBarcode,
                 unitId: baseUnit || app.units[0]!.id,
                 costPrice: baseCost,
                 sellingPrice: basePrice,
@@ -230,8 +236,8 @@ export function ProductFormDialog({
             : [
                 {
                   name: "Default",
-                  modelNo: sku,
-                  barcode: "",
+                  modelNo: baseModelNo,
+                  barcode: baseBarcode,
                   unitId: baseUnit || app.units[0]!.id,
                   costPrice: baseCost,
                   sellingPrice: basePrice,
@@ -432,6 +438,34 @@ export function ProductFormDialog({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Model no.</Label>
+                <Input
+                  placeholder="e.g. CE-90-RED"
+                  value={baseModelNo}
+                  onChange={(e) => setBaseModelNo(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Barcode</Label>
+                <div className="flex gap-1">
+                  <Input
+                    placeholder="Scan or generate"
+                    value={baseBarcode}
+                    onChange={(e) => setBaseBarcode(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    title="Generate barcode"
+                    aria-label="Generate barcode"
+                    onClick={() => setBaseBarcode(generateBarcode(`${name}-${sku}`))}
+                  >
+                    <Barcode className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
               {!editing && (
                 <div className="space-y-1.5">

@@ -42,9 +42,16 @@ export interface CreatePartyPayload {
 }
 
 export const partiesApi = {
-  list(kind?: "supplier" | "customer") {
-    const qs = kind ? `?kind=${kind}` : "";
-    return apiClient.get<PartyDto[]>(`/ims/parties${qs}`);
+  list(
+    kind?: "supplier" | "customer",
+    params: { q?: string; page?: number; per_page?: number } = {},
+  ) {
+    const qs = new URLSearchParams();
+    if (kind) qs.set("kind", kind);
+    if (params.q) qs.set("q", params.q);
+    qs.set("page", String(params.page ?? 1));
+    qs.set("per_page", String(params.per_page ?? 25));
+    return apiClient.get<PartyDto[]>(`/ims/parties?${qs.toString()}`);
   },
   create(payload: CreatePartyPayload) {
     return apiClient.post<PartyDto>("/ims/parties", payload);

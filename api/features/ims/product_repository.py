@@ -25,27 +25,71 @@ class IMSProductRepository:
         db: Session,
         tenant_id: str,
         q: str | None,
-        category_id: str | None,
+        category_ids: list[str] | None,
+        brand_id: str | None,
+        stock_status: str | None,
         offset: int,
         limit: int,
     ) -> tuple[list[IMSProduct], int]:
-        from sqlalchemy import func
+        from sqlalchemy import func, or_
+        from shared_models import IMSVariantStock
 
         query = (
             db.query(IMSProduct)
             .options(joinedload(IMSProduct.variants).joinedload(IMSVariant.stock_rows))
             .filter(IMSProduct.tenant_id == tenant_id)
         )
-        if category_id:
-            query = query.filter(IMSProduct.category_id == category_id)
+        if category_ids:
+            query = query.filter(IMSProduct.category_id.in_(category_ids))
+        if brand_id:
+            query = query.filter(IMSProduct.brand_id == brand_id)
         if q:
             term = f"%{q.strip().lower()}%"
-            query = query.filter(
-                func.lower(IMSProduct.name).like(term) | func.lower(IMSProduct.sku).like(term)
+            query = query.outerjoin(IMSVariant, IMSVariant.product_id == IMSProduct.id).filter(
+                or_(
+                    func.lower(IMSProduct.name).like(term),
+                    func.lower(IMSProduct.sku).like(term),
+                    func.lower(IMSVariant.name).like(term),
+                    func.lower(IMSVariant.model_no).like(term),
+                    func.lower(IMSVariant.barcode).like(term),
+                )
             )
+        if stock_status:
+            # Correlated subquery: total on-hand qty across every branch for
+            # each product's variants, and the lowest low_stock_at threshold
+            # among them — matches the frontend's statusOf() semantics
+            # (out: total<=0, low: any variant at/under its own threshold).
+            # Pattern matches hotel_pms/booking_repository.py's overlap
+            # check: call .exists() on the Query itself, not the standalone
+            # exists() function — that expects a Select/ScalarSelect, not a
+            # legacy Query object.
+            stock_sub = (
+                db.query(func.coalesce(func.sum(IMSVariantStock.qty), 0))
+                .join(IMSVariant, IMSVariant.id == IMSVariantStock.variant_id)
+                .filter(IMSVariant.product_id == IMSProduct.id)
+                .correlate(IMSProduct)
+                .scalar_subquery()
+            )
+            low_exists = (
+                db.query(IMSVariant.id)
+                .outerjoin(IMSVariantStock, IMSVariantStock.variant_id == IMSVariant.id)
+                .filter(
+                    IMSVariant.product_id == IMSProduct.id,
+                    func.coalesce(IMSVariantStock.qty, 0) <= IMSVariant.low_stock_at,
+                )
+                .correlate(IMSProduct)
+                .exists()
+            )
+            if stock_status == "out":
+                query = query.filter(stock_sub <= 0)
+            elif stock_status == "low":
+                query = query.filter(stock_sub > 0, low_exists)
+            elif stock_status == "in-stock":
+                query = query.filter(stock_sub > 0, ~low_exists)
         total = query.distinct().count()
         items = (
-            query.order_by(IMSProduct.name)
+            query.distinct()
+            .order_by(IMSProduct.name)
             .offset(offset)
             .limit(limit)
             .all()

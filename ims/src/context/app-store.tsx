@@ -230,6 +230,11 @@ interface AppContextValue extends AppState {
     patch: Omit<Product, "id" | "createdAt">,
     variants: (Omit<Variant, "productId" | "stock"> & { id?: string | undefined })[],
   ) => Promise<{ ok: boolean; error?: string }>;
+  /** Upserts products (and their variants) into the global cache — used by
+   *  the paginated Products page so a product on the current page is always
+   *  available to app.variantsOf()/app.stockOf() even if it wasn't already
+   *  in the initial full-catalog fetch. */
+  syncProducts: (products: ProductDto[]) => void;
   addCategory: (name: string, parentId: string | null) => Promise<{ ok: boolean; error?: string }>;
   renameCategory: (id: string, name: string) => Promise<{ ok: boolean; error?: string }>;
   deleteCategory: (id: string) => Promise<{ ok: boolean; error?: string }>;
@@ -370,7 +375,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           productsApi.list({ per_page: 100 }),
           stockApi.movements({ per_page: 100 }),
           fiscalYearsApi.list(),
-          partiesApi.list(),
+          partiesApi.list(undefined, { per_page: 100 }),
           ledgerApi.listAll(),
         ]);
         if (cancelled) return;
@@ -602,6 +607,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } catch (e) {
           return { ok: false, error: e instanceof ApiError ? e.message : "Failed to update product" };
         }
+      },
+
+      syncProducts: (products) => {
+        if (products.length === 0) return;
+        setState((s) => {
+          const byId = new Map(s.products.map((p) => [p.id, p]));
+          for (const dto of products) byId.set(dto.id, toProduct(dto));
+          const variantsById = new Map(s.variants.map((v) => [v.id, v]));
+          for (const dto of products) {
+            for (const vDto of dto.variants) variantsById.set(vDto.id, toVariant(vDto));
+          }
+          return {
+            ...s,
+            products: Array.from(byId.values()),
+            variants: Array.from(variantsById.values()),
+          };
+        });
       },
 
       addCategory: async (name, parentId) => {
