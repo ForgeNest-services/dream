@@ -448,6 +448,20 @@ def update_product(
     )
 
 
+@router.delete("/products/{product_id}")
+def delete_product(
+    product_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can delete products")
+    result = IMSProductService.delete(db, staff["tenant_id"], product_id)
+    if not result["success"]:
+        return _product_error(result["error_code"])
+    return success_response(data={"deleted": True}, message="Product removed")
+
+
 # ---------------------------------------------------------------------------
 # Stock movements (staff-facing) — adjust, restock, and the audit trail list
 # ---------------------------------------------------------------------------
@@ -522,14 +536,31 @@ def restock(
 def list_movements(
     branch_id: str | None = None,
     variant_id: str | None = None,
+    type: str | None = None,
+    q: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     page: int = 1,
     per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
 ):
+    from datetime import datetime
+
     paging = parse_paging(page, per_page)
+    parsed_from = datetime.fromisoformat(date_from) if date_from else None
+    parsed_to = datetime.fromisoformat(date_to) if date_to else None
     result = IMSStockService.list_movements(
-        db, staff["tenant_id"], branch_id, variant_id, paging["offset"], paging["limit"]
+        db,
+        staff["tenant_id"],
+        branch_id,
+        variant_id,
+        type,
+        q,
+        parsed_from,
+        parsed_to,
+        paging["offset"],
+        paging["limit"],
     )
     return success_response(
         data=[StockMovementData.model_validate(m).model_dump(mode="json") for m in result["movements"]],

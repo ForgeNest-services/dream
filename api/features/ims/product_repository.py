@@ -12,13 +12,17 @@ class IMSProductRepository:
         return product
 
     @staticmethod
-    def get_by_id(db: Session, tenant_id: str, product_id: str) -> IMSProduct | None:
-        return (
-            db.query(IMSProduct)
-            .options(joinedload(IMSProduct.variants).joinedload(IMSVariant.stock_rows))
-            .filter(IMSProduct.id == product_id, IMSProduct.tenant_id == tenant_id)
-            .first()
+    def get_by_id(
+        db: Session, tenant_id: str, product_id: str, include_inactive: bool = False
+    ) -> IMSProduct | None:
+        query = db.query(IMSProduct).filter(
+            IMSProduct.id == product_id, IMSProduct.tenant_id == tenant_id
         )
+        if not include_inactive:
+            query = query.filter(IMSProduct.is_active == True)
+        return query.options(
+            joinedload(IMSProduct.variants).joinedload(IMSVariant.stock_rows)
+        ).first()
 
     @staticmethod
     def list_for_tenant(
@@ -37,7 +41,7 @@ class IMSProductRepository:
         query = (
             db.query(IMSProduct)
             .options(joinedload(IMSProduct.variants).joinedload(IMSVariant.stock_rows))
-            .filter(IMSProduct.tenant_id == tenant_id)
+            .filter(IMSProduct.tenant_id == tenant_id, IMSProduct.is_active == True)
         )
         if category_ids:
             query = query.filter(IMSProduct.category_id.in_(category_ids))
@@ -106,12 +110,21 @@ class IMSProductRepository:
 
     @staticmethod
     def sku_exists(db: Session, tenant_id: str, sku: str, exclude_id: str | None = None) -> bool:
+        # Only active products hold the SKU — matches the partial unique
+        # index, so a soft-deleted product's SKU is free to reuse.
         query = db.query(IMSProduct).filter(
-            IMSProduct.tenant_id == tenant_id, IMSProduct.sku == sku
+            IMSProduct.tenant_id == tenant_id,
+            IMSProduct.sku == sku,
+            IMSProduct.is_active == True,
         )
         if exclude_id:
             query = query.filter(IMSProduct.id != exclude_id)
         return query.first() is not None
+
+    @staticmethod
+    def soft_delete(db: Session, product: IMSProduct) -> None:
+        product.is_active = False
+        db.commit()
 
     @staticmethod
     def add_variant(db: Session, product_id: str, **fields) -> IMSVariant:

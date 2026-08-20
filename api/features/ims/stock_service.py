@@ -101,10 +101,14 @@ class IMSStockService:
         tenant_id: str,
         branch_id: str | None,
         variant_id: str | None,
+        type_: str | None,
+        q: str | None,
+        date_from: datetime | None,
+        date_to: datetime | None,
         offset: int,
         limit: int,
     ) -> dict:
         items, total = IMSMovementRepository.list_for_tenant(
-            db, tenant_id, branch_id, variant_id, offset, limit
+            db, tenant_id, branch_id, variant_id, type_, q, date_from, date_to, offset, limit
         )
         return {"success": True, "movements": items, "total": total}

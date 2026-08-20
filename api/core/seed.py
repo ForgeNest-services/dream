@@ -147,6 +147,35 @@ def _ensure_apps_schema(db) -> None:
     db.commit()
 
 
+def ensure_ims_products_schema() -> None:
+    """Same back-fill pattern as _ensure_apps_schema, for the is_active
+    column added to ims_products for soft-delete. Also drops the old plain
+    unique constraint on (tenant_id, sku) if it still exists from before the
+    partial-unique-index migration, so a soft-deleted product's SKU can be
+    reused — IF EXISTS makes both statements safe to re-run."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.ims_products "
+            "ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.ims_products "
+            "DROP CONSTRAINT IF EXISTS uq_ims_product_tenant_sku"
+        ))
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_ims_product_tenant_sku_active "
+            "ON public.ims_products (tenant_id, sku) WHERE is_active = true"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill ims_products schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
 def seed_apps():
     db = SessionLocal()
     try:

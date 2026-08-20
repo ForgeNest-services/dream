@@ -1,5 +1,5 @@
 import { DatePicker } from "@/components/common/date-picker";
-import { PaginationBar, usePagination } from "@/components/common/pagination";
+import { TablePagination } from "@/components/common/table-pagination";
 import { DateText, EmptyState, Money, PageHeader, Qty } from "@/components/common/primitives";
 import { AdjustStockDialog, RestockDialog } from "@/components/inventory/stock-dialogs";
 import { Button } from "@/components/ui/button";
@@ -12,13 +12,26 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useApp } from "@/context/app-store";
-import type { MovementType } from "@/data/types";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { normalizeTableSearch } from "@/hooks/useTableQuery";
+import { useMovements } from "@/hooks/useMovements";
+import type { MovementType, StockMovement } from "@/data/types";
+import type { StockMovementDto } from "@/lib/stock-api";
 import { downloadCsv } from "@/lib/csv";
 import { formatAd, formatBs } from "@/lib/nepali-date";
 import { cn } from "@/lib/utils";
 import { createFileRoute } from "@tanstack/react-router";
 import { Download, PackagePlus, Search, SlidersHorizontal } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+
+interface MovementsSearch {
+  q: string;
+  type: string;
+  from: string;
+  to: string;
+  page: number;
+  perPage: number;
+}
 
 export const Route = createFileRoute("/_app/inventory/movements")({
   head: () => ({
@@ -38,6 +51,20 @@ export const Route = createFileRoute("/_app/inventory/movements")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>): MovementsSearch => {
+    const normalized = normalizeTableSearch({
+      page: Number(search.page) || 1,
+      perPage: Number(search.perPage) || 25,
+    });
+    return {
+      q: typeof search.q === "string" ? search.q : "",
+      type: typeof search.type === "string" ? search.type : "all",
+      from: typeof search.from === "string" ? search.from : "",
+      to: typeof search.to === "string" ? search.to : "",
+      page: normalized.page,
+      perPage: normalized.perPage,
+    };
+  },
   component: MovementsPage,
 });
 
@@ -49,32 +76,58 @@ const TYPE_LABEL: Record<MovementType, string> = {
   transfer: "Transfer",
 };
 
+function dtoToMovement(m: StockMovementDto): StockMovement {
+  return {
+    id: m.id,
+    date: m.date,
+    branchId: m.branch_id,
+    productId: m.product_id,
+    variantId: m.variant_id,
+    type: m.type,
+    qty: Number(m.qty),
+    unitCost: m.unit_cost == null ? undefined : Number(m.unit_cost),
+    balanceAfter: Number(m.balance_after),
+    reason: m.reason ?? undefined,
+    reference: m.reference ?? undefined,
+    supplierId: m.supplier_id ?? undefined,
+    userId: m.user_id,
+  };
+}
+
 function MovementsPage() {
   const app = useApp();
-  const [q, setQ] = useState("");
-  const [type, setType] = useState("all");
-  const [from, setFrom] = useState<string | null>(null);
-  const [to, setTo] = useState<string | null>(null);
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+
+  const setSearch = (patch: Partial<MovementsSearch>) => {
+    navigate({ search: (prev) => ({ ...prev, ...patch }) });
+  };
+
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [restockOpen, setRestockOpen] = useState(false);
 
-  const rows = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    return app.movements.filter((m) => {
-      if (app.branchId !== "all" && m.branchId !== app.branchId) return false;
-      if (type !== "all" && m.type !== type) return false;
-      if (from && new Date(m.date) < new Date(from)) return false;
-      if (to && new Date(m.date) > new Date(new Date(to).setHours(23, 59, 59))) return false;
-      if (!term) return true;
-      const p = app.products.find((x) => x.id === m.productId);
-      const v = app.variants.find((x) => x.id === m.variantId);
-      return `${p?.name ?? ""} ${v?.name ?? ""} ${m.reference ?? ""} ${m.reason ?? ""}`
-        .toLowerCase()
-        .includes(term);
-    });
-  }, [app.movements, app.branchId, app.products, app.variants, q, type, from, to]);
+  const debouncedQ = useDebouncedValue(search.q, 300);
 
-  const { page, setPage, pageCount, slice, total, pageSize } = usePagination(rows, 15);
+  const { movements: movementDtos, meta, isLoading, refetch } = useMovements({
+    branch_id: app.branchId === "all" ? undefined : app.branchId,
+    type: search.type === "all" ? undefined : search.type,
+    q: debouncedQ || undefined,
+    date_from: search.from ? new Date(search.from).toISOString() : undefined,
+    date_to: search.to
+      ? new Date(new Date(search.to).setHours(23, 59, 59)).toISOString()
+      : undefined,
+    page: search.page,
+    per_page: search.perPage,
+  });
+
+  useEffect(() => {
+    if (meta && search.page > meta.total_pages) {
+      setSearch({ page: 1 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta?.total_pages]);
+
+  const rows = movementDtos.map(dtoToMovement);
 
   const inQty = rows.filter((m) => m.qty > 0).reduce((s, m) => s + m.qty, 0);
   const outQty = rows.filter((m) => m.qty < 0).reduce((s, m) => s - m.qty, 0);
@@ -101,7 +154,7 @@ function MovementsPage() {
     <div>
       <PageHeader
         title="Stock Movements"
-        subtitle={`${rows.length} entries · ${inQty} in · ${outQty} out`}
+        subtitle={`${meta?.total ?? rows.length} entries · ${inQty} in · ${outQty} out (this page)`}
         actions={
           <>
             <Button variant="outline" size="sm" onClick={exportCsv}>
@@ -125,16 +178,13 @@ function MovementsPage() {
         <div className="relative min-w-56 flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              setPage(1);
-            }}
+            value={search.q}
+            onChange={(e) => setSearch({ q: e.target.value, page: 1 })}
             placeholder="Search product, reference or reason…"
             className="pl-8"
           />
         </div>
-        <Select value={type} onValueChange={setType}>
+        <Select value={search.type} onValueChange={(v) => setSearch({ type: v, page: 1 })}>
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
@@ -147,11 +197,19 @@ function MovementsPage() {
             ))}
           </SelectContent>
         </Select>
-        <DatePicker value={from} onChange={setFrom} placeholder="From date" />
-        <DatePicker value={to} onChange={setTo} placeholder="To date" />
+        <DatePicker
+          value={search.from || null}
+          onChange={(v) => setSearch({ from: v ?? "", page: 1 })}
+          placeholder="From date"
+        />
+        <DatePicker
+          value={search.to || null}
+          onChange={(v) => setSearch({ to: v ?? "", page: 1 })}
+          placeholder="To date"
+        />
       </div>
 
-      {rows.length === 0 ? (
+      {!isLoading && rows.length === 0 ? (
         <EmptyState title="No movements found" description="Adjust the filters or date range." />
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card">
@@ -171,7 +229,7 @@ function MovementsPage() {
                 </tr>
               </thead>
               <tbody>
-                {slice.map((m) => {
+                {rows.map((m) => {
                   const p = app.products.find((x) => x.id === m.productId);
                   const v = app.variants.find((x) => x.id === m.variantId);
                   return (
@@ -226,18 +284,31 @@ function MovementsPage() {
               </tbody>
             </table>
           </div>
-          <PaginationBar
-            page={page}
-            pageCount={pageCount}
-            total={total}
-            pageSize={pageSize}
-            onChange={setPage}
+          <TablePagination
+            page={meta?.page ?? search.page}
+            perPage={meta?.per_page ?? search.perPage}
+            totalItems={meta?.total ?? rows.length}
+            totalPages={meta?.total_pages ?? 1}
+            onPageChange={(p) => setSearch({ page: p })}
+            onPerPageChange={(pp) => setSearch({ perPage: pp, page: 1 })}
           />
         </div>
       )}
 
-      <AdjustStockDialog open={adjustOpen} onOpenChange={setAdjustOpen} />
-      <RestockDialog open={restockOpen} onOpenChange={setRestockOpen} />
+      <AdjustStockDialog
+        open={adjustOpen}
+        onOpenChange={(o) => {
+          setAdjustOpen(o);
+          if (!o) refetch();
+        }}
+      />
+      <RestockDialog
+        open={restockOpen}
+        onOpenChange={(o) => {
+          setRestockOpen(o);
+          if (!o) refetch();
+        }}
+      />
     </div>
   );
 }

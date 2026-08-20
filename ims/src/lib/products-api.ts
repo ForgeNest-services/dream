@@ -1,8 +1,13 @@
 import { apiClient } from "./api-client";
 
+// NOTE: fields typed `number | string` are Decimal on the backend, which
+// Pydantic serializes as a JSON string (e.g. "cost_price": "18.00"). Every
+// consumer MUST call Number() on these before doing arithmetic — see
+// app-store.tsx's num()/numOrUndefined() helpers.
+
 export interface VariantStockDto {
   branch_id: string;
-  qty: number;
+  qty: number | string;
 }
 
 export interface VariantDto {
@@ -13,9 +18,9 @@ export interface VariantDto {
   barcode: string | null;
   unit_id: string;
   purchase_unit_id: string | null;
-  conversion_factor: number | null;
-  cost_price: number;
-  selling_price: number;
+  conversion_factor: number | string | null;
+  cost_price: number | string;
+  selling_price: number | string;
   low_stock_at: number;
   stock: VariantStockDto[];
 }
@@ -30,7 +35,7 @@ export interface ProductDto {
   media_id: string | null;
   description: string | null;
   taxable: boolean | null;
-  tax_rate: number | null;
+  tax_rate: number | string | null;
   created_at: string;
   updated_at: string;
   variants: VariantDto[];
@@ -101,5 +106,8 @@ export const productsApi = {
   },
   update(id: string, payload: UpdateProductPayload) {
     return apiClient.patch<ProductDto>(`/ims/products/${id}`, payload);
+  },
+  delete(id: string) {
+    return apiClient.delete<{ deleted: boolean }>(`/ims/products/${id}`);
   },
 };

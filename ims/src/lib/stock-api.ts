@@ -1,5 +1,7 @@
 import { apiClient } from "./api-client";
 
+// qty/unit_cost/balance_after are Decimal on the backend — serialized as
+// JSON strings. Call Number() before arithmetic (see app-store.tsx's num()).
 export interface StockMovementDto {
   id: string;
   tenant_id: string;
@@ -8,9 +10,9 @@ export interface StockMovementDto {
   product_id: string;
   variant_id: string;
   type: "restock" | "adjust-in" | "adjust-out" | "sale" | "transfer";
-  qty: number;
-  unit_cost: number | null;
-  balance_after: number;
+  qty: number | string;
+  unit_cost: number | string | null;
+  balance_after: number | string;
   reason: string | null;
   reference: string | null;
   supplier_id: string | null;
@@ -39,12 +41,27 @@ export const stockApi = {
   }) {
     return apiClient.post<StockMovementDto>("/ims/stock/restock", input);
   },
-  movements(params: { branch_id?: string; variant_id?: string; page?: number; per_page?: number } = {}) {
+  movements(
+    params: {
+      branch_id?: string;
+      variant_id?: string;
+      type?: string;
+      q?: string;
+      date_from?: string;
+      date_to?: string;
+      page?: number;
+      per_page?: number;
+    } = {},
+  ) {
     const qs = new URLSearchParams();
     if (params.branch_id) qs.set("branch_id", params.branch_id);
     if (params.variant_id) qs.set("variant_id", params.variant_id);
+    if (params.type) qs.set("type", params.type);
+    if (params.q) qs.set("q", params.q);
+    if (params.date_from) qs.set("date_from", params.date_from);
+    if (params.date_to) qs.set("date_to", params.date_to);
     qs.set("page", String(params.page ?? 1));
-    qs.set("per_page", String(params.per_page ?? 100));
+    qs.set("per_page", String(params.per_page ?? 25));
     return apiClient.get<StockMovementDto[]>(`/ims/stock/movements?${qs.toString()}`);
   },
 };

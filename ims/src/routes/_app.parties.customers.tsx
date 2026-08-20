@@ -61,8 +61,8 @@ function dtoToParty(p: {
   address: string | null;
   pan: string | null;
   is_vat_registered: boolean | null;
-  credit_limit: number | null;
-  opening_balance: number;
+  credit_limit: number | string | null;
+  opening_balance: number | string;
   terms: string | null;
 }): Party {
   return {
@@ -74,8 +74,10 @@ function dtoToParty(p: {
     address: p.address ?? "",
     pan: p.pan ?? undefined,
     isVatRegistered: p.is_vat_registered ?? undefined,
-    creditLimit: p.credit_limit ?? undefined,
-    openingBalance: p.opening_balance,
+    // Backend Decimal fields serialize as JSON strings — coerce or
+    // arithmetic on these silently does string concatenation.
+    creditLimit: p.credit_limit == null ? undefined : Number(p.credit_limit),
+    openingBalance: Number(p.opening_balance),
     terms: p.terms ?? undefined,
   };
 }

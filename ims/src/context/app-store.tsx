@@ -51,6 +51,16 @@ import {
   type Variant,
 } from "@/data/types";
 
+/** Backend Decimal fields serialize as JSON strings (Pydantic's default for
+ *  Decimal, confirmed across every /ims endpoint — e.g. "cost_price":"18.00")
+ *  even though the DTO types declare them as `number`. Every numeric field
+ *  read from the API must go through this before use, or arithmetic like
+ *  `price + price * rate / 100` silently does string concatenation instead
+ *  of addition, and `.toFixed()` on the result throws "not a function". */
+const num = (v: number | string | null | undefined): number => (v == null ? 0 : Number(v));
+const numOrUndefined = (v: number | string | null | undefined): number | undefined =>
+  v == null ? undefined : Number(v);
+
 const toBranch = (b: BranchDto): Branch => ({
   id: b.id,
   name: b.name,
@@ -85,11 +95,11 @@ const toVariant = (v: VariantDto): Variant => ({
   barcode: v.barcode ?? "",
   unitId: v.unit_id,
   purchaseUnitId: v.purchase_unit_id ?? undefined,
-  conversionFactor: v.conversion_factor ?? undefined,
-  costPrice: v.cost_price,
-  sellingPrice: v.selling_price,
-  stock: Object.fromEntries(v.stock.map((s) => [s.branch_id, s.qty])),
-  lowStockAt: v.low_stock_at,
+  conversionFactor: numOrUndefined(v.conversion_factor),
+  costPrice: num(v.cost_price),
+  sellingPrice: num(v.selling_price),
+  stock: Object.fromEntries(v.stock.map((s) => [s.branch_id, num(s.qty)])),
+  lowStockAt: num(v.low_stock_at),
 });
 const toProduct = (p: ProductDto): Product => ({
   id: p.id,
@@ -100,7 +110,7 @@ const toProduct = (p: ProductDto): Product => ({
   mediaId: p.media_id ?? undefined,
   description: p.description ?? undefined,
   taxable: p.taxable ?? undefined,
-  taxRate: p.tax_rate ?? undefined,
+  taxRate: numOrUndefined(p.tax_rate),
   createdAt: p.created_at,
 });
 const toMovement = (m: StockMovementDto): StockMovement => ({
@@ -110,9 +120,9 @@ const toMovement = (m: StockMovementDto): StockMovement => ({
   productId: m.product_id,
   variantId: m.variant_id,
   type: m.type,
-  qty: m.qty,
-  unitCost: m.unit_cost ?? undefined,
-  balanceAfter: m.balance_after,
+  qty: num(m.qty),
+  unitCost: numOrUndefined(m.unit_cost),
+  balanceAfter: num(m.balance_after),
   reason: m.reason ?? undefined,
   reference: m.reference ?? undefined,
   supplierId: m.supplier_id ?? undefined,
@@ -131,8 +141,8 @@ const toParty = (p: PartyDto): Party => ({
   address: p.address ?? "",
   pan: p.pan ?? undefined,
   isVatRegistered: p.is_vat_registered ?? undefined,
-  creditLimit: p.credit_limit ?? undefined,
-  openingBalance: p.opening_balance,
+  creditLimit: numOrUndefined(p.credit_limit),
+  openingBalance: num(p.opening_balance),
   terms: p.terms ?? undefined,
 });
 const toLedgerEntry = (l: LedgerEntryDto): LedgerEntry => ({
@@ -141,8 +151,8 @@ const toLedgerEntry = (l: LedgerEntryDto): LedgerEntry => ({
   date: l.date,
   description: l.description,
   reference: l.reference ?? undefined,
-  debit: l.debit,
-  credit: l.credit,
+  debit: num(l.debit),
+  credit: num(l.credit),
 });
 
 /** A product entered on a purchase bill — either an existing one or a brand new one. */
@@ -230,6 +240,7 @@ interface AppContextValue extends AppState {
     patch: Omit<Product, "id" | "createdAt">,
     variants: (Omit<Variant, "productId" | "stock"> & { id?: string | undefined })[],
   ) => Promise<{ ok: boolean; error?: string }>;
+  deleteProduct: (id: string) => Promise<{ ok: boolean; error?: string }>;
   /** Upserts products (and their variants) into the global cache — used by
    *  the paginated Products page so a product on the current page is always
    *  available to app.variantsOf()/app.stockOf() even if it wasn't already
@@ -609,6 +620,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       },
 
+      deleteProduct: async (id) => {
+        try {
+          const res = await productsApi.delete(id);
+          if (!res.success) return { ok: false, error: "Failed to delete product" };
+          setState((s) => ({
+            ...s,
+            products: s.products.filter((p) => p.id !== id),
+            variants: s.variants.filter((v) => v.productId !== id),
+          }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to delete product" };
+        }
+      },
+
       syncProducts: (products) => {
         if (products.length === 0) return;
         setState((s) => {
@@ -698,7 +724,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ...s,
             variants: s.variants.map((v) =>
               v.id === variantId
-                ? { ...v, stock: { ...v.stock, [branchId]: movement.balance_after } }
+                ? { ...v, stock: { ...v.stock, [branchId]: num(movement.balance_after) } }
                 : v,
             ),
             movements: [toMovement(movement), ...s.movements],
@@ -742,7 +768,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ...s,
             variants: s.variants.map((v) =>
               v.id === variantId
-                ? { ...v, costPrice: unitCost, stock: { ...v.stock, [branchId]: movement.balance_after } }
+                ? { ...v, costPrice: unitCost, stock: { ...v.stock, [branchId]: num(movement.balance_after) } }
                 : v,
             ),
             movements: [toMovement(movement), ...s.movements],

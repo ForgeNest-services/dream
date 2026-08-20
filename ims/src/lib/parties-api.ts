@@ -1,5 +1,8 @@
 import { apiClient } from "./api-client";
 
+// credit_limit/opening_balance/debit/credit are Decimal on the backend —
+// serialized as JSON strings. Call Number() before arithmetic (see
+// app-store.tsx's num()/numOrUndefined()).
 export interface PartyDto {
   id: string;
   tenant_id: string;
@@ -10,8 +13,8 @@ export interface PartyDto {
   address: string | null;
   pan: string | null;
   is_vat_registered: boolean | null;
-  credit_limit: number | null;
-  opening_balance: number;
+  credit_limit: number | string | null;
+  opening_balance: number | string;
   terms: string | null;
   created_at: string;
   updated_at: string;
@@ -24,8 +27,8 @@ export interface LedgerEntryDto {
   date: string;
   description: string;
   reference: string | null;
-  debit: number;
-  credit: number;
+  debit: number | string;
+  credit: number | string;
 }
 
 export interface CreatePartyPayload {

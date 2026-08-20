@@ -34,6 +34,15 @@ class IMSProductService:
         return {"success": True, "product": product}
 
     @staticmethod
+    def delete(db: Session, tenant_id: str, product_id: str) -> dict:
+        product = IMSProductRepository.get_by_id(db, tenant_id, product_id)
+        if not product:
+            return {"success": False, "error_code": "PRODUCT_NOT_FOUND"}
+        IMSProductRepository.soft_delete(db, product)
+        logger.info(f"IMS product deleted: {product_id}", extra={"tenant_id": tenant_id})
+        return {"success": True}
+
+    @staticmethod
     def create(
         db: Session,
         tenant_id: str,

@@ -3,6 +3,16 @@ import { TablePagination } from "@/components/common/table-pagination";
 import { MediaThumb } from "@/components/inventory/media-picker";
 import { ProductFormDialog } from "@/components/inventory/product-form-dialog";
 import { AdjustStockDialog, RestockDialog } from "@/components/inventory/stock-dialogs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -19,21 +29,6 @@ import { normalizeTableSearch } from "@/hooks/useTableQuery";
 import { useProducts } from "@/hooks/useProducts";
 import type { Product } from "@/data/types";
 import type { ProductDto } from "@/lib/products-api";
-
-function dtoToProduct(p: ProductDto): Product {
-  return {
-    id: p.id,
-    name: p.name,
-    sku: p.sku,
-    categoryId: p.category_id,
-    brandId: p.brand_id ?? undefined,
-    mediaId: p.media_id ?? undefined,
-    description: p.description ?? undefined,
-    taxable: p.taxable ?? undefined,
-    taxRate: p.tax_rate ?? undefined,
-    createdAt: p.created_at,
-  };
-}
 import { downloadCsv } from "@/lib/csv";
 import { createFileRoute } from "@tanstack/react-router";
 import {
@@ -46,8 +41,27 @@ import {
   Plus,
   Search,
   SlidersHorizontal,
+  Trash2,
 } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
+import { toast } from "sonner";
+
+function dtoToProduct(p: ProductDto): Product {
+  return {
+    id: p.id,
+    name: p.name,
+    sku: p.sku,
+    categoryId: p.category_id,
+    brandId: p.brand_id ?? undefined,
+    mediaId: p.media_id ?? undefined,
+    description: p.description ?? undefined,
+    taxable: p.taxable ?? undefined,
+    // Backend Decimal fields serialize as JSON strings — coerce or
+    // arithmetic on this silently does string concatenation.
+    taxRate: p.tax_rate == null ? undefined : Number(p.tax_rate),
+    createdAt: p.created_at,
+  };
+}
 
 interface ProductsSearch {
   q: string;
@@ -109,6 +123,8 @@ function ProductsPage() {
   const [editing, setEditing] = useState<Product | undefined>(undefined);
   const [adjustFor, setAdjustFor] = useState<{ p: string; v: string } | null>(null);
   const [restockFor, setRestockFor] = useState<{ p: string; v: string } | null>(null);
+  const [deleteFor, setDeleteFor] = useState<Product | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const debouncedQ = useDebouncedValue(search.q, 300);
   const debouncedBarcode = useDebouncedValue(barcode, 300);
@@ -175,6 +191,9 @@ function ProductsPage() {
     );
 
   const canEdit = app.can("product.edit");
+  // Backend only allows owner/manager to delete a product — storekeeper can
+  // edit but not delete, matching the same restriction server-side.
+  const canDelete = canEdit && app.effectiveRole !== "storekeeper";
 
   return (
     <div>
@@ -399,6 +418,16 @@ function ProductsPage() {
                                 <Pencil className="h-4 w-4" />
                               </Button>
                             ) : null}
+                            {canDelete ? (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label="Delete product"
+                                onClick={() => setDeleteFor(p)}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            ) : null}
                           </div>
                         </td>
                       </tr>
@@ -494,6 +523,43 @@ function ProductsPage() {
         }}
         productId={restockFor?.p || undefined}
       />
+
+      <AlertDialog open={deleteFor !== null} onOpenChange={(o) => !o && setDeleteFor(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{deleteFor?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the product from the catalogue. Stock movement history for its
+              variants is kept for the audit trail — it isn't erased.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!deleteFor) return;
+                setDeleting(true);
+                try {
+                  const res = await app.deleteProduct(deleteFor.id);
+                  if (!res.ok) {
+                    toast.error(res.error ?? "Failed to delete product");
+                    return;
+                  }
+                  toast.success("Product deleted");
+                  setDeleteFor(null);
+                  refetch();
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

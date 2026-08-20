@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Numeric, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, String, Boolean, Numeric, DateTime, ForeignKey, Index, text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import uuid
@@ -11,7 +11,16 @@ class IMSProduct(Base):
 
     __tablename__ = "ims_products"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "sku", name="uq_ims_product_tenant_sku"),
+        # Partial (not plain) unique index — a soft-deleted product's SKU
+        # must be reusable by a new product, same pattern as
+        # restro_categories' active-name uniqueness.
+        Index(
+            "uq_ims_product_tenant_sku_active",
+            "tenant_id",
+            "sku",
+            unique=True,
+            postgresql_where=text("is_active = true"),
+        ),
         {"schema": "public"},
     )
 
@@ -30,6 +39,7 @@ class IMSProduct(Base):
     # doc comment. Stored nullable so "unset" and "false" stay distinguishable.
     taxable = Column(Boolean, nullable=True)
     tax_rate = Column(Numeric(5, 2), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
         DateTime,
