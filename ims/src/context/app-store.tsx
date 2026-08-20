@@ -24,6 +24,12 @@ import {
 } from "@/lib/products-api";
 import { stockApi, type StockMovementDto } from "@/lib/stock-api";
 import { partiesApi, ledgerApi, type PartyDto, type LedgerEntryDto } from "@/lib/parties-api";
+import {
+  purchasesApi,
+  type PurchaseDto,
+  type CreatePurchasePayload,
+  type PurchaseItemPayload,
+} from "@/lib/purchases-api";
 import { ApiError } from "@/lib/api-client";
 import { toast } from "sonner";
 import {
@@ -154,6 +160,35 @@ const toLedgerEntry = (l: LedgerEntryDto): LedgerEntry => ({
   debit: num(l.debit),
   credit: num(l.credit),
 });
+const toPurchase = (p: PurchaseDto): Purchase => ({
+  id: p.id,
+  number: p.number,
+  date: p.date,
+  branchId: p.branch_id,
+  partyId: p.party_id ?? undefined,
+  billNo: p.bill_no ?? undefined,
+  lines: p.lines.map(
+    (l): PurchaseLine => ({
+      id: l.id,
+      productId: l.product_id,
+      variantId: l.variant_id,
+      description: l.description,
+      qty: num(l.qty),
+      unitId: l.unit_id,
+      unitCost: num(l.unit_cost),
+      taxable: l.taxable,
+      taxRate: num(l.tax_rate),
+      vatAmount: num(l.vat_amount),
+    }),
+  ),
+  itemsTotal: num(p.items_total),
+  billAmount: num(p.bill_amount),
+  paidAmount: num(p.paid_amount),
+  paymentMethod: p.payment_method as PaymentMethod,
+  postToLedger: p.post_to_ledger,
+  note: p.note ?? undefined,
+  userId: p.user_id,
+});
 
 /** A product entered on a purchase bill — either an existing one or a brand new one. */
 export type PurchaseDraftItem =
@@ -270,7 +305,9 @@ interface AppContextValue extends AppState {
     postToLedger?: boolean | undefined;
     billAmount?: number | undefined;
   }) => Promise<{ ok: boolean; error?: string }>;
-  createPurchase: (input: PurchaseInput) => Purchase;
+  createPurchase: (
+    input: PurchaseInput,
+  ) => Promise<{ ok: boolean; purchase?: Purchase; error?: string }>;
   addParty: (p: Omit<Party, "id">) => Promise<{ ok: boolean; party?: Party; error?: string }>;
   updateParty: (
     id: string,
@@ -382,6 +419,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           fiscalYearsRes,
           partiesRes,
           ledgerRes,
+          purchasesRes,
         ] = await Promise.all([
           branchesApi.listMine(),
           categoriesApi.list(),
@@ -393,6 +431,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           fiscalYearsApi.list(),
           partiesApi.list(undefined, { per_page: 100 }),
           ledgerApi.listAll(),
+          purchasesApi.list({ per_page: 100 }),
         ]);
         if (cancelled) return;
         const productDtos = productsRes.data ?? [];
@@ -410,6 +449,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           parties: (partiesRes.data ?? []).map(toParty),
           ledger: (ledgerRes.data ?? []).map(toLedgerEntry),
           movements: (movementsRes.data ?? []).map(toMovement),
+          purchases: (purchasesRes.data ?? []).map(toPurchase),
           fiscalYears: fyDtos.map(toFiscalYear),
           fiscalYearId: activeFy ? activeFy.id : s.fiscalYearId,
         }));
@@ -784,173 +824,83 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       },
 
-      createPurchase: (input) => {
-        const purchaseId = nextId("pu");
-        const number = `PB-${fiscalYear.startYear}-${1000 + state.purchases.length + 1}`;
-        let created: Purchase = {
-          id: purchaseId,
-          number,
-          date: input.date,
-          branchId: input.branchId,
-          partyId: input.partyId,
-          billNo: input.billNo,
-          lines: [],
-          itemsTotal: 0,
-          billAmount: input.billAmount,
-          paidAmount: input.paidAmount,
-          paymentMethod: input.paymentMethod,
-          postToLedger: input.postToLedger,
-          note: input.note,
-          userId: state.currentUser?.id ?? "u-1",
-        };
-
-        setState((s) => {
-          const newProducts: Product[] = [];
-          const newVariants: Variant[] = [];
-          const lines: PurchaseLine[] = [];
-          // variantId -> qty received, applied to branch stock at the end
-          const received: { variantId: string; qty: number; unitCost: number }[] = [];
-          const priceUpdates = new Map<string, { costPrice: number; sellingPrice: number }>();
-
-          input.items.forEach((item, idx) => {
-            if (item.kind === "new") {
-              const pid = `${purchaseId}-p${idx + 1}`;
-              newProducts.push({
-                id: pid,
+      createPurchase: async (input) => {
+        const items: PurchaseItemPayload[] = input.items.map((item) =>
+          item.kind === "new"
+            ? {
+                kind: "new",
                 name: item.name,
                 sku: item.sku,
-                categoryId: item.categoryId,
-                brandId: item.brandId,
-                mediaId: item.mediaId,
+                category_id: item.categoryId,
+                brand_id: item.brandId,
+                media_id: item.mediaId,
                 taxable: item.taxable,
-                taxRate: item.taxRate,
-                createdAt: input.date,
-              });
-              const rate = item.taxable ? (item.taxRate ?? s.company.vatRate) : 0;
-              item.rows.forEach((r, ri) => {
-                const vid = `${pid}-v${ri + 1}`;
-                newVariants.push({
-                  id: vid,
-                  productId: pid,
-                  name: r.name || "Default",
-                  modelNo: r.modelNo,
+                tax_rate: item.taxRate,
+                rows: item.rows.map((r) => ({
+                  name: r.name,
+                  model_no: r.modelNo,
                   barcode: r.barcode,
-                  unitId: r.unitId,
-                  costPrice: r.unitCost,
-                  sellingPrice: r.sellingPrice,
-                  lowStockAt: r.lowStockAt,
-                  stock: Object.fromEntries(s.branches.map((b) => [b.id, 0])),
-                });
-                if (r.qty > 0) received.push({ variantId: vid, qty: r.qty, unitCost: r.unitCost });
-                lines.push({
-                  id: `${vid}-l`,
-                  productId: pid,
-                  variantId: vid,
-                  description: `${item.name} — ${r.name || "Default"}`,
+                  unit_id: r.unitId,
                   qty: r.qty,
-                  unitId: r.unitId,
-                  unitCost: r.unitCost,
-                  taxable: item.taxable,
-                  taxRate: rate,
-                  vatAmount: (r.qty * r.unitCost * rate) / 100,
-                });
-              });
-            } else {
-              const product = s.products.find((p) => p.id === item.productId);
-              const taxable = product?.taxable !== false;
-              const rate = taxable ? (product?.taxRate ?? s.company.vatRate) : 0;
-              item.rows.forEach((r) => {
-                const v = s.variants.find((x) => x.id === r.variantId);
-                if (!v || r.qty <= 0) return;
-                priceUpdates.set(v.id, {
-                  costPrice: r.unitCost,
-                  sellingPrice: r.sellingPrice || v.sellingPrice,
-                });
-                received.push({ variantId: v.id, qty: r.qty, unitCost: r.unitCost });
-                lines.push({
-                  id: `${v.id}-l-${idx}`,
-                  productId: v.productId,
-                  variantId: v.id,
-                  description: `${product?.name ?? "Item"} — ${v.name}`,
+                  unit_cost: r.unitCost,
+                  selling_price: r.sellingPrice,
+                  low_stock_at: r.lowStockAt,
+                })),
+              }
+            : {
+                kind: "existing",
+                product_id: item.productId,
+                rows: item.rows.map((r) => ({
+                  variant_id: r.variantId,
                   qty: r.qty,
-                  unitId: v.unitId,
-                  unitCost: r.unitCost,
-                  taxable,
-                  taxRate: rate,
-                  vatAmount: (r.qty * r.unitCost * rate) / 100,
-                });
-              });
-            }
-          });
+                  unit_cost: r.unitCost,
+                  selling_price: r.sellingPrice,
+                })),
+              },
+        );
 
-          const itemsTotal = lines.reduce((sum, l) => sum + l.qty * l.unitCost, 0);
-          created = { ...created, lines, itemsTotal };
+        const payload: CreatePurchasePayload = {
+          date: input.date,
+          branch_id: input.branchId,
+          party_id: input.partyId,
+          bill_no: input.billNo,
+          note: input.note,
+          bill_amount: input.billAmount,
+          paid_amount: input.paidAmount,
+          payment_method: input.paymentMethod,
+          post_to_ledger: input.postToLedger,
+          items,
+          default_vat_rate: state.company.vatRate,
+        };
 
-          let variants = [...s.variants, ...newVariants].map((v) => {
-            const pu = priceUpdates.get(v.id);
-            return pu ? { ...v, ...pu } : v;
-          });
+        try {
+          const res = await purchasesApi.create(payload);
+          if (!res.success || !res.data) return { ok: false, error: "Failed to record purchase" };
+          const created = toPurchase(res.data);
 
-          const movements: StockMovement[] = [];
-          received.forEach((r) => {
-            variants = variants.map((v) => {
-              if (v.id !== r.variantId) return v;
-              const balance = (v.stock[input.branchId] ?? 0) + r.qty;
-              movements.push({
-                id: nextId("mv"),
-                date: input.date,
-                branchId: input.branchId,
-                productId: v.productId,
-                variantId: v.id,
-                type: "restock",
-                qty: r.qty,
-                unitCost: r.unitCost,
-                balanceAfter: balance,
-                reference: input.billNo || number,
-                supplierId: input.partyId,
-                userId: created.userId,
-              });
-              return { ...v, stock: { ...v.stock, [input.branchId]: balance } };
-            });
-          });
+          // A purchase can create brand-new products/variants and always
+          // touches stock + (optionally) the party ledger — simplest to
+          // refetch these rather than hand-reconstruct local state.
+          const [productsRes, movementsRes, ledgerRes] = await Promise.all([
+            productsApi.list({ per_page: 100 }),
+            stockApi.movements({ per_page: 100 }),
+            ledgerApi.listAll(),
+          ]);
+          const productDtos = productsRes.data ?? [];
 
-          const ledger: LedgerEntry[] = [];
-          if (input.partyId && input.postToLedger) {
-            if (input.billAmount > 0) {
-              ledger.push({
-                id: nextId("le"),
-                partyId: input.partyId,
-                date: input.date,
-                description: `Purchase bill ${input.billNo || number}`,
-                reference: input.billNo || number,
-                debit: 0,
-                credit: input.billAmount,
-              });
-            }
-            if (input.paidAmount > 0) {
-              ledger.push({
-                id: nextId("le"),
-                partyId: input.partyId,
-                date: input.date,
-                description: `Payment made (${input.paymentMethod})`,
-                reference: input.billNo || number,
-                debit: input.paidAmount,
-                credit: 0,
-              });
-            }
-          }
-
-          return {
+          setState((s) => ({
             ...s,
-            products: [...newProducts, ...s.products],
-            variants,
-            movements: [...movements, ...s.movements],
+            products: productDtos.map(toProduct),
+            variants: productDtos.flatMap((p) => p.variants.map(toVariant)),
+            movements: (movementsRes.data ?? []).map(toMovement),
+            ledger: (ledgerRes.data ?? []).map(toLedgerEntry),
             purchases: [created, ...s.purchases],
-            ledger: [...ledger, ...s.ledger],
-          };
-        });
+          }));
 
-        return created;
+          return { ok: true, purchase: created };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to record purchase" };
+        }
       },
 
 

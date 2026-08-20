@@ -30,6 +30,8 @@ from features.ims.schemas import (
     UpdatePartyRequest,
     LedgerEntryData,
     RecordPaymentRequest,
+    PurchaseData,
+    CreatePurchaseRequest,
 )
 from features.ims.service import IMSCredentialService, IMSAuthService
 from features.ims.category_service import IMSCategoryService
@@ -41,6 +43,7 @@ from features.ims.stock_service import IMSStockService
 from features.ims.fiscal_year_service import IMSFiscalYearService
 from features.ims.party_service import IMSPartyService, IMSLedgerService
 from features.ims.party_repository import IMSLedgerRepository
+from features.ims.purchase_service import IMSPurchaseService
 
 
 router = APIRouter(prefix="/ims", tags=["ims"])
@@ -721,6 +724,11 @@ def activate_fiscal_year(
 _PARTY_ERROR_MAP = {
     "PARTY_NOT_FOUND": ("PARTY_NOT_FOUND", "Party not found.", 404),
     "INVALID_AMOUNT": ("INVALID_AMOUNT", "Amount must be greater than zero.", 422),
+    "HAS_PURCHASE_HISTORY": (
+        "HAS_PURCHASE_HISTORY",
+        "This party has purchase bills recorded against it and can't be deleted.",
+        409,
+    ),
 }
 
 
@@ -866,5 +874,91 @@ def record_payment(
     return success_response(
         data=LedgerEntryData.model_validate(result["entry"]).model_dump(mode="json"),
         message="Payment recorded",
+        status_code=201,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Purchases (staff-facing) — bulk product entry against a supplier bill,
+# receives stock and optionally posts to the party ledger, all atomically.
+# ---------------------------------------------------------------------------
+
+_PURCHASE_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "PARTY_NOT_FOUND": ("PARTY_NOT_FOUND", "Party not found.", 404),
+    "PRODUCT_NOT_FOUND": ("PRODUCT_NOT_FOUND", "Product not found.", 404),
+    "CATEGORY_NOT_FOUND": ("CATEGORY_NOT_FOUND", "Category not found.", 404),
+    "SKU_TAKEN": ("SKU_TAKEN", "SKU is already in use.", 409),
+    "NO_ITEMS": ("NO_ITEMS", "Add at least one item with a quantity.", 422),
+    "CREATION_FAILED": ("CREATION_FAILED", "Failed to record purchase.", 500),
+}
+
+
+def _purchase_error(code: str):
+    mapped = _PURCHASE_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to process request.", 500))
+    return error_response(*mapped)
+
+
+@router.get("/purchases")
+def list_purchases(
+    branch_id: str | None = None,
+    party_id: str | None = None,
+    q: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    from datetime import datetime as _dt
+
+    paging = parse_paging(page, per_page)
+    result = IMSPurchaseService.list_for_tenant(
+        db,
+        staff["tenant_id"],
+        branch_id,
+        party_id,
+        q,
+        _dt.fromisoformat(date_from) if date_from else None,
+        _dt.fromisoformat(date_to) if date_to else None,
+        paging["offset"],
+        paging["limit"],
+    )
+    return success_response(
+        data=[PurchaseData.model_validate(p).model_dump(mode="json") for p in result["purchases"]],
+        meta=build_meta(result["total"], paging["page"], paging["per_page"]),
+    )
+
+
+@router.post("/purchases")
+def create_purchase(
+    data: CreatePurchaseRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager", "storekeeper"):
+        raise HTTPException(403, "Not allowed to record purchases")
+    result = IMSPurchaseService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        user_id=staff.get("cred_id") or "",
+        date=data.date,
+        branch_id=data.branch_id,
+        party_id=data.party_id,
+        bill_no=data.bill_no,
+        note=data.note,
+        bill_amount=data.bill_amount,
+        paid_amount=data.paid_amount,
+        payment_method=data.payment_method,
+        post_to_ledger=data.post_to_ledger,
+        items=[item.model_dump() for item in data.items],
+        default_vat_rate=data.default_vat_rate,
+    )
+    if not result["success"]:
+        return _purchase_error(result["error_code"])
+    return success_response(
+        data=PurchaseData.model_validate(result["purchase"]).model_dump(mode="json"),
+        message="Purchase recorded",
         status_code=201,
     )

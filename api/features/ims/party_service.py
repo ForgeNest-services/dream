@@ -120,6 +120,14 @@ class IMSPartyService:
         party = IMSPartyRepository.get_by_id(db, tenant_id, party_id)
         if not party:
             return {"success": False, "error_code": "PARTY_NOT_FOUND"}
+        # A purchase's party_id FK isn't cascade-deletable — purchases are
+        # append-only records (see IMSPurchase's docstring), so a party with
+        # purchase history can never be hard-deleted, unlike opening-balance
+        # or payment-only ledger history which the party delete freely wipes.
+        from features.ims.purchase_repository import IMSPurchaseRepository
+
+        if IMSPurchaseRepository.exists_for_party(db, tenant_id, party_id):
+            return {"success": False, "error_code": "HAS_PURCHASE_HISTORY"}
         IMSPartyRepository.delete(db, party)
         logger.info(f"IMS party deleted: {party_id}", extra={"tenant_id": tenant_id})
         return {"success": True}

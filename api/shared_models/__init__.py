@@ -35,6 +35,8 @@ from .ims_media import IMSMedia
 from .ims_fiscal_year import IMSFiscalYear
 from .ims_party import IMSParty
 from .ims_ledger_entry import IMSLedgerEntry
+from .ims_purchase import IMSPurchase
+from .ims_purchase_line import IMSPurchaseLine
 from .app import App
 
 __all__ = [
@@ -75,5 +77,7 @@ __all__ = [
     "IMSFiscalYear",
     "IMSParty",
     "IMSLedgerEntry",
+    "IMSPurchase",
+    "IMSPurchaseLine",
     "App",
 ]

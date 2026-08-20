@@ -1,4 +1,5 @@
-from pydantic import BaseModel, ConfigDict, field_validator
+from typing import Annotated, Literal, Union
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime
 from decimal import Decimal
 from features.ims.roles import IMSRole
@@ -337,3 +338,92 @@ class RecordPaymentRequest(BaseModel):
     date: datetime
     method: str
     reference: str | None = None
+
+
+class PurchaseLineData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    product_id: str
+    variant_id: str
+    description: str
+    qty: Decimal
+    unit_id: str
+    unit_cost: Decimal
+    taxable: bool
+    tax_rate: Decimal
+    vat_amount: Decimal
+
+
+class PurchaseData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    number: str
+    date: datetime
+    branch_id: str
+    party_id: str | None
+    bill_no: str | None
+    items_total: Decimal
+    bill_amount: Decimal
+    paid_amount: Decimal
+    payment_method: str
+    post_to_ledger: bool
+    note: str | None
+    user_id: str
+    created_at: datetime
+    lines: list[PurchaseLineData]
+
+
+class PurchaseNewItemRow(BaseModel):
+    name: str = ""
+    model_no: str = ""
+    barcode: str = ""
+    unit_id: str
+    qty: Decimal
+    unit_cost: Decimal
+    selling_price: Decimal = Decimal(0)
+    low_stock_at: int = 10
+
+
+class PurchaseExistingItemRow(BaseModel):
+    variant_id: str
+    qty: Decimal
+    unit_cost: Decimal
+    selling_price: Decimal = Decimal(0)
+
+
+class PurchaseNewItem(BaseModel):
+    kind: Literal["new"] = "new"
+    name: str
+    sku: str
+    category_id: str
+    brand_id: str | None = None
+    media_id: str | None = None
+    taxable: bool = True
+    tax_rate: Decimal | None = None
+    rows: list[PurchaseNewItemRow]
+
+
+class PurchaseExistingItem(BaseModel):
+    kind: Literal["existing"] = "existing"
+    product_id: str
+    rows: list[PurchaseExistingItemRow]
+
+
+class CreatePurchaseRequest(BaseModel):
+    date: datetime
+    branch_id: str
+    party_id: str | None = None
+    bill_no: str | None = None
+    note: str | None = None
+    bill_amount: Decimal = Decimal(0)
+    paid_amount: Decimal = Decimal(0)
+    payment_method: str = "cash"
+    post_to_ledger: bool = False
+    items: list[Annotated[Union[PurchaseNewItem, PurchaseExistingItem], Field(discriminator="kind")]]
+    # Frontend's company.vatRate fallback for taxable lines with no explicit
+    # rate — CompanyProfile isn't a backend table yet, so this rides along
+    # on the request instead of being looked up server-side.
+    default_vat_rate: Decimal = Decimal(13)

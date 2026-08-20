@@ -23,7 +23,7 @@ import { useApp, type PurchaseDraftItem } from "@/context/app-store";
 import type { PaymentMethod } from "@/data/types";
 import { createFileRoute } from "@tanstack/react-router";
 import { Plus, UserPlus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/purchase/new")({
@@ -79,6 +79,19 @@ function NewPurchasePage() {
   const [supplierOpen, setSupplierOpen] = useState(false);
   const [items, setItems] = useState<DraftItem[]>([makeItem()]);
 
+  // Branches load asynchronously after mount (see app-store's bootstrap
+  // effect) — the useState(defaultBranch) initializer above only runs once,
+  // so if it fires before branches arrive, branchId is stuck on "" forever
+  // and the backend correctly 404s with BRANCH_NOT_FOUND. Sync once branches
+  // land, but only while the field is still unset/stale so it doesn't
+  // clobber a branch the user already picked.
+  useEffect(() => {
+    if (branchId) return;
+    const fallback = app.branchId === "all" ? (app.branches[0]?.id ?? "") : app.branchId;
+    if (fallback) setBranchId(fallback);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.branches, app.branchId]);
+
   const suppliers = app.parties.filter((p) => p.kind === "supplier");
   const itemsTotal = useMemo(
     () => items.reduce((s, i) => s + i.rows.reduce((x, r) => x + r.qty * r.unitCost, 0), 0),
@@ -122,7 +135,9 @@ function NewPurchasePage() {
     setPaidAmount(0);
   };
 
-  const save = () => {
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
     const payload: PurchaseDraftItem[] = [];
     for (const i of items) {
       const rows = i.rows.filter((r) => r.qty > 0 || i.kind === "new");
@@ -177,24 +192,37 @@ function NewPurchasePage() {
       toast.error("Add at least one item with a quantity");
       return;
     }
-    const purchase = app.createPurchase({
-      date: date ?? new Date().toISOString(),
-      branchId,
-      partyId: partyId === "none" ? undefined : partyId,
-      billNo: billNo.trim() || undefined,
-      note: note.trim() || undefined,
-      billAmount: tracking ? effectiveBill : 0,
-      paidAmount: tracking ? paidAmount : 0,
-      paymentMethod: method,
-      postToLedger: tracking,
-      items: payload,
-    });
-    toast.success(`Purchase recorded — ${purchase.number}`, {
-      description: tracking
-        ? "Stock received and party ledger updated."
-        : "Stock received. No ledger entry posted.",
-    });
-    reset();
+    if (!branchId) {
+      toast.error("Choose a branch to receive stock into");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await app.createPurchase({
+        date: date ?? new Date().toISOString(),
+        branchId,
+        partyId: partyId === "none" ? undefined : partyId,
+        billNo: billNo.trim() || undefined,
+        note: note.trim() || undefined,
+        billAmount: tracking ? effectiveBill : 0,
+        paidAmount: tracking ? paidAmount : 0,
+        paymentMethod: method,
+        postToLedger: tracking,
+        items: payload,
+      });
+      if (!res.ok || !res.purchase) {
+        toast.error(res.error ?? "Failed to record purchase");
+        return;
+      }
+      toast.success(`Purchase recorded — ${res.purchase.number}`, {
+        description: tracking
+          ? "Stock received and party ledger updated."
+          : "Stock received. No ledger entry posted.",
+      });
+      reset();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -203,8 +231,8 @@ function NewPurchasePage() {
         title="New Purchase Entry"
         subtitle="Enter a whole supplier bill at once — many products, each with its own variants."
         actions={
-          <Button onClick={save} disabled={!app.can("purchase.create")}>
-            Save purchase
+          <Button onClick={save} disabled={!app.can("purchase.create") || saving}>
+            {saving ? "Saving…" : "Save purchase"}
           </Button>
         }
       />
