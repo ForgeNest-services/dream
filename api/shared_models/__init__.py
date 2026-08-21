@@ -39,6 +39,7 @@ from .ims_purchase import IMSPurchase
 from .ims_purchase_line import IMSPurchaseLine
 from .ims_invoice import IMSInvoice
 from .ims_invoice_line import IMSInvoiceLine
+from .ims_branch_settings import IMSBranchSettings
 from .app import App
 
 __all__ = [
@@ -83,5 +84,6 @@ __all__ = [
     "IMSPurchaseLine",
     "IMSInvoice",
     "IMSInvoiceLine",
+    "IMSBranchSettings",
     "App",
 ]

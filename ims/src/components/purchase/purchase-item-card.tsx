@@ -77,7 +77,9 @@ export function PurchaseItemCard({
 
   const existingProduct =
     item.kind === "existing" ? app.products.find((p) => p.id === item.productId) : undefined;
-  const taxable = item.kind === "existing" ? existingProduct?.taxable !== false : item.taxable;
+  const taxable =
+    app.company.vatRegistered &&
+    (item.kind === "existing" ? existingProduct?.taxable !== false : item.taxable);
   const taxRate = taxable
     ? item.kind === "existing"
       ? (existingProduct?.taxRate ?? app.company.vatRate)
@@ -230,14 +232,16 @@ export function PurchaseItemCard({
               onChange={(id) => onChange({ ...item, mediaId: id })}
             />
           </div>
-          <div className="flex items-center gap-2 sm:col-span-2">
-            <Switch
-              checked={item.taxable}
-              onCheckedChange={(v) => onChange({ ...item, taxable: v })}
-            />
-            <Label className="text-xs">Taxable</Label>
-          </div>
-          {item.taxable && (
+          {app.company.vatRegistered && (
+            <div className="flex items-center gap-2 sm:col-span-2">
+              <Switch
+                checked={item.taxable}
+                onCheckedChange={(v) => onChange({ ...item, taxable: v })}
+              />
+              <Label className="text-xs">Taxable</Label>
+            </div>
+          )}
+          {app.company.vatRegistered && item.taxable && (
             <div className="space-y-1">
               <Label className="text-xs">Tax rate (%)</Label>
               <Input

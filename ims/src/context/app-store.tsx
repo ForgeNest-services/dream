@@ -36,6 +36,7 @@ import {
   type PurchaseItemPayload,
 } from "@/lib/purchases-api";
 import { invoicesApi, type InvoiceDto, type CreateInvoicePayload } from "@/lib/invoices-api";
+import { branchSettingsApi } from "@/lib/branch-settings-api";
 import { ApiError } from "@/lib/api-client";
 import { toast } from "sonner";
 import {
@@ -80,14 +81,16 @@ const toBranch = (b: BranchDto): Branch => ({
   code: branchCode(b.name),
   address: b.address ?? "",
 });
-/** PAN/VAT-registered/contact are real tenant fields (see GET /branches's
- * meta.tenant); vatRate/invoicePrefix/qrImageUrl have no backend home yet
- * and stay as whatever the local company state already had (Settings-editable). */
+/** Name/PAN/contact are real tenant fields (see GET /branches's
+ * meta.tenant), read-only here — edited in the admin app. isVatRegisteredTenant
+ * gates whether the branch-level "apply VAT on bills" toggle can ever be
+ * turned on; it is NOT the same as vatRegistered (see CompanyProfile).
+ * invoicePrefix has no backend home yet and stays whatever local state had. */
 const toCompanyPatch = (t: TenantInfoDto) => ({
   name: t.name,
   legalName: t.name,
   pan: t.pan ?? "",
-  vatRegistered: t.is_vat_registered,
+  isVatRegisteredTenant: t.is_vat_registered,
   address: t.business_address ?? "",
   phone: t.business_phone ?? "",
   email: t.business_email ?? "",
@@ -297,6 +300,7 @@ interface AppContextValue extends AppState {
   setBranchId: (b: string) => void;
   setFiscalYearId: (id: string) => Promise<{ ok: boolean; error?: string }>;
   addFiscalYear: (startYear: number) => Promise<{ ok: boolean; fiscalYear?: FiscalYear; error?: string }>;
+  deleteFiscalYear: (id: string) => Promise<{ ok: boolean; error?: string }>;
   fiscalYear: FiscalYear;
   inFiscalYear: (iso: string) => boolean;
   setViewAsRole: (r: User["role"] | null) => void;
@@ -375,6 +379,10 @@ interface AppContextValue extends AppState {
     payment: { paymentMethod: PaymentMethod; paidAmount: number },
   ) => Promise<{ ok: boolean; invoice?: Invoice; error?: string }>;
   updateCompany: (patch: Partial<CompanyProfile>) => void;
+  updateVatSettings: (patch: {
+    vatEnabled?: boolean;
+    vatRate?: number;
+  }) => Promise<{ ok: boolean; error?: string }>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -519,6 +527,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.currentUser?.id]);
 
+  // VAT-enabled/rate are per-branch (IMSBranchSettings) — refetch whenever
+  // the effective branch changes, same resolution rule POS uses for "all".
+  const effectiveBranchId =
+    state.branchId === "all" ? (state.branches[0]?.id ?? "") : state.branchId;
+  useEffect(() => {
+    if (!state.currentUser || !effectiveBranchId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await branchSettingsApi.get(effectiveBranchId);
+        if (cancelled || !res.success || !res.data) return;
+        const settings = res.data;
+        setState((s) => ({
+          ...s,
+          company: { ...s.company, vatRegistered: settings.vat_enabled, vatRate: num(settings.vat_rate) },
+        }));
+      } catch {
+        // Non-fatal — VAT UI just falls back to whatever company state already had.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [state.currentUser?.id, effectiveBranchId]);
+
   const value = useMemo<AppContextValue>(() => {
     const fiscalYear =
       state.fiscalYears.find((f) => f.id === state.fiscalYearId) ??
@@ -601,6 +634,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
               : e instanceof ApiError
                 ? e.message
                 : "Failed to add fiscal year",
+          };
+        }
+      },
+      deleteFiscalYear: async (id) => {
+        try {
+          const res = await fiscalYearsApi.remove(id);
+          if (!res.success) return { ok: false, error: "Failed to delete fiscal year" };
+          setState((s) => ({
+            ...s,
+            fiscalYears: s.fiscalYears.filter((f) => f.id !== id),
+          }));
+          return { ok: true };
+        } catch (e) {
+          return {
+            ok: false,
+            error: e instanceof ApiError ? e.message : "Failed to delete fiscal year",
           };
         }
       },
@@ -1162,8 +1211,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       updateCompany: (patch) =>
         setState((s) => ({ ...s, company: { ...s.company, ...patch } })),
+
+      updateVatSettings: async (patch) => {
+        if (!effectiveBranchId) return { ok: false, error: "No branch selected" };
+        try {
+          const res = await branchSettingsApi.update(effectiveBranchId, {
+            vat_enabled: patch.vatEnabled,
+            vat_rate: patch.vatRate,
+          });
+          if (!res.success || !res.data) return { ok: false, error: "Failed to update VAT settings" };
+          const settings = res.data;
+          setState((s) => ({
+            ...s,
+            company: {
+              ...s.company,
+              vatRegistered: settings.vat_enabled,
+              vatRate: num(settings.vat_rate),
+            },
+          }));
+          return { ok: true };
+        } catch (e) {
+          return {
+            ok: false,
+            error: e instanceof ApiError ? e.message : "Failed to update VAT settings",
+          };
+        }
+      },
     };
-  }, [state, login, logout]);
+  }, [state, login, logout, effectiveBranchId]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

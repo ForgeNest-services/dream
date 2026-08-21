@@ -7,6 +7,7 @@ import {
   type DraftItem,
 } from "@/components/purchase/purchase-item-card";
 import { CustomerDialog } from "@/components/parties/party-dialogs";
+import { PartyCombobox } from "@/components/parties/party-combobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -246,19 +247,13 @@ function NewPurchasePage() {
             <div className="flex items-end gap-2">
               <div className="min-w-0 flex-1 space-y-1">
                 <Label className="text-xs">Supplier (optional)</Label>
-                <Select value={partyId} onValueChange={setPartyId}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No party (stock only)</SelectItem>
-                    {suppliers.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <PartyCombobox
+                  parties={suppliers}
+                  value={partyId}
+                  onChange={setPartyId}
+                  noneLabel="No party (stock only)"
+                  noneValue="none"
+                />
               </div>
               <Button variant="outline" size="icon" onClick={() => setSupplierOpen(true)}>
                 <UserPlus className="h-4 w-4" />

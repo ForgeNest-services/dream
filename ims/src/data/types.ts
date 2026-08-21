@@ -221,7 +221,15 @@ export interface CompanyProfile {
   name: string;
   legalName: string;
   pan: string;
+  /** Whether VAT is currently applied on bills — the per-branch operational
+   * toggle (IMSBranchSettings.vat_enabled). This is what every VAT
+   * calculation (computeTotals, POS, print) actually reads. */
   vatRegistered: boolean;
+  /** Whether the *tenant* is legally VAT-registered (Tenant.is_vat_registered,
+   * read-only here — edited in the admin app). Gates whether vatRegistered
+   * can ever be toggled on: a PAN-only business can't turn VAT on no matter
+   * what. Undefined until the real tenant info has loaded. */
+  isVatRegisteredTenant?: boolean | undefined;
   address: string;
   phone: string;
   email: string;

@@ -49,3 +49,8 @@ class IMSFiscalYearRepository:
         db.commit()
         db.refresh(fy)
         return fy
+
+    @staticmethod
+    def delete(db: Session, fy: IMSFiscalYear) -> None:
+        db.delete(fy)
+        db.commit()

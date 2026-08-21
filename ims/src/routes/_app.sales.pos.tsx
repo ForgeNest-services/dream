@@ -1,7 +1,9 @@
 import { DatePicker } from "@/components/common/date-picker";
 import { EmptyState, Money, PageHeader } from "@/components/common/primitives";
-import { MediaPicker, MediaThumb } from "@/components/inventory/media-picker";
+import { MediaThumb } from "@/components/inventory/media-picker";
+import { DirectImageUpload } from "@/components/common/direct-image-upload";
 import { CustomerDialog } from "@/components/parties/party-dialogs";
+import { PartyCombobox } from "@/components/parties/party-combobox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,13 +15,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useApp } from "@/context/app-store";
 import type { InvoiceLine } from "@/data/types";
 import { computeTotals } from "@/lib/invoice";
@@ -333,19 +328,14 @@ function PosPage() {
             <div className="flex items-end gap-2">
               <div className="min-w-0 flex-1">
                 <Label className="text-xs">Customer</Label>
-                <Select value={customerId} onValueChange={setCustomerId}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue placeholder="Walk-in / choose customer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                        {c.pan ? ` · PAN ${c.pan}` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="mt-1">
+                  <PartyCombobox
+                    parties={customers}
+                    value={customerId}
+                    onChange={setCustomerId}
+                    placeholder="Search name, phone or email…"
+                  />
+                </div>
               </div>
               <Button variant="outline" size="icon" onClick={() => setCustOpen(true)}>
                 <UserPlus className="h-4 w-4" />
@@ -519,14 +509,11 @@ function PosPage() {
                   {app.company.qrImageUrl ? "Replace" : "Upload"} the shop payment QR without
                   leaving the counter.
                 </p>
-                <MediaPicker
+                <DirectImageUpload
                   label={app.company.qrImageUrl ? "Replace QR" : "Upload QR"}
-                  value={undefined}
-                  onChange={(id) => {
-                    const m = app.media.find((x) => x.id === id);
-                    app.updateCompany({ qrImageUrl: m?.url });
-                    toast.success("Payment QR updated");
-                  }}
+                  folder="Payment QR"
+                  imageUrl={app.company.qrImageUrl}
+                  onChange={(url) => app.updateCompany({ qrImageUrl: url })}
                 />
               </div>
             ) : null}

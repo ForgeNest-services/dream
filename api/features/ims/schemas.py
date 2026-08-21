@@ -503,3 +503,20 @@ class ConvertQuotationRequest(BaseModel):
     vat_registered: bool = False
     vat_rate: Decimal = Decimal(13)
     invoice_prefix: str = "INV"
+
+
+class BranchSettingsData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    vat_enabled: bool
+    vat_rate: Decimal
+    created_at: datetime
+    updated_at: datetime
+
+
+class UpdateBranchSettingsRequest(BaseModel):
+    vat_enabled: bool | None = None
+    vat_rate: Decimal | None = None

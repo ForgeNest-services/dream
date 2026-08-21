@@ -40,6 +40,17 @@ class IMSFiscalYearService:
         return {"success": True, "fiscal_year": updated}
 
     @staticmethod
+    def delete(db: Session, tenant_id: str, fy_id: str) -> dict:
+        fy = IMSFiscalYearRepository.get_by_id(db, tenant_id, fy_id)
+        if not fy:
+            return {"success": False, "error_code": "FISCAL_YEAR_NOT_FOUND"}
+        if fy.is_active:
+            return {"success": False, "error_code": "CANNOT_DELETE_ACTIVE"}
+        IMSFiscalYearRepository.delete(db, fy)
+        logger.info(f"IMS fiscal year deleted: {fy_id}", extra={"tenant_id": tenant_id})
+        return {"success": True}
+
+    @staticmethod
     def get_active(db: Session, tenant_id: str) -> dict:
         years = IMSFiscalYearService.list_for_tenant(db, tenant_id)
         active = next((y for y in years if y.is_active), years[-1] if years else None)

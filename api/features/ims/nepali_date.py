@@ -1,18 +1,21 @@
-"""Minimal Bikram Sambat (BS) year calculator — a Python port of the
-lookup table in ims/src/lib/nepali-date.ts, trimmed to only what the
-fiscal-year auto-seed needs: today's BS year and month. Covers the same
-BS 2075-2090 range as the frontend table; keep both in sync if extended."""
+"""Minimal Bikram Sambat (BS) year calculator — trimmed to only what the
+fiscal-year auto-seed needs: today's BS year and month. Kept in sync with
+api/utils/bikram_sambat.py (the authoritative table — same anchor, same
+HMG-sourced month lengths) and rms/src/lib/pos/nepali-date.ts; this file
+previously diverged from both (2076/2077/2078/2080/2081/2089/2090 had wrong
+day counts) since it was ported before that table was corrected — update all
+three together when extending past 2090 BS."""
 
 from datetime import date, timedelta
 
 DAYS: dict[int, list[int]] = {
     2075: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30],
-    2076: [31, 32, 31, 32, 31, 30, 30, 29, 30, 29, 30, 30],
-    2077: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30],
-    2078: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+    2076: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30],
+    2077: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+    2078: [31, 31, 31, 32, 31, 31, 30, 30, 29, 30, 29, 30],
     2079: [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 29, 31],
-    2080: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
-    2081: [31, 31, 32, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+    2080: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 30],
+    2081: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
     2082: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
     2083: [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 29, 31],
     2084: [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 29, 31],
@@ -20,8 +23,8 @@ DAYS: dict[int, list[int]] = {
     2086: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
     2087: [31, 31, 32, 31, 31, 31, 30, 30, 29, 30, 29, 31],
     2088: [30, 31, 32, 32, 30, 31, 30, 30, 29, 30, 29, 31],
-    2089: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
-    2090: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+    2089: [30, 31, 32, 32, 31, 30, 30, 30, 29, 30, 29, 31],
+    2090: [30, 31, 32, 32, 31, 30, 30, 30, 29, 30, 29, 31],
 }
 
 BASE_BS_YEAR = 2075

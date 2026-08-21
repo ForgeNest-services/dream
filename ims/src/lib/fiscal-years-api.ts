@@ -18,4 +18,7 @@ export const fiscalYearsApi = {
   activate(id: string) {
     return apiClient.post<FiscalYearDto>(`/ims/fiscal-years/${id}/activate`, {});
   },
+  remove(id: string) {
+    return apiClient.delete<{ deleted: boolean }>(`/ims/fiscal-years/${id}`);
+  },
 };

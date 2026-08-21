@@ -35,6 +35,8 @@ from features.ims.schemas import (
     InvoiceData,
     CreateInvoiceRequest,
     ConvertQuotationRequest,
+    BranchSettingsData,
+    UpdateBranchSettingsRequest,
 )
 from features.ims.service import IMSCredentialService, IMSAuthService
 from features.ims.category_service import IMSCategoryService
@@ -48,9 +50,18 @@ from features.ims.party_service import IMSPartyService, IMSLedgerService
 from features.ims.party_repository import IMSLedgerRepository
 from features.ims.purchase_service import IMSPurchaseService
 from features.ims.invoice_service import IMSInvoiceService
+from features.ims.branch_settings_service import IMSBranchSettingsService
 
 
 router = APIRouter(prefix="/ims", tags=["ims"])
+
+
+def _assert_branch_scope(staff: dict, branch_id: str) -> None:
+    """Manager/storekeeper/cashier can only touch their own branch. Owner spans all."""
+    if staff["role"] == "owner":
+        return
+    if staff.get("branch_id") != branch_id:
+        raise HTTPException(403, "Not allowed for this branch")
 
 
 # ---------------------------------------------------------------------------
@@ -652,6 +663,11 @@ _FISCAL_YEAR_ERROR_MAP = {
     "FISCAL_YEAR_NOT_FOUND": ("FISCAL_YEAR_NOT_FOUND", "Fiscal year not found.", 404),
     "YEAR_EXISTS": ("YEAR_EXISTS", "This fiscal year already exists.", 409),
     "NO_FISCAL_YEAR": ("NO_FISCAL_YEAR", "No fiscal year is set up yet.", 404),
+    "CANNOT_DELETE_ACTIVE": (
+        "CANNOT_DELETE_ACTIVE",
+        "Switch to a different active fiscal year before deleting this one.",
+        409,
+    ),
 }
 
 
@@ -717,6 +733,20 @@ def activate_fiscal_year(
         data=FiscalYearData.model_validate(result["fiscal_year"]).model_dump(mode="json"),
         message="Fiscal year activated",
     )
+
+
+@router.delete("/fiscal-years/{fy_id}")
+def delete_fiscal_year(
+    fy_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] != "owner":
+        raise HTTPException(403, "Only the Owner can delete fiscal years")
+    result = IMSFiscalYearService.delete(db, staff["tenant_id"], fy_id)
+    if not result["success"]:
+        return _fiscal_year_error(result["error_code"])
+    return success_response(data={"deleted": True}, message="Fiscal year removed")
 
 
 # ---------------------------------------------------------------------------
@@ -1084,4 +1114,65 @@ def convert_quotation(
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation converted to invoice",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Branch settings (staff-facing) — whether VAT is currently applied on
+# bills, and at what rate. Gates VAT UI across Purchase/Inventory/Invoices/POS.
+# ---------------------------------------------------------------------------
+
+_BRANCH_SETTINGS_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "INVALID_VAT_RATE": ("INVALID_VAT_RATE", "VAT rate must be between 0 and 100.", 422),
+    "NOT_VAT_REGISTERED": (
+        "NOT_VAT_REGISTERED",
+        "This business isn't VAT-registered — update PAN/VAT status in the admin app first.",
+        409,
+    ),
+}
+
+
+def _branch_settings_error(code: str):
+    mapped = _BRANCH_SETTINGS_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to update settings.", 500))
+    return error_response(*mapped)
+
+
+@router.get("/branches/{branch_id}/settings")
+def get_branch_settings(
+    branch_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = IMSBranchSettingsService.get_or_create(db, staff["tenant_id"], branch_id)
+    if not result["success"]:
+        return _branch_settings_error(result["error_code"])
+    return success_response(
+        data=BranchSettingsData.model_validate(result["settings"]).model_dump(mode="json")
+    )
+
+
+@router.patch("/branches/{branch_id}/settings")
+def update_branch_settings(
+    branch_id: str,
+    data: UpdateBranchSettingsRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can change settings")
+    _assert_branch_scope(staff, branch_id)
+    result = IMSBranchSettingsService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        vat_enabled=data.vat_enabled,
+        vat_rate=data.vat_rate,
+    )
+    if not result["success"]:
+        return _branch_settings_error(result["error_code"])
+    return success_response(
+        data=BranchSettingsData.model_validate(result["settings"]).model_dump(mode="json"),
+        message="Settings updated",
     )
