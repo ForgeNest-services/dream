@@ -13,18 +13,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useApp } from "@/context/app-store";
-import type { DateSystem } from "@/data/types";
-import { CURRENCIES } from "@/lib/format";
 import { createFileRoute } from "@tanstack/react-router";
 import { Check, Info, Lock, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -112,48 +103,6 @@ function SettingsPage() {
           </div>
 
           <VatSettingsCard />
-
-          <div className="grid gap-4 rounded-lg border bg-card p-5 sm:grid-cols-2">
-            <div>
-              <Label className="text-xs">Invoice prefix</Label>
-              <Input
-                value={form.invoicePrefix}
-                onChange={(e) => setForm({ ...form, invoicePrefix: e.target.value })}
-                onBlur={() => app.updateCompany({ invoicePrefix: form.invoicePrefix })}
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Default date system</Label>
-              <Select
-                value={app.dateSystem}
-                onValueChange={(v) => app.setDateSystem(v as DateSystem)}
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="BS">Bikram Sambat (BS)</SelectItem>
-                  <SelectItem value="AD">Gregorian (AD)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs">Default currency</Label>
-              <Select value={app.currency} onValueChange={app.setCurrency}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CURRENCIES.map((c) => (
-                    <SelectItem key={c.code} value={c.code}>
-                      {c.code} — {c.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
         </TabsContent>
 
         <TabsContent value="fiscal" className="mt-4">

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -10,37 +10,112 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { partiesApi } from "@/lib/parties-api";
 import { cn } from "@/lib/utils";
 import type { Party } from "@/data/types";
 
-// Searchable party picker — filters by name, phone, and email as you type.
-// cmdk's built-in filter only matches CommandItem's own text content, so we
-// bake phone/email into a hidden search-key alongside the visible name
-// rather than reimplementing filtering ourselves.
+const num = (v: number | string | null | undefined): number => (v == null ? 0 : Number(v));
+
+function dtoToParty(p: {
+  id: string;
+  name: string;
+  kind: "supplier" | "customer";
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  pan: string | null;
+  is_vat_registered: boolean | null;
+  credit_limit: number | string | null;
+  opening_balance: number | string;
+  terms: string | null;
+}): Party {
+  return {
+    id: p.id,
+    name: p.name,
+    kind: p.kind,
+    phone: p.phone ?? "",
+    email: p.email ?? undefined,
+    address: p.address ?? "",
+    pan: p.pan ?? undefined,
+    isVatRegistered: p.is_vat_registered ?? undefined,
+    creditLimit: p.credit_limit == null ? undefined : num(p.credit_limit),
+    openingBalance: num(p.opening_balance),
+    terms: p.terms ?? undefined,
+  };
+}
+
+// Searchable party picker — queries the backend (name/phone/PAN) as you
+// type, debounced, instead of filtering an already-loaded page. `selected`
+// lets the caller hand over the currently-chosen party directly (e.g. just
+// created via the inline "+" dialog) so its label renders even before any
+// search has run.
 export function PartyCombobox({
-  parties,
+  kind,
   value,
+  selected: selectedProp,
   onChange,
-  placeholder = "Search by name, phone or email…",
+  onSelectParty,
+  placeholder = "Search by name, phone or PAN…",
   noneLabel,
   noneValue = "",
 }: {
-  parties: Party[];
+  kind: "supplier" | "customer";
   value: string;
+  /** The full Party for `value`, if the caller already has it (avoids an
+   * extra lookup and keeps the label correct before any search runs). */
+  selected?: Party | undefined;
   onChange: (id: string) => void;
+  /** Fired with the full Party object alongside onChange, when available. */
+  onSelectParty?: ((party: Party) => void) | undefined;
   placeholder?: string;
-  /** When set, renders as the first selectable option (e.g. "No party (stock only)"). */
   noneLabel?: string;
-  /** The value onChange fires when the "none" option is picked — callers
-   * that use a sentinel like "none" instead of "" pass it here. */
   noneValue?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const selected = parties.find((p) => p.id === value);
+  const [q, setQ] = useState("");
+  const debouncedQ = useDebouncedValue(q, 300);
+  const [results, setResults] = useState<Party[]>([]);
+  const [loading, setLoading] = useState(false);
   const isNone = value === noneValue;
 
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    partiesApi
+      .list(kind, { q: debouncedQ || undefined, per_page: 20 })
+      .then((res) => {
+        if (cancelled) return;
+        setResults((res.data ?? []).map(dtoToParty));
+      })
+      .catch(() => {
+        if (!cancelled) setResults([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, kind, debouncedQ]);
+
+  // Make sure the currently-selected party always appears (e.g. picked
+  // before this exact search text, or handed in via `selected`) so it isn't
+  // silently dropped from the list while its label is shown on the trigger.
+  const list =
+    selectedProp && !results.some((p) => p.id === selectedProp.id)
+      ? [selectedProp, ...results]
+      : results;
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setQ("");
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -50,16 +125,22 @@ export function PartyCombobox({
           className="w-full justify-between font-normal"
         >
           <span className="truncate">
-            {selected ? selected.name : noneLabel && isNone ? noneLabel : "Select party…"}
+            {selectedProp ? selectedProp.name : noneLabel && isNone ? noneLabel : "Select party…"}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <Command>
-          <CommandInput placeholder={placeholder} />
+        <Command shouldFilter={false}>
+          <CommandInput placeholder={placeholder} value={q} onValueChange={setQ} />
           <CommandList>
-            <CommandEmpty>No match found.</CommandEmpty>
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching…
+              </div>
+            ) : (
+              <CommandEmpty>No match found.</CommandEmpty>
+            )}
             <CommandGroup>
               {noneLabel && (
                 <CommandItem
@@ -73,12 +154,13 @@ export function PartyCombobox({
                   {noneLabel}
                 </CommandItem>
               )}
-              {parties.map((p) => (
+              {list.map((p) => (
                 <CommandItem
                   key={p.id}
-                  value={`${p.name} ${p.phone} ${p.email ?? ""} ${p.pan ?? ""}`}
+                  value={p.id}
                   onSelect={() => {
                     onChange(p.id);
+                    onSelectParty?.(p);
                     setOpen(false);
                   }}
                 >

@@ -497,10 +497,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const fyDtos = fiscalYearsRes.data ?? [];
         const activeFy = fyDtos.find((f) => f.is_active) ?? fyDtos[fyDtos.length - 1];
         const tenantInfo = branchesRes.meta?.tenant;
+        const loadedBranches = (branchesRes.data ?? []).map(toBranch);
         setState((s) => ({
           ...s,
           company: tenantInfo ? { ...s.company, ...toCompanyPatch(tenantInfo) } : s.company,
-          branches: (branchesRes.data ?? []).map(toBranch),
+          // No "All branches" option anymore — an owner's session starts
+          // with branchId "all" (no fixed branch on their JWT) until real
+          // branches load, then resolves to the first one.
+          branchId: s.branchId === "all" ? (loadedBranches[0]?.id ?? "all") : s.branchId,
+          branches: loadedBranches,
           categories: (categoriesRes.data ?? []).map(toCategory),
           brands: (brandsRes.data ?? []).map(toBrand),
           units: (unitsRes.data ?? []).map(toUnit),
@@ -557,7 +562,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       state.fiscalYears.find((f) => f.id === state.fiscalYearId) ??
       state.fiscalYears[state.fiscalYears.length - 1]!;
 
-    const effectiveRole = state.viewAsRole ?? state.currentUser?.role ?? "cashier";
+    const effectiveRole = state.viewAsRole ?? state.currentUser?.role ?? "storekeeper";
     const perms = ROLE_PERMISSIONS[effectiveRole];
 
     const categoryPath = (id: string): string => {

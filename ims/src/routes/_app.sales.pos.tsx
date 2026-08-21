@@ -330,10 +330,11 @@ function PosPage() {
                 <Label className="text-xs">Customer</Label>
                 <div className="mt-1">
                   <PartyCombobox
-                    parties={customers}
+                    kind="customer"
                     value={customerId}
+                    selected={customers.find((c) => c.id === customerId)}
                     onChange={setCustomerId}
-                    placeholder="Search name, phone or email…"
+                    placeholder="Search name, phone or PAN…"
                   />
                 </div>
               </div>

@@ -248,8 +248,9 @@ function NewPurchasePage() {
               <div className="min-w-0 flex-1 space-y-1">
                 <Label className="text-xs">Supplier (optional)</Label>
                 <PartyCombobox
-                  parties={suppliers}
+                  kind="supplier"
                   value={partyId}
+                  selected={suppliers.find((s) => s.id === partyId)}
                   onChange={setPartyId}
                   noneLabel="No party (stock only)"
                   noneValue="none"

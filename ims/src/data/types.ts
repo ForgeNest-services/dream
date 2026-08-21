@@ -1,11 +1,12 @@
-export type Role = "owner" | "manager" | "storekeeper" | "cashier" | "accountant";
+// Only 3 roles have a real backend login type (see api/features/ims/roles.py's
+// IMSRole enum) — cashier/accountant were mock-only and could never actually
+// log in, so they were removed rather than left as unreachable dead ends.
+export type Role = "owner" | "manager" | "storekeeper";
 
 export const ROLE_LABELS: Record<Role, string> = {
   owner: "Owner",
   manager: "Manager",
   storekeeper: "Store Keeper",
-  cashier: "Cashier",
-  accountant: "Accountant",
 };
 
 export type ModuleKey =
@@ -21,8 +22,6 @@ export const ROLE_MODULES: Record<Role, ModuleKey[]> = {
   owner: ["dashboard", "inventory", "purchase", "sales", "parties", "reports", "settings"],
   manager: ["dashboard", "inventory", "purchase", "sales", "parties", "reports"],
   storekeeper: ["dashboard", "inventory", "purchase"],
-  cashier: ["dashboard", "sales", "parties"],
-  accountant: ["dashboard", "parties", "reports"],
 };
 
 export type Permission =
@@ -58,8 +57,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "report.view",
   ],
   storekeeper: ["product.edit", "stock.adjust", "stock.restock", "purchase.create"],
-  cashier: ["sale.create", "payment.record"],
-  accountant: ["payment.record", "report.view"],
 };
 
 export interface User {

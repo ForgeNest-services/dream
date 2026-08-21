@@ -4,7 +4,6 @@ import {
   Building2,
   CalendarRange,
   ChevronDown,
-  Coins,
   Download,
   LayoutDashboard,
   LogOut,
@@ -30,7 +29,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { CURRENCIES } from "@/lib/format";
 import { useApp } from "@/context/app-store";
 import { ROLE_LABELS, type ModuleKey, type Role } from "@/data/types";
 import { useInstallPrompt } from "@/hooks/use-install-prompt";
@@ -60,10 +58,7 @@ export function TopBar({ onOpenCommand }: { onOpenCommand: () => void }) {
   }, [dark]);
 
   const visible = MODULES.filter((m) => app.modules.includes(m.key));
-  const branchLabel =
-    app.branchId === "all"
-      ? "All branches"
-      : (app.branches.find((b) => b.id === app.branchId)?.name ?? "Branch");
+  const branchLabel = app.branches.find((b) => b.id === app.branchId)?.name ?? "Branch";
 
   const handleInstall = async () => {
     if (canInstall) {
@@ -130,9 +125,6 @@ export function TopBar({ onOpenCommand }: { onOpenCommand: () => void }) {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>Branch</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={app.branchId} onValueChange={app.setBranchId}>
-              {app.can("branch.all") && (
-                <DropdownMenuRadioItem value="all">All branches</DropdownMenuRadioItem>
-              )}
               {app.branches
                 .filter((b) => app.can("branch.all") || app.currentUser?.branchIds.includes(b.id))
                 .map((b) => (
@@ -175,39 +167,6 @@ export function TopBar({ onOpenCommand }: { onOpenCommand: () => void }) {
 
         {/* Inline utilities on wide screens */}
         <div className="hidden shrink-0 items-center gap-1 xl:flex">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1.5 px-2 text-ink-foreground hover:bg-sidebar-accent"
-              >
-                <Coins className="h-4 w-4" />
-                <span className="num text-xs">{app.currency}</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Display currency</DropdownMenuLabel>
-              <DropdownMenuRadioGroup value={app.currency} onValueChange={app.setCurrency}>
-                {CURRENCIES.map((c) => (
-                  <DropdownMenuRadioItem key={c.code} value={c.code}>
-                    {c.symbol} {c.code} — {c.label}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            className="num px-2 text-ink-foreground hover:bg-sidebar-accent"
-            onClick={() => app.setDateSystem(app.dateSystem === "BS" ? "AD" : "BS")}
-            title="Toggle date system"
-          >
-            {app.dateSystem}
-          </Button>
-
           <Button
             variant="ghost"
             size="icon"
@@ -243,20 +202,6 @@ export function TopBar({ onOpenCommand }: { onOpenCommand: () => void }) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>Display currency</DropdownMenuLabel>
-            <DropdownMenuRadioGroup value={app.currency} onValueChange={app.setCurrency}>
-              {CURRENCIES.map((c) => (
-                <DropdownMenuRadioItem key={c.code} value={c.code}>
-                  {c.symbol} {c.code}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => app.setDateSystem(app.dateSystem === "BS" ? "AD" : "BS")}
-            >
-              Date system: <span className="num ml-1">{app.dateSystem}</span>
-            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setDark((d) => !d)}>
               {dark ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
               {dark ? "Light theme" : "Dark theme"}

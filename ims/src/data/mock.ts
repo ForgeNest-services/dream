@@ -104,22 +104,6 @@ export const USERS: User[] = [
     branchIds: ["br-ktm"],
     active: true,
   },
-  {
-    id: "u-4",
-    username: "cashier",
-    name: "Puja Karki",
-    role: "cashier",
-    branchIds: ["br-pkr"],
-    active: true,
-  },
-  {
-    id: "u-5",
-    username: "accounts",
-    name: "Ramesh Adhikari",
-    role: "accountant",
-    branchIds: BRANCHES.map((b) => b.id),
-    active: true,
-  },
 ];
 
 export const UNITS: Unit[] = [
