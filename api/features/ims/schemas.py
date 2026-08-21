@@ -210,6 +210,7 @@ class StockMovementData(BaseModel):
     id: str
     tenant_id: str
     date: datetime
+    date_bs: str
     branch_id: str
     product_id: str
     variant_id: str
@@ -362,6 +363,7 @@ class PurchaseData(BaseModel):
     tenant_id: str
     number: str
     date: datetime
+    date_bs: str
     branch_id: str
     party_id: str | None
     bill_no: str | None

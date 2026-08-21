@@ -20,8 +20,8 @@ class IMSMovementRepository:
         variant_id: str | None,
         type_: str | None,
         q: str | None,
-        date_from: datetime | None,
-        date_to: datetime | None,
+        bs_from: str | None,
+        bs_to: str | None,
         offset: int,
         limit: int,
     ) -> tuple[list[IMSStockMovement], int]:
@@ -34,10 +34,12 @@ class IMSMovementRepository:
             query = query.filter(IMSStockMovement.variant_id == variant_id)
         if type_:
             query = query.filter(IMSStockMovement.type == type_)
-        if date_from:
-            query = query.filter(IMSStockMovement.date >= date_from)
-        if date_to:
-            query = query.filter(IMSStockMovement.date <= date_to)
+        # date_bs is "YYYY-MM-DD" — lexical comparison sorts correctly,
+        # same as restro_order.placed_at_bs (see api/utils/bikram_sambat.py).
+        if bs_from:
+            query = query.filter(IMSStockMovement.date_bs >= bs_from)
+        if bs_to:
+            query = query.filter(IMSStockMovement.date_bs <= bs_to)
         if q:
             term = f"%{q.strip().lower()}%"
             query = (

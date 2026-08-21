@@ -1,4 +1,4 @@
-import { DatePicker } from "@/components/common/date-picker";
+import { BsDateRangeFilter } from "@/components/common/bs-date-picker";
 import { TablePagination } from "@/components/common/table-pagination";
 import { DateText, EmptyState, Money, PageHeader, Qty } from "@/components/common/primitives";
 import { AdjustStockDialog, RestockDialog } from "@/components/inventory/stock-dialogs";
@@ -45,7 +45,7 @@ export const Route = createFileRoute("/_app/inventory/movements")({
       { property: "og:title", content: "Stock Movements — SROTA IMS" },
       {
         property: "og:description",
-        content: "Full audit trail of stock in and out, filterable by BS or AD date range.",
+        content: "Full audit trail of stock in and out, filterable by Bikram Sambat date range.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -59,6 +59,8 @@ export const Route = createFileRoute("/_app/inventory/movements")({
     return {
       q: typeof search.q === "string" ? search.q : "",
       type: typeof search.type === "string" ? search.type : "all",
+      // Bikram Sambat "YYYY-MM-DD" strings, sent straight through to the
+      // backend's bs_from/bs_to (see IMSStockMovement.date_bs).
       from: typeof search.from === "string" ? search.from : "",
       to: typeof search.to === "string" ? search.to : "",
       page: normalized.page,
@@ -112,10 +114,8 @@ function MovementsPage() {
     branch_id: app.branchId === "all" ? undefined : app.branchId,
     type: search.type === "all" ? undefined : search.type,
     q: debouncedQ || undefined,
-    date_from: search.from ? new Date(search.from).toISOString() : undefined,
-    date_to: search.to
-      ? new Date(new Date(search.to).setHours(23, 59, 59)).toISOString()
-      : undefined,
+    bs_from: search.from || undefined,
+    bs_to: search.to || undefined,
     page: search.page,
     per_page: search.perPage,
   });
@@ -197,15 +197,11 @@ function MovementsPage() {
             ))}
           </SelectContent>
         </Select>
-        <DatePicker
-          value={search.from || null}
-          onChange={(v) => setSearch({ from: v ?? "", page: 1 })}
-          placeholder="From date"
-        />
-        <DatePicker
-          value={search.to || null}
-          onChange={(v) => setSearch({ to: v ?? "", page: 1 })}
-          placeholder="To date"
+        <BsDateRangeFilter
+          from={search.from}
+          to={search.to}
+          onFrom={(v) => setSearch({ from: v, page: 1 })}
+          onTo={(v) => setSearch({ to: v, page: 1 })}
         />
       </div>
 

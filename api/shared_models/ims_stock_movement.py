@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, DateTime, ForeignKey
+from sqlalchemy import Column, String, Numeric, DateTime, ForeignKey, Index
 from datetime import datetime, timezone
 import uuid
 from core.database import Base
@@ -11,11 +11,16 @@ class IMSStockMovement(Base):
     CLAUDE.md (INSERT+SELECT only, never UPDATE/DELETE from app code)."""
 
     __tablename__ = "ims_stock_movements"
-    __table_args__ = ({"schema": "public"},)
+    __table_args__ = (
+        Index("ix_ims_stock_movement_branch_date_bs", "branch_id", "date_bs"),
+        {"schema": "public"},
+    )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String(36), ForeignKey("public.tenants.id"), nullable=False, index=True)
     date = Column(DateTime, nullable=False)
+    # Bikram Sambat mirror, snapshotted at write time — see IMSPurchase.date_bs.
+    date_bs = Column(String(10), nullable=False)
     branch_id = Column(String(36), ForeignKey("public.branches.id"), nullable=False, index=True)
     product_id = Column(String(36), ForeignKey("public.ims_products.id"), nullable=False)
     variant_id = Column(String(36), ForeignKey("public.ims_variants.id"), nullable=False, index=True)

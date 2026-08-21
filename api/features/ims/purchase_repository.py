@@ -36,8 +36,8 @@ class IMSPurchaseRepository:
         branch_id: str | None,
         party_id: str | None,
         q: str | None,
-        date_from,
-        date_to,
+        bs_from: str | None,
+        bs_to: str | None,
         offset: int,
         limit: int,
     ) -> tuple[list[IMSPurchase], int]:
@@ -52,10 +52,12 @@ class IMSPurchaseRepository:
             query = query.filter(IMSPurchase.branch_id == branch_id)
         if party_id:
             query = query.filter(IMSPurchase.party_id == party_id)
-        if date_from:
-            query = query.filter(IMSPurchase.date >= date_from)
-        if date_to:
-            query = query.filter(IMSPurchase.date <= date_to)
+        # date_bs is "YYYY-MM-DD" — lexical comparison sorts correctly,
+        # same as restro_order.placed_at_bs (see api/utils/bikram_sambat.py).
+        if bs_from:
+            query = query.filter(IMSPurchase.date_bs >= bs_from)
+        if bs_to:
+            query = query.filter(IMSPurchase.date_bs <= bs_to)
         if q:
             term = f"%{q.strip().lower()}%"
             query = query.filter(

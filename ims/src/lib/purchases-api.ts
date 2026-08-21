@@ -21,6 +21,7 @@ export interface PurchaseDto {
   tenant_id: string;
   number: string;
   date: string;
+  date_bs: string;
   branch_id: string;
   party_id: string | null;
   bill_no: string | null;
@@ -91,8 +92,8 @@ export const purchasesApi = {
       branch_id?: string;
       party_id?: string;
       q?: string;
-      date_from?: string;
-      date_to?: string;
+      bs_from?: string;
+      bs_to?: string;
       page?: number;
       per_page?: number;
     } = {},
@@ -101,8 +102,8 @@ export const purchasesApi = {
     if (params.branch_id) qs.set("branch_id", params.branch_id);
     if (params.party_id) qs.set("party_id", params.party_id);
     if (params.q) qs.set("q", params.q);
-    if (params.date_from) qs.set("date_from", params.date_from);
-    if (params.date_to) qs.set("date_to", params.date_to);
+    if (params.bs_from) qs.set("bs_from", params.bs_from);
+    if (params.bs_to) qs.set("bs_to", params.bs_to);
     qs.set("page", String(params.page ?? 1));
     qs.set("per_page", String(params.per_page ?? 25));
     return apiClient.get<PurchaseDto[]>(`/ims/purchases?${qs.toString()}`);

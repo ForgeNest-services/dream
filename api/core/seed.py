@@ -7,6 +7,7 @@ from core.configs import settings
 from core.security import hash_password
 from core.storage import upload_file_at_key, build_public_url
 from shared_models import PlatformAdmin, App
+from utils.bikram_sambat import to_bs_iso
 from utils.logger import logger
 
 
@@ -197,6 +198,60 @@ def ensure_ims_parties_schema() -> None:
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to backfill ims_parties schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
+def ensure_ims_bs_date_schema() -> None:
+    """Back-fill the date_bs mirror column onto ims_purchases and
+    ims_stock_movements (added so Purchase Bills / Stock Movements can
+    filter natively in Bikram Sambat, matching restro_order.placed_at_bs —
+    see api/utils/bikram_sambat.py). Existing rows' date_bs can't be derived
+    with a SQL constant like the other backfills here, so this adds the
+    column nullable, converts each row's AD `date` in Python via
+    to_bs_iso(), then sets NOT NULL — safe to re-run since the UPDATE only
+    touches rows where date_bs IS NULL."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.ims_purchases ADD COLUMN IF NOT EXISTS date_bs VARCHAR(10)"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.ims_stock_movements ADD COLUMN IF NOT EXISTS date_bs VARCHAR(10)"
+        ))
+        db.commit()
+
+        for table in ("ims_purchases", "ims_stock_movements"):
+            rows = db.execute(text(
+                f"SELECT id, date FROM public.{table} WHERE date_bs IS NULL"
+            )).fetchall()
+            for row in rows:
+                bs = to_bs_iso(row.date) or ""
+                db.execute(
+                    text(f"UPDATE public.{table} SET date_bs = :bs WHERE id = :id"),
+                    {"bs": bs, "id": row.id},
+                )
+            db.commit()
+
+        db.execute(text(
+            "ALTER TABLE public.ims_purchases ALTER COLUMN date_bs SET NOT NULL"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.ims_stock_movements ALTER COLUMN date_bs SET NOT NULL"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ims_purchase_branch_date_bs "
+            "ON public.ims_purchases (branch_id, date_bs)"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ims_stock_movement_branch_date_bs "
+            "ON public.ims_stock_movements (branch_id, date_bs)"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill ims BS date schema: {type(e).__name__}: {str(e)}")
         raise
     finally:
         db.close()

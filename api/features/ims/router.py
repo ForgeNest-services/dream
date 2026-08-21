@@ -542,18 +542,16 @@ def list_movements(
     variant_id: str | None = None,
     type: str | None = None,
     q: str | None = None,
-    date_from: str | None = None,
-    date_to: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
     page: int = 1,
     per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
 ):
-    from datetime import datetime
-
+    """bs_from / bs_to accept Bikram Sambat dates as "YYYY-MM-DD" strings
+    and hit the (branch_id, date_bs) index — see IMSStockMovement.date_bs."""
     paging = parse_paging(page, per_page)
-    parsed_from = datetime.fromisoformat(date_from) if date_from else None
-    parsed_to = datetime.fromisoformat(date_to) if date_to else None
     result = IMSStockService.list_movements(
         db,
         staff["tenant_id"],
@@ -561,8 +559,8 @@ def list_movements(
         variant_id,
         type,
         q,
-        parsed_from,
-        parsed_to,
+        bs_from,
+        bs_to,
         paging["offset"],
         paging["limit"],
     )
@@ -904,15 +902,15 @@ def list_purchases(
     branch_id: str | None = None,
     party_id: str | None = None,
     q: str | None = None,
-    date_from: str | None = None,
-    date_to: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
     page: int = 1,
     per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
 ):
-    from datetime import datetime as _dt
-
+    """bs_from / bs_to accept Bikram Sambat dates as "YYYY-MM-DD" strings
+    and hit the (branch_id, date_bs) index — see IMSPurchase.date_bs."""
     paging = parse_paging(page, per_page)
     result = IMSPurchaseService.list_for_tenant(
         db,
@@ -920,8 +918,8 @@ def list_purchases(
         branch_id,
         party_id,
         q,
-        _dt.fromisoformat(date_from) if date_from else None,
-        _dt.fromisoformat(date_to) if date_to else None,
+        bs_from,
+        bs_to,
         paging["offset"],
         paging["limit"],
     )

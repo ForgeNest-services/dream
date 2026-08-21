@@ -6,6 +6,7 @@ export interface StockMovementDto {
   id: string;
   tenant_id: string;
   date: string;
+  date_bs: string;
   branch_id: string;
   product_id: string;
   variant_id: string;
@@ -47,8 +48,8 @@ export const stockApi = {
       variant_id?: string;
       type?: string;
       q?: string;
-      date_from?: string;
-      date_to?: string;
+      bs_from?: string;
+      bs_to?: string;
       page?: number;
       per_page?: number;
     } = {},
@@ -58,8 +59,8 @@ export const stockApi = {
     if (params.variant_id) qs.set("variant_id", params.variant_id);
     if (params.type) qs.set("type", params.type);
     if (params.q) qs.set("q", params.q);
-    if (params.date_from) qs.set("date_from", params.date_from);
-    if (params.date_to) qs.set("date_to", params.date_to);
+    if (params.bs_from) qs.set("bs_from", params.bs_from);
+    if (params.bs_to) qs.set("bs_to", params.bs_to);
     qs.set("page", String(params.page ?? 1));
     qs.set("per_page", String(params.per_page ?? 25));
     return apiClient.get<StockMovementDto[]>(`/ims/stock/movements?${qs.toString()}`);

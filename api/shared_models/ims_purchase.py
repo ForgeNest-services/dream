@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, Numeric, DateTime, ForeignKey
+from sqlalchemy import Column, String, Boolean, Numeric, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import uuid
@@ -13,12 +13,21 @@ class IMSPurchase(Base):
     edited or deleted once saved."""
 
     __tablename__ = "ims_purchases"
-    __table_args__ = ({"schema": "public"},)
+    __table_args__ = (
+        # BS date-range filters (Purchase Bills page) hit this index —
+        # same pattern as restro_order.placed_at_bs.
+        Index("ix_ims_purchase_branch_date_bs", "branch_id", "date_bs"),
+        {"schema": "public"},
+    )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String(36), ForeignKey("public.tenants.id"), nullable=False, index=True)
     number = Column(String(50), nullable=False)
     date = Column(DateTime, nullable=False)
+    # Bikram Sambat mirror, snapshotted at write time. Kept as a real column
+    # (not a view) so BS range filters hit an index and records survive
+    # calendar-table corrections. See api/utils/bikram_sambat.py.
+    date_bs = Column(String(10), nullable=False)
     branch_id = Column(String(36), ForeignKey("public.branches.id"), nullable=False, index=True)
     # Not ON DELETE CASCADE/SET NULL on purpose — a party with purchase
     # history can never be hard-deleted (see IMSPartyService.delete's

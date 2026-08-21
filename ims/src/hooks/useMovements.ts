@@ -8,18 +8,18 @@ export interface MovementsQuery {
   variant_id?: string;
   type?: string;
   q?: string;
-  date_from?: string;
-  date_to?: string;
+  bs_from?: string;
+  bs_to?: string;
   page?: number;
   per_page?: number;
 }
 
 export function useMovements(options: MovementsQuery = {}) {
-  const { branch_id, variant_id, type, q, date_from, date_to, page, per_page } = options;
+  const { branch_id, variant_id, type, q, bs_from, bs_to, page, per_page } = options;
 
   const params = useMemo<MovementsQuery>(
-    () => ({ branch_id, variant_id, type, q, date_from, date_to, page, per_page }),
-    [branch_id, variant_id, type, q, date_from, date_to, page, per_page],
+    () => ({ branch_id, variant_id, type, q, bs_from, bs_to, page, per_page }),
+    [branch_id, variant_id, type, q, bs_from, bs_to, page, per_page],
   );
 
   const [movements, setMovements] = useState<StockMovementDto[]>([]);

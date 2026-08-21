@@ -13,6 +13,7 @@ from core.seed import (
     seed_app_icons,
     ensure_ims_products_schema,
     ensure_ims_parties_schema,
+    ensure_ims_bs_date_schema,
 )
 from core.storage import ensure_bucket
 import shared_models
@@ -49,6 +50,14 @@ async def lifespan(app: FastAPI):
         logger.info("ims_parties schema backfill completed")
     except Exception as e:
         logger.error(f"Failed to backfill ims_parties schema: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Backfilling ims BS date schema...")
+        ensure_ims_bs_date_schema()
+        logger.info("ims BS date schema backfill completed")
+    except Exception as e:
+        logger.error(f"Failed to backfill ims BS date schema: {type(e).__name__}: {str(e)}")
         raise
 
     try:

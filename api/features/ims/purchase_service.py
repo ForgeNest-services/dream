@@ -8,6 +8,7 @@ from features.ims.party_repository import IMSPartyRepository
 from features.ims.fiscal_year_service import IMSFiscalYearService
 from features.branches.repository import BranchRepository
 from features.ims import purchase_txn_helpers as txn
+from utils.bikram_sambat import to_bs_iso
 from utils.logger import logger
 
 
@@ -19,13 +20,13 @@ class IMSPurchaseService:
         branch_id: str | None,
         party_id: str | None,
         q: str | None,
-        date_from: datetime | None,
-        date_to: datetime | None,
+        bs_from: str | None,
+        bs_to: str | None,
         offset: int,
         limit: int,
     ) -> dict:
         items, total = IMSPurchaseRepository.list_for_tenant(
-            db, tenant_id, branch_id, party_id, q, date_from, date_to, offset, limit
+            db, tenant_id, branch_id, party_id, q, bs_from, bs_to, offset, limit
         )
         return {"success": True, "purchases": items, "total": total}
 
@@ -47,9 +48,6 @@ class IMSPurchaseService:
         default_vat_rate: Decimal,
     ) -> dict:
         if not BranchRepository.get_by_id(db, tenant_id, branch_id):
-            logger.warning(
-                f"IMS purchase BRANCH_NOT_FOUND: tenant_id={tenant_id!r} branch_id={branch_id!r}"
-            )
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
         if party_id and not IMSPartyRepository.get_by_id(db, tenant_id, party_id):
             return {"success": False, "error_code": "PARTY_NOT_FOUND"}
@@ -62,12 +60,14 @@ class IMSPurchaseService:
         try:
             seq = IMSPurchaseRepository.count_for_tenant(db, tenant_id) + 1
             number = f"PB-{start_year}-{1000 + seq}"
+            date_bs = to_bs_iso(date) or ""
 
             purchase = IMSPurchaseRepository.create(
                 db,
                 tenant_id=tenant_id,
                 number=number,
                 date=date,
+                date_bs=date_bs,
                 branch_id=branch_id,
                 party_id=party_id,
                 bill_no=bill_no,
@@ -146,6 +146,7 @@ class IMSPurchaseService:
                                 db,
                                 tenant_id=tenant_id,
                                 date=date,
+                                date_bs=date_bs,
                                 branch_id=branch_id,
                                 product_id=product.id,
                                 variant_id=variant.id,
@@ -200,6 +201,7 @@ class IMSPurchaseService:
                             db,
                             tenant_id=tenant_id,
                             date=date,
+                            date_bs=date_bs,
                             branch_id=branch_id,
                             product_id=variant.product_id,
                             variant_id=variant.id,

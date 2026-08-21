@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from features.ims.product_repository import IMSProductRepository
 from features.ims.movement_repository import IMSMovementRepository
 from features.branches.repository import BranchRepository
+from utils.bikram_sambat import to_bs_iso
 from utils.logger import logger
 
 
@@ -33,6 +34,7 @@ class IMSStockService:
             db,
             tenant_id=tenant_id,
             date=date,
+            date_bs=to_bs_iso(date) or "",
             branch_id=branch_id,
             product_id=variant.product_id,
             variant_id=variant_id,
@@ -78,6 +80,7 @@ class IMSStockService:
             db,
             tenant_id=tenant_id,
             date=date,
+            date_bs=to_bs_iso(date) or "",
             branch_id=branch_id,
             product_id=variant.product_id,
             variant_id=variant_id,
@@ -103,12 +106,12 @@ class IMSStockService:
         variant_id: str | None,
         type_: str | None,
         q: str | None,
-        date_from: datetime | None,
-        date_to: datetime | None,
+        bs_from: str | None,
+        bs_to: str | None,
         offset: int,
         limit: int,
     ) -> dict:
         items, total = IMSMovementRepository.list_for_tenant(
-            db, tenant_id, branch_id, variant_id, type_, q, date_from, date_to, offset, limit
+            db, tenant_id, branch_id, variant_id, type_, q, bs_from, bs_to, offset, limit
         )
         return {"success": True, "movements": items, "total": total}
