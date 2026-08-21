@@ -34,6 +34,7 @@ from features.ims.schemas import (
     CreatePurchaseRequest,
     InvoiceData,
     CreateInvoiceRequest,
+    ConvertQuotationRequest,
 )
 from features.ims.service import IMSCredentialService, IMSAuthService
 from features.ims.category_service import IMSCategoryService
@@ -976,6 +977,9 @@ _INVOICE_ERROR_MAP = {
     "VARIANT_NOT_FOUND": ("VARIANT_NOT_FOUND", "Variant not found.", 404),
     "NO_ITEMS": ("NO_ITEMS", "Add at least one item to the cart.", 422),
     "CREATION_FAILED": ("CREATION_FAILED", "Failed to record sale.", 500),
+    "INVOICE_NOT_FOUND": ("INVOICE_NOT_FOUND", "Quotation not found.", 404),
+    "NOT_A_QUOTATION": ("NOT_A_QUOTATION", "This document is not a quotation.", 422),
+    "CONVERSION_FAILED": ("CONVERSION_FAILED", "Failed to convert quotation.", 500),
 }
 
 
@@ -989,6 +993,7 @@ def list_invoices(
     branch_id: str | None = None,
     customer_id: str | None = None,
     status: str | None = None,
+    kind: str | None = None,
     q: str | None = None,
     bs_from: str | None = None,
     bs_to: str | None = None,
@@ -998,7 +1003,9 @@ def list_invoices(
     db: Session = Depends(get_db),
 ):
     """bs_from / bs_to accept Bikram Sambat dates as "YYYY-MM-DD" strings
-    and hit the (branch_id, date_bs) index — see IMSInvoice.date_bs."""
+    and hit the (branch_id, date_bs) index — see IMSInvoice.date_bs.
+    kind="quotation" lists quotations; any other value (including omitted)
+    lists real invoices only — quotations never show up there."""
     paging = parse_paging(page, per_page)
     result = IMSInvoiceService.list_for_tenant(
         db,
@@ -1006,6 +1013,7 @@ def list_invoices(
         branch_id,
         customer_id,
         status,
+        kind,
         q,
         bs_from,
         bs_to,
@@ -1040,11 +1048,40 @@ def create_invoice(
         vat_registered=data.vat_registered,
         vat_rate=data.vat_rate,
         invoice_prefix=data.invoice_prefix,
+        is_quotation=data.is_quotation,
     )
     if not result["success"]:
         return _invoice_error(result["error_code"])
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
-        message="Sale recorded",
+        message="Quotation saved" if data.is_quotation else "Sale recorded",
         status_code=201,
+    )
+
+
+@router.post("/invoices/{invoice_id}/convert")
+def convert_quotation(
+    invoice_id: str,
+    data: ConvertQuotationRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager", "cashier"):
+        raise HTTPException(403, "Not allowed to convert quotations")
+    result = IMSInvoiceService.convert(
+        db,
+        tenant_id=staff["tenant_id"],
+        user_id=staff.get("cred_id") or "",
+        invoice_id=invoice_id,
+        vat_registered=data.vat_registered,
+        vat_rate=data.vat_rate,
+        invoice_prefix=data.invoice_prefix,
+        payment_method=data.payment_method,
+        paid_amount=data.paid_amount,
+    )
+    if not result["success"]:
+        return _invoice_error(result["error_code"])
+    return success_response(
+        data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
+        message="Quotation converted to invoice",
     )

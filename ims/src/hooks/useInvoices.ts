@@ -7,6 +7,7 @@ export interface InvoicesQuery {
   branch_id?: string;
   customer_id?: string;
   status?: string;
+  kind?: string;
   q?: string;
   bs_from?: string;
   bs_to?: string;
@@ -15,11 +16,11 @@ export interface InvoicesQuery {
 }
 
 export function useInvoices(options: InvoicesQuery = {}) {
-  const { branch_id, customer_id, status, q, bs_from, bs_to, page, per_page } = options;
+  const { branch_id, customer_id, status, kind, q, bs_from, bs_to, page, per_page } = options;
 
   const params = useMemo<InvoicesQuery>(
-    () => ({ branch_id, customer_id, status, q, bs_from, bs_to, page, per_page }),
-    [branch_id, customer_id, status, q, bs_from, bs_to, page, per_page],
+    () => ({ branch_id, customer_id, status, kind, q, bs_from, bs_to, page, per_page }),
+    [branch_id, customer_id, status, kind, q, bs_from, bs_to, page, per_page],
   );
 
   const [invoices, setInvoices] = useState<InvoiceDto[]>([]);

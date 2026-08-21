@@ -11,6 +11,46 @@ from utils.bikram_sambat import to_bs_iso
 from utils.logger import logger
 
 
+def _compute_totals(lines: list[dict], vat_registered: bool, vat_rate: Decimal) -> dict:
+    """Mirrors lib/invoice.ts's computeTotals — gross/discount are sums of
+    (rate, discount) as entered; taxable/vat come from a VAT-inclusive split
+    of the taxable lines' net amount (rate already includes VAT when the
+    tenant is registered)."""
+    gross = Decimal(0)
+    discount_total = Decimal(0)
+    taxable_net = Decimal(0)
+    exempt_net = Decimal(0)
+    for line in lines:
+        qty = line["qty"]
+        rate = line["rate"]
+        discount = line.get("discount") or Decimal(0)
+        taxable = line.get("taxable", True) is not False
+        line_gross = (rate - discount) * qty
+        gross += rate * qty
+        discount_total += discount * qty
+        if taxable:
+            taxable_net += line_gross
+        else:
+            exempt_net += line_gross
+
+    if vat_registered and vat_rate > 0:
+        taxable_amount = taxable_net / (1 + vat_rate / 100)
+        vat_amount = taxable_net - taxable_amount
+    else:
+        taxable_amount = taxable_net
+        vat_amount = Decimal(0)
+    total_amount = taxable_amount + vat_amount + exempt_net
+
+    return {
+        "gross": gross,
+        "discount": discount_total,
+        "taxable": taxable_amount,
+        "exempt": exempt_net,
+        "vat": vat_amount,
+        "total": total_amount,
+    }
+
+
 class IMSInvoiceService:
     @staticmethod
     def list_for_tenant(
@@ -19,6 +59,7 @@ class IMSInvoiceService:
         branch_id: str | None,
         customer_id: str | None,
         status: str | None,
+        kind: str | None,
         q: str | None,
         bs_from: str | None,
         bs_to: str | None,
@@ -26,7 +67,7 @@ class IMSInvoiceService:
         limit: int,
     ) -> dict:
         items, total = IMSInvoiceRepository.list_for_tenant(
-            db, tenant_id, branch_id, customer_id, status, q, bs_from, bs_to, offset, limit
+            db, tenant_id, branch_id, customer_id, status, kind, q, bs_from, bs_to, offset, limit
         )
         return {"success": True, "invoices": items, "total": total}
 
@@ -45,6 +86,7 @@ class IMSInvoiceService:
         vat_registered: bool,
         vat_rate: Decimal,
         invoice_prefix: str,
+        is_quotation: bool = False,
     ) -> dict:
         if not BranchRepository.get_by_id(db, tenant_id, branch_id):
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
@@ -58,9 +100,9 @@ class IMSInvoiceService:
 
         try:
             seq = IMSInvoiceRepository.count_for_tenant(db, tenant_id) + 1
-            number = f"{invoice_prefix}-{start_year}-{1000 + seq}"
+            number = f"QT-{1000 + seq}" if is_quotation else f"{invoice_prefix}-{start_year}-{1000 + seq}"
             date_bs = to_bs_iso(date) or ""
-            kind = "tax" if vat_registered else "abbreviated"
+            kind = "quotation" if is_quotation else ("tax" if vat_registered else "abbreviated")
 
             invoice = IMSInvoiceRepository.create(
                 db,
@@ -78,18 +120,13 @@ class IMSInvoiceService:
                 vat_amount=Decimal(0),
                 total_amount=Decimal(0),
                 payment_method=payment_method,
-                paid_amount=paid_amount,
+                paid_amount=Decimal(0),
                 status="unpaid",
                 note=note,
                 user_id=user_id,
             )
 
-            gross = Decimal(0)
-            discount_total = Decimal(0)
-            taxable_net = Decimal(0)
-            exempt_net = Decimal(0)
             lines_written = 0
-
             for line in lines:
                 variant = IMSProductRepository.get_variant(db, tenant_id, line["variant_id"])
                 if not variant:
@@ -97,101 +134,89 @@ class IMSInvoiceService:
                     return {"success": False, "error_code": "VARIANT_NOT_FOUND"}
                 product = IMSProductRepository.get_by_id(db, tenant_id, variant.product_id)
 
-                qty = line["qty"]
-                rate = line["rate"]
-                discount = line.get("discount") or Decimal(0)
-                taxable = line.get("taxable", True) is not False
-                line_gross = (rate - discount) * qty
-
-                gross += rate * qty
-                discount_total += discount * qty
-                if taxable:
-                    taxable_net += line_gross
-                else:
-                    exempt_net += line_gross
-
                 IMSInvoiceRepository.add_line(
                     db,
                     invoice_id=invoice.id,
                     product_id=variant.product_id,
                     variant_id=variant.id,
                     description=f"{product.name if product else 'Item'} — {variant.name}",
-                    qty=qty,
+                    qty=line["qty"],
                     unit_id=variant.unit_id,
-                    rate=rate,
-                    discount=discount,
-                    taxable=taxable,
+                    rate=line["rate"],
+                    discount=line.get("discount") or Decimal(0),
+                    taxable=line.get("taxable", True) is not False,
                 )
                 lines_written += 1
 
-                stock_row = txn.get_or_create_stock_row(db, variant.id, branch_id)
-                balance = stock_row.qty - qty
-                txn.set_stock_qty(db, stock_row, balance)
-                txn.create_movement(
-                    db,
-                    tenant_id=tenant_id,
-                    date=date,
-                    date_bs=date_bs,
-                    branch_id=branch_id,
-                    product_id=variant.product_id,
-                    variant_id=variant.id,
-                    type="sale",
-                    qty=-qty,
-                    balance_after=balance,
-                    reference=number,
-                    user_id=user_id,
-                )
+                # A quotation is a price offer only — no stock movement, no
+                # ledger post. Those happen for real when it's converted
+                # (see IMSInvoiceService.convert) or immediately below for a
+                # normal (non-quotation) sale.
+                if not is_quotation:
+                    stock_row = txn.get_or_create_stock_row(db, variant.id, branch_id)
+                    balance = stock_row.qty - line["qty"]
+                    txn.set_stock_qty(db, stock_row, balance)
+                    txn.create_movement(
+                        db,
+                        tenant_id=tenant_id,
+                        date=date,
+                        date_bs=date_bs,
+                        branch_id=branch_id,
+                        product_id=variant.product_id,
+                        variant_id=variant.id,
+                        type="sale",
+                        qty=-line["qty"],
+                        balance_after=balance,
+                        reference=number,
+                        user_id=user_id,
+                    )
 
             if lines_written == 0:
                 db.rollback()
                 return {"success": False, "error_code": "NO_ITEMS"}
 
-            # VAT-inclusive split — rate already includes VAT when the
-            # tenant is registered, matching lib/invoice.ts's computeTotals.
-            if vat_registered and vat_rate > 0:
-                taxable_amount = taxable_net / (1 + vat_rate / 100)
-                vat_amount = taxable_net - taxable_amount
+            totals = _compute_totals(lines, vat_registered, vat_rate)
+            invoice.gross_amount = totals["gross"]
+            invoice.discount_amount = totals["discount"]
+            invoice.taxable_amount = totals["taxable"]
+            invoice.exempt_amount = totals["exempt"]
+            invoice.vat_amount = totals["vat"]
+            invoice.total_amount = totals["total"]
+
+            if is_quotation:
+                # No payment, no ledger entry — a quotation hasn't been sold.
+                invoice.status = "unpaid"
             else:
-                taxable_amount = taxable_net
-                vat_amount = Decimal(0)
-            total_amount = taxable_amount + vat_amount + exempt_net
+                capped_paid = min(paid_amount, totals["total"]) if paid_amount > 0 else Decimal(0)
+                invoice.paid_amount = capped_paid
+                invoice.status = (
+                    "paid" if capped_paid >= totals["total"] and totals["total"] > 0
+                    else "partial" if capped_paid > 0
+                    else "unpaid"
+                )
 
-            invoice.gross_amount = gross
-            invoice.discount_amount = discount_total
-            invoice.taxable_amount = taxable_amount
-            invoice.exempt_amount = exempt_net
-            invoice.vat_amount = vat_amount
-            invoice.total_amount = total_amount
-            capped_paid = min(paid_amount, total_amount) if paid_amount > 0 else Decimal(0)
-            invoice.paid_amount = capped_paid
-            invoice.status = (
-                "paid" if capped_paid >= total_amount and total_amount > 0
-                else "partial" if capped_paid > 0
-                else "unpaid"
-            )
-
-            reference = number
-            txn.create_ledger_entry(
-                db,
-                tenant_id=tenant_id,
-                party_id=customer_id,
-                date=date,
-                description=f"Sales invoice {reference}",
-                reference=reference,
-                debit=total_amount,
-                credit=Decimal(0),
-            )
-            if capped_paid > 0:
+                reference = number
                 txn.create_ledger_entry(
                     db,
                     tenant_id=tenant_id,
                     party_id=customer_id,
                     date=date,
-                    description=f"Payment received ({payment_method})",
+                    description=f"Sales invoice {reference}",
                     reference=reference,
-                    debit=Decimal(0),
-                    credit=capped_paid,
+                    debit=totals["total"],
+                    credit=Decimal(0),
                 )
+                if capped_paid > 0:
+                    txn.create_ledger_entry(
+                        db,
+                        tenant_id=tenant_id,
+                        party_id=customer_id,
+                        date=date,
+                        description=f"Payment received ({payment_method})",
+                        reference=reference,
+                        debit=Decimal(0),
+                        credit=capped_paid,
+                    )
 
             db.commit()
             db.refresh(invoice)
@@ -201,4 +226,121 @@ class IMSInvoiceService:
             return {"success": False, "error_code": "CREATION_FAILED"}
 
         logger.info(f"IMS invoice created: {invoice.id}", extra={"tenant_id": tenant_id})
+        return {"success": True, "invoice": IMSInvoiceRepository.get_by_id(db, tenant_id, invoice.id)}
+
+    @staticmethod
+    def convert(
+        db: Session,
+        tenant_id: str,
+        user_id: str,
+        invoice_id: str,
+        vat_registered: bool,
+        vat_rate: Decimal,
+        invoice_prefix: str,
+        payment_method: str,
+        paid_amount: Decimal,
+    ) -> dict:
+        """Turns a quotation into a real invoice: re-numbers it, and applies
+        the stock deduction + ledger posting that a quotation deliberately
+        skips at creation time. Stock is re-checked at conversion time (not
+        reserved at quote time), so this can fail if stock moved on since
+        the quote was made — same risk any point-of-sale system has for an
+        un-reserved quote."""
+        invoice = IMSInvoiceRepository.get_by_id(db, tenant_id, invoice_id)
+        if not invoice:
+            return {"success": False, "error_code": "INVOICE_NOT_FOUND"}
+        if invoice.kind != "quotation":
+            return {"success": False, "error_code": "NOT_A_QUOTATION"}
+
+        fy_result = IMSFiscalYearService.get_active(db, tenant_id)
+        start_year = fy_result["fiscal_year"].start_year if fy_result["success"] else datetime.now().year
+
+        try:
+            seq = IMSInvoiceRepository.count_for_tenant(db, tenant_id) + 1
+            number = f"{invoice_prefix}-{start_year}-{1000 + seq}"
+            kind = "tax" if vat_registered else "abbreviated"
+
+            lines_as_dicts = [
+                {
+                    "variant_id": line.variant_id,
+                    "qty": line.qty,
+                    "rate": line.rate,
+                    "discount": line.discount,
+                    "taxable": line.taxable,
+                }
+                for line in invoice.lines
+            ]
+
+            for line_dict, line in zip(lines_as_dicts, invoice.lines):
+                variant = IMSProductRepository.get_variant(db, tenant_id, line.variant_id)
+                if not variant:
+                    db.rollback()
+                    return {"success": False, "error_code": "VARIANT_NOT_FOUND"}
+                stock_row = txn.get_or_create_stock_row(db, variant.id, invoice.branch_id)
+                balance = stock_row.qty - line_dict["qty"]
+                txn.set_stock_qty(db, stock_row, balance)
+                txn.create_movement(
+                    db,
+                    tenant_id=tenant_id,
+                    date=invoice.date,
+                    date_bs=invoice.date_bs,
+                    branch_id=invoice.branch_id,
+                    product_id=variant.product_id,
+                    variant_id=variant.id,
+                    type="sale",
+                    qty=-line_dict["qty"],
+                    balance_after=balance,
+                    reference=number,
+                    user_id=user_id,
+                )
+
+            totals = _compute_totals(lines_as_dicts, vat_registered, vat_rate)
+            capped_paid = min(paid_amount, totals["total"]) if paid_amount > 0 else Decimal(0)
+
+            invoice.number = number
+            invoice.kind = kind
+            invoice.gross_amount = totals["gross"]
+            invoice.discount_amount = totals["discount"]
+            invoice.taxable_amount = totals["taxable"]
+            invoice.exempt_amount = totals["exempt"]
+            invoice.vat_amount = totals["vat"]
+            invoice.total_amount = totals["total"]
+            invoice.payment_method = payment_method
+            invoice.paid_amount = capped_paid
+            invoice.status = (
+                "paid" if capped_paid >= totals["total"] and totals["total"] > 0
+                else "partial" if capped_paid > 0
+                else "unpaid"
+            )
+
+            txn.create_ledger_entry(
+                db,
+                tenant_id=tenant_id,
+                party_id=invoice.customer_id,
+                date=invoice.date,
+                description=f"Sales invoice {number}",
+                reference=number,
+                debit=totals["total"],
+                credit=Decimal(0),
+            )
+            if capped_paid > 0:
+                txn.create_ledger_entry(
+                    db,
+                    tenant_id=tenant_id,
+                    party_id=invoice.customer_id,
+                    date=invoice.date,
+                    description=f"Payment received ({payment_method})",
+                    reference=number,
+                    debit=Decimal(0),
+                    credit=capped_paid,
+                )
+
+            db.commit()
+            db.refresh(invoice)
+        except Exception as e:
+            db.rollback()
+            logger.error(f"IMS quotation conversion failed: {str(e)}")
+            return {"success": False, "error_code": "CONVERSION_FAILED"}
+
+        logger.info(f"IMS quotation converted: {invoice_id} -> {invoice.number}", extra={"tenant_id": tenant_id})
         return {"success": True, "invoice": IMSInvoiceRepository.get_by_id(db, tenant_id, invoice.id)}

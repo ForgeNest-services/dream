@@ -346,7 +346,7 @@ export function SubTabs({ items }: { items: { label: string; to: string }[] }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   return (
     <div className="no-print border-b bg-card">
-      <div className="flex gap-1 overflow-x-auto px-4">
+      <div className="flex gap-1.5 overflow-x-auto px-4 py-2.5">
         {items.map((i) => {
           const active = pathname === i.to || pathname.startsWith(`${i.to}/`);
           return (
@@ -354,10 +354,10 @@ export function SubTabs({ items }: { items: { label: string; to: string }[] }) {
               key={i.to}
               to={i.to}
               className={cn(
-                "-mb-px whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition-colors",
+                "whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                 active
-                  ? "border-primary font-medium text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
             >
               {i.label}

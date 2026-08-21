@@ -353,7 +353,10 @@ interface AppContextValue extends AppState {
   createInvoice: (
     inv: Omit<Invoice, "id" | "number" | "userId">,
   ) => Promise<{ ok: boolean; invoice?: Invoice; error?: string }>;
-  convertQuotation: (id: string) => void;
+  convertQuotation: (
+    id: string,
+    payment: { paymentMethod: PaymentMethod; paidAmount: number },
+  ) => Promise<{ ok: boolean; invoice?: Invoice; error?: string }>;
   updateCompany: (patch: Partial<CompanyProfile>) => void;
 }
 
@@ -1041,6 +1044,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
 
       createInvoice: async (inv) => {
+        const isQuotation = inv.kind === "quotation";
         const payload: CreateInvoicePayload = {
           date: inv.date,
           branch_id: inv.branchId,
@@ -1058,6 +1062,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           vat_registered: state.company.vatRegistered,
           vat_rate: state.company.vatRate,
           invoice_prefix: state.company.invoicePrefix,
+          is_quotation: isQuotation,
         };
 
         try {
@@ -1065,8 +1070,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (!res.success || !res.data) return { ok: false, error: "Failed to record sale" };
           const created = toInvoice(res.data);
 
-          // A sale always touches stock and the customer ledger — refetch
-          // rather than hand-reconstruct local state, same as createPurchase.
+          if (isQuotation) {
+            // A quotation touches neither stock nor the ledger — no refetch
+            // needed, just add it to local state.
+            setState((s) => ({ ...s, invoices: [created, ...s.invoices] }));
+            return { ok: true, invoice: created };
+          }
+
+          // A real sale always touches stock and the customer ledger —
+          // refetch rather than hand-reconstruct local state, same as
+          // createPurchase.
           const [productsRes, movementsRes, ledgerRes] = await Promise.all([
             productsApi.list({ per_page: 100 }),
             stockApi.movements({ per_page: 100 }),
@@ -1089,19 +1102,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       },
 
-      convertQuotation: (id) =>
-        setState((s) => ({
-          ...s,
-          invoices: s.invoices.map((i) =>
-            i.id === id
-              ? {
-                  ...i,
-                  kind: s.company.vatRegistered ? "tax" : "abbreviated",
-                  number: `${s.company.invoicePrefix}-${fiscalYear.startYear}-${1000 + s.invoices.length + 1}`,
-                }
-              : i,
-          ),
-        })),
+      convertQuotation: async (id, payment) => {
+        try {
+          const res = await invoicesApi.convert(id, {
+            payment_method: payment.paymentMethod,
+            paid_amount: payment.paidAmount,
+            vat_registered: state.company.vatRegistered,
+            vat_rate: state.company.vatRate,
+            invoice_prefix: state.company.invoicePrefix,
+          });
+          if (!res.success || !res.data) return { ok: false, error: "Failed to convert quotation" };
+          const converted = toInvoice(res.data);
+
+          // Conversion deducts stock and posts to the ledger for real —
+          // refetch, same as a normal sale.
+          const [productsRes, movementsRes, ledgerRes] = await Promise.all([
+            productsApi.list({ per_page: 100 }),
+            stockApi.movements({ per_page: 100 }),
+            ledgerApi.listAll(),
+          ]);
+          const productDtos = productsRes.data ?? [];
+
+          setState((s) => ({
+            ...s,
+            products: productDtos.map(toProduct),
+            variants: productDtos.flatMap((p) => p.variants.map(toVariant)),
+            movements: (movementsRes.data ?? []).map(toMovement),
+            ledger: (ledgerRes.data ?? []).map(toLedgerEntry),
+            invoices: s.invoices.map((i) => (i.id === id ? converted : i)),
+          }));
+
+          return { ok: true, invoice: converted };
+        } catch (e) {
+          return {
+            ok: false,
+            error: e instanceof ApiError ? e.message : "Failed to convert quotation",
+          };
+        }
+      },
 
       updateCompany: (patch) =>
         setState((s) => ({ ...s, company: { ...s.company, ...patch } })),

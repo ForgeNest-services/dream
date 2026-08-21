@@ -8,10 +8,12 @@ from core.database import Base
 class IMSInvoice(Base):
     """A recorded sale — deducts stock (via IMSInvoiceLine + stock movements
     posted alongside, see IMSInvoiceService.create) and posts a sale/payment
-    pair to the customer ledger. Append-only, like IMSPurchase — an invoice
-    is never edited or deleted once saved. Quotations (draft, no stock/ledger
-    effect) are out of scope for this pass — kind is always "tax" or
-    "abbreviated" here, never "quotation"."""
+    pair to the customer ledger. Append-only in the append-many-fields sense
+    (never deleted), but a quotation row (kind="quotation") IS mutated once,
+    in place, by IMSInvoiceService.convert — that's the one moment stock
+    actually gets deducted and the ledger actually gets posted; a quotation
+    itself has neither effect. Real invoices (kind "tax"/"abbreviated") are
+    never mutated after creation."""
 
     __tablename__ = "ims_invoices"
     __table_args__ = (

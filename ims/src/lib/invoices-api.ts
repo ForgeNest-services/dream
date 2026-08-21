@@ -19,7 +19,7 @@ export interface InvoiceDto {
   id: string;
   tenant_id: string;
   number: string;
-  kind: "tax" | "abbreviated";
+  kind: "tax" | "abbreviated" | "quotation";
   date: string;
   date_bs: string;
   branch_id: string;
@@ -58,6 +58,15 @@ export interface CreateInvoicePayload {
   vat_registered: boolean;
   vat_rate: number;
   invoice_prefix: string;
+  is_quotation?: boolean | undefined;
+}
+
+export interface ConvertQuotationPayload {
+  payment_method: string;
+  paid_amount: number;
+  vat_registered: boolean;
+  vat_rate: number;
+  invoice_prefix: string;
 }
 
 export const invoicesApi = {
@@ -66,6 +75,7 @@ export const invoicesApi = {
       branch_id?: string;
       customer_id?: string;
       status?: string;
+      kind?: string;
       q?: string;
       bs_from?: string;
       bs_to?: string;
@@ -77,6 +87,7 @@ export const invoicesApi = {
     if (params.branch_id) qs.set("branch_id", params.branch_id);
     if (params.customer_id) qs.set("customer_id", params.customer_id);
     if (params.status) qs.set("status", params.status);
+    if (params.kind) qs.set("kind", params.kind);
     if (params.q) qs.set("q", params.q);
     if (params.bs_from) qs.set("bs_from", params.bs_from);
     if (params.bs_to) qs.set("bs_to", params.bs_to);
@@ -86,5 +97,8 @@ export const invoicesApi = {
   },
   create(payload: CreateInvoicePayload) {
     return apiClient.post<InvoiceDto>("/ims/invoices", payload);
+  },
+  convert(invoiceId: string, payload: ConvertQuotationPayload) {
+    return apiClient.post<InvoiceDto>(`/ims/invoices/${invoiceId}/convert`, payload);
   },
 };

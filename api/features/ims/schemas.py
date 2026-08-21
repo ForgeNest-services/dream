@@ -492,3 +492,14 @@ class CreateInvoiceRequest(BaseModel):
     vat_registered: bool = False
     vat_rate: Decimal = Decimal(13)
     invoice_prefix: str = "INV"
+    # A quotation is a price offer only — no stock deduction, no ledger
+    # post. Those happen for real on IMSInvoiceService.convert.
+    is_quotation: bool = False
+
+
+class ConvertQuotationRequest(BaseModel):
+    payment_method: str = "cash"
+    paid_amount: Decimal = Decimal(0)
+    vat_registered: bool = False
+    vat_rate: Decimal = Decimal(13)
+    invoice_prefix: str = "INV"

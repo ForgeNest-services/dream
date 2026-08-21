@@ -36,6 +36,7 @@ class IMSInvoiceRepository:
         branch_id: str | None,
         customer_id: str | None,
         status: str | None,
+        kind: str | None,
         q: str | None,
         bs_from: str | None,
         bs_to: str | None,
@@ -55,6 +56,12 @@ class IMSInvoiceRepository:
             query = query.filter(IMSInvoice.customer_id == customer_id)
         if status:
             query = query.filter(IMSInvoice.status == status)
+        if kind == "quotation":
+            query = query.filter(IMSInvoice.kind == "quotation")
+        else:
+            # Default view (Invoices list) never shows quotations, matching
+            # the mock's `.filter(i => i.kind !== "quotation")`.
+            query = query.filter(IMSInvoice.kind != "quotation")
         # date_bs is "YYYY-MM-DD" — lexical comparison sorts correctly,
         # same as restro_order.placed_at_bs (see api/utils/bikram_sambat.py).
         if bs_from:
