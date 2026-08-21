@@ -1,9 +1,11 @@
 """Flush-only (never commit) variants of the product/variant/stock/movement/
-ledger writes used elsewhere in features/ims. A purchase touches all of
-these at once and must be one atomic transaction — the shared repositories
-each commit per call, which would leave partial writes on a mid-purchase
-failure. These mirror the same field shapes but defer commit to the
-caller (IMSPurchaseService.create), which commits once at the end."""
+ledger writes used elsewhere in features/ims. A purchase or a sale touches
+several of these at once and must be one atomic transaction — the shared
+repositories each commit per call, which would leave partial writes on a
+mid-transaction failure. These mirror the same field shapes but defer
+commit to the caller (IMSPurchaseService.create / IMSInvoiceService.create),
+which commits once at the end. Despite the filename, this module is shared
+by both — not purchase-specific."""
 
 from sqlalchemy.orm import Session
 from shared_models import IMSProduct, IMSVariant, IMSVariantStock, IMSStockMovement, IMSLedgerEntry

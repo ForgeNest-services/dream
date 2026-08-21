@@ -37,6 +37,8 @@ from .ims_party import IMSParty
 from .ims_ledger_entry import IMSLedgerEntry
 from .ims_purchase import IMSPurchase
 from .ims_purchase_line import IMSPurchaseLine
+from .ims_invoice import IMSInvoice
+from .ims_invoice_line import IMSInvoiceLine
 from .app import App
 
 __all__ = [
@@ -79,5 +81,7 @@ __all__ = [
     "IMSLedgerEntry",
     "IMSPurchase",
     "IMSPurchaseLine",
+    "IMSInvoice",
+    "IMSInvoiceLine",
     "App",
 ]

@@ -30,6 +30,7 @@ import {
   type CreatePurchasePayload,
   type PurchaseItemPayload,
 } from "@/lib/purchases-api";
+import { invoicesApi, type InvoiceDto, type CreateInvoicePayload } from "@/lib/invoices-api";
 import { ApiError } from "@/lib/api-client";
 import { toast } from "sonner";
 import {
@@ -42,6 +43,7 @@ import {
   type DateSystem,
   type FiscalYear,
   type Invoice,
+  type InvoiceLine,
   type LedgerEntry,
   type MediaItem,
   type ModuleKey,
@@ -189,6 +191,32 @@ const toPurchase = (p: PurchaseDto): Purchase => ({
   note: p.note ?? undefined,
   userId: p.user_id,
 });
+const toInvoice = (i: InvoiceDto): Invoice => ({
+  id: i.id,
+  number: i.number,
+  kind: i.kind,
+  date: i.date,
+  branchId: i.branch_id,
+  customerId: i.customer_id,
+  lines: i.lines.map(
+    (l): InvoiceLine => ({
+      id: l.id,
+      productId: l.product_id,
+      variantId: l.variant_id,
+      description: l.description,
+      qty: num(l.qty),
+      unitId: l.unit_id,
+      rate: num(l.rate),
+      discount: num(l.discount),
+      taxable: l.taxable,
+    }),
+  ),
+  paymentMethod: i.payment_method as PaymentMethod,
+  paidAmount: num(i.paid_amount),
+  status: i.status,
+  userId: i.user_id,
+  note: i.note ?? undefined,
+});
 
 /** A product entered on a purchase bill — either an existing one or a brand new one. */
 export type PurchaseDraftItem =
@@ -322,7 +350,9 @@ interface AppContextValue extends AppState {
     method: string;
     reference?: string | undefined;
   }) => Promise<{ ok: boolean; error?: string }>;
-  createInvoice: (inv: Omit<Invoice, "id" | "number" | "userId">) => Invoice;
+  createInvoice: (
+    inv: Omit<Invoice, "id" | "number" | "userId">,
+  ) => Promise<{ ok: boolean; invoice?: Invoice; error?: string }>;
   convertQuotation: (id: string) => void;
   updateCompany: (patch: Partial<CompanyProfile>) => void;
 }
@@ -401,8 +431,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Once real staff auth is in place, branches/categories/brands/units are
   // real per-tenant data — fetch them whenever a session becomes active.
-  // Everything else (purchases, invoices...) stays on mock data until its
-  // own phase.
+  // Quotations stay mock-only (not built yet); everything else here is real.
   useEffect(() => {
     if (!state.currentUser) return;
     let cancelled = false;
@@ -420,6 +449,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           partiesRes,
           ledgerRes,
           purchasesRes,
+          invoicesRes,
         ] = await Promise.all([
           branchesApi.listMine(),
           categoriesApi.list(),
@@ -432,6 +462,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           partiesApi.list(undefined, { per_page: 100 }),
           ledgerApi.listAll(),
           purchasesApi.list({ per_page: 100 }),
+          invoicesApi.list({ per_page: 100 }),
         ]);
         if (cancelled) return;
         const productDtos = productsRes.data ?? [];
@@ -450,6 +481,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ledger: (ledgerRes.data ?? []).map(toLedgerEntry),
           movements: (movementsRes.data ?? []).map(toMovement),
           purchases: (purchasesRes.data ?? []).map(toPurchase),
+          invoices: (invoicesRes.data ?? []).map(toInvoice),
           fiscalYears: fyDtos.map(toFiscalYear),
           fiscalYearId: activeFy ? activeFy.id : s.fiscalYearId,
         }));
@@ -1008,88 +1040,53 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       },
 
-      createInvoice: (inv) => {
-        const seq = 1000 + state.invoices.length + 1;
-        const number =
-          inv.kind === "quotation"
-            ? `QT-${seq}`
-            : `${state.company.invoicePrefix}-${fiscalYear.startYear}-${seq}`;
-        const created: Invoice = {
-          ...inv,
-          id: nextId("inv"),
-          number,
-          userId: state.currentUser?.id ?? "u-1",
+      createInvoice: async (inv) => {
+        const payload: CreateInvoicePayload = {
+          date: inv.date,
+          branch_id: inv.branchId,
+          customer_id: inv.customerId,
+          payment_method: inv.paymentMethod,
+          paid_amount: inv.paidAmount,
+          note: inv.note,
+          lines: inv.lines.map((l) => ({
+            variant_id: l.variantId,
+            qty: l.qty,
+            rate: l.rate,
+            discount: l.discount,
+            taxable: l.taxable,
+          })),
+          vat_registered: state.company.vatRegistered,
+          vat_rate: state.company.vatRate,
+          invoice_prefix: state.company.invoicePrefix,
         };
-        setState((s) => {
-          const total = created.lines.reduce((x, l) => x + (l.rate - l.discount) * l.qty, 0);
-          const movements: StockMovement[] =
-            created.kind === "quotation"
-              ? []
-              : created.lines.map((l) => {
-                  const v = s.variants.find((x) => x.id === l.variantId);
-                  return {
-                    id: nextId("mv"),
-                    date: created.date,
-                    branchId: created.branchId,
-                    productId: l.productId,
-                    variantId: l.variantId,
-                    type: "sale" as const,
-                    qty: -l.qty,
-                    balanceAfter: (v?.stock[created.branchId] ?? 0) - l.qty,
-                    reference: number,
-                    userId: created.userId,
-                  };
-                });
-          const ledger: LedgerEntry[] =
-            created.kind === "quotation"
-              ? s.ledger
-              : [
-                  {
-                    id: nextId("le"),
-                    partyId: created.customerId,
-                    date: created.date,
-                    description: `Sales invoice ${number}`,
-                    reference: number,
-                    debit: total,
-                    credit: 0,
-                  },
-                  ...(created.paidAmount > 0
-                    ? [
-                        {
-                          id: nextId("le"),
-                          partyId: created.customerId,
-                          date: created.date,
-                          description: `Payment received (${created.paymentMethod})`,
-                          reference: number,
-                          debit: 0,
-                          credit: created.paidAmount,
-                        },
-                      ]
-                    : []),
-                  ...s.ledger,
-                ];
-          return {
+
+        try {
+          const res = await invoicesApi.create(payload);
+          if (!res.success || !res.data) return { ok: false, error: "Failed to record sale" };
+          const created = toInvoice(res.data);
+
+          // A sale always touches stock and the customer ledger — refetch
+          // rather than hand-reconstruct local state, same as createPurchase.
+          const [productsRes, movementsRes, ledgerRes] = await Promise.all([
+            productsApi.list({ per_page: 100 }),
+            stockApi.movements({ per_page: 100 }),
+            ledgerApi.listAll(),
+          ]);
+          const productDtos = productsRes.data ?? [];
+
+          setState((s) => ({
             ...s,
+            products: productDtos.map(toProduct),
+            variants: productDtos.flatMap((p) => p.variants.map(toVariant)),
+            movements: (movementsRes.data ?? []).map(toMovement),
+            ledger: (ledgerRes.data ?? []).map(toLedgerEntry),
             invoices: [created, ...s.invoices],
-            movements: [...movements, ...s.movements],
-            variants:
-              created.kind === "quotation"
-                ? s.variants
-                : s.variants.map((v) => {
-                    const line = created.lines.find((l) => l.variantId === v.id);
-                    if (!line) return v;
-                    return {
-                      ...v,
-                      stock: {
-                        ...v.stock,
-                        [created.branchId]: (v.stock[created.branchId] ?? 0) - line.qty,
-                      },
-                    };
-                  }),
-            ledger,
-          };
-        });
-        return created;
+          }));
+
+          return { ok: true, invoice: created };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to record sale" };
+        }
       },
 
       convertQuotation: (id) =>

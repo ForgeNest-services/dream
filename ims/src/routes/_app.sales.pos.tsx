@@ -122,7 +122,9 @@ function PosPage() {
   const patch = (id: string, p: Partial<CartLine>) =>
     setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...p } : l)));
 
-  const checkout = (print: boolean) => {
+  const [checkingOut, setCheckingOut] = useState(false);
+
+  const checkout = async (print: boolean) => {
     if (lines.length === 0) {
       toast.error("Cart is empty");
       return;
@@ -131,22 +133,32 @@ function PosPage() {
       toast.error("Choose a customer");
       return;
     }
-    const inv = app.createInvoice({
-      kind: app.company.vatRegistered ? "tax" : "abbreviated",
-      date: date ?? new Date().toISOString(),
-      branchId,
-      customerId,
-      lines: lines.map(({ maxStock: _m, ...l }) => l),
-      paymentMethod: qr > 0 && cash > 0 ? "cash" : qr > 0 ? "qr" : "cash",
-      paidAmount: Math.min(paid, totals.total),
-      status:
-        paid >= totals.total ? "paid" : paid > 0 ? "partial" : "unpaid",
-    });
-    setLines([]);
-    setCash(0);
-    setQr(0);
-    toast.success(`Sale complete — ${inv.number}`);
-    if (print) void navigate({ to: "/print/$invoiceId", params: { invoiceId: inv.id } });
+    setCheckingOut(true);
+    try {
+      const res = await app.createInvoice({
+        kind: app.company.vatRegistered ? "tax" : "abbreviated",
+        date: date ?? new Date().toISOString(),
+        branchId,
+        customerId,
+        lines: lines.map(({ maxStock: _m, ...l }) => l),
+        paymentMethod: qr > 0 && cash > 0 ? "cash" : qr > 0 ? "qr" : "cash",
+        paidAmount: Math.min(paid, totals.total),
+        status: paid >= totals.total ? "paid" : paid > 0 ? "partial" : "unpaid",
+      });
+      if (!res.ok || !res.invoice) {
+        toast.error(res.error ?? "Failed to record sale");
+        return;
+      }
+      setLines([]);
+      setCash(0);
+      setQr(0);
+      toast.success(`Sale complete — ${res.invoice.number}`);
+      if (print) {
+        void navigate({ to: "/print/$invoiceId", params: { invoiceId: res.invoice.id } });
+      }
+    } finally {
+      setCheckingOut(false);
+    }
   };
 
   return (
@@ -418,10 +430,12 @@ function PosPage() {
 
 
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <Button variant="outline" onClick={() => checkout(false)}>
+              <Button variant="outline" onClick={() => void checkout(false)} disabled={checkingOut}>
                 Save sale
               </Button>
-              <Button onClick={() => checkout(true)}>Pay &amp; print</Button>
+              <Button onClick={() => void checkout(true)} disabled={checkingOut}>
+                {checkingOut ? "Saving…" : "Pay & print"}
+              </Button>
             </div>
           </div>
 

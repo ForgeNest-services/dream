@@ -6,6 +6,7 @@ from features.ims.product_repository import IMSProductRepository
 from features.ims.movement_repository import IMSMovementRepository
 from features.ims.category_repository import IMSCategoryRepository
 from features.branches.repository import BranchRepository
+from utils.bikram_sambat import to_bs_iso
 from utils.logger import logger
 
 
@@ -113,6 +114,7 @@ class IMSProductService:
                     db,
                     tenant_id=tenant_id,
                     date=now,
+                    date_bs=to_bs_iso(now) or "",
                     branch_id=branch_id_for_stock,
                     product_id=product.id,
                     variant_id=variant.id,

@@ -32,6 +32,8 @@ from features.ims.schemas import (
     RecordPaymentRequest,
     PurchaseData,
     CreatePurchaseRequest,
+    InvoiceData,
+    CreateInvoiceRequest,
 )
 from features.ims.service import IMSCredentialService, IMSAuthService
 from features.ims.category_service import IMSCategoryService
@@ -44,6 +46,7 @@ from features.ims.fiscal_year_service import IMSFiscalYearService
 from features.ims.party_service import IMSPartyService, IMSLedgerService
 from features.ims.party_repository import IMSLedgerRepository
 from features.ims.purchase_service import IMSPurchaseService
+from features.ims.invoice_service import IMSInvoiceService
 
 
 router = APIRouter(prefix="/ims", tags=["ims"])
@@ -958,5 +961,90 @@ def create_purchase(
     return success_response(
         data=PurchaseData.model_validate(result["purchase"]).model_dump(mode="json"),
         message="Purchase recorded",
+        status_code=201,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Invoices (staff-facing) — POS checkout: deducts stock and posts a
+# sale/payment pair to the customer ledger, all atomically.
+# ---------------------------------------------------------------------------
+
+_INVOICE_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "CUSTOMER_NOT_FOUND": ("CUSTOMER_NOT_FOUND", "Customer not found.", 404),
+    "VARIANT_NOT_FOUND": ("VARIANT_NOT_FOUND", "Variant not found.", 404),
+    "NO_ITEMS": ("NO_ITEMS", "Add at least one item to the cart.", 422),
+    "CREATION_FAILED": ("CREATION_FAILED", "Failed to record sale.", 500),
+}
+
+
+def _invoice_error(code: str):
+    mapped = _INVOICE_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to process request.", 500))
+    return error_response(*mapped)
+
+
+@router.get("/invoices")
+def list_invoices(
+    branch_id: str | None = None,
+    customer_id: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """bs_from / bs_to accept Bikram Sambat dates as "YYYY-MM-DD" strings
+    and hit the (branch_id, date_bs) index — see IMSInvoice.date_bs."""
+    paging = parse_paging(page, per_page)
+    result = IMSInvoiceService.list_for_tenant(
+        db,
+        staff["tenant_id"],
+        branch_id,
+        customer_id,
+        status,
+        q,
+        bs_from,
+        bs_to,
+        paging["offset"],
+        paging["limit"],
+    )
+    return success_response(
+        data=[InvoiceData.model_validate(i).model_dump(mode="json") for i in result["invoices"]],
+        meta=build_meta(result["total"], paging["page"], paging["per_page"]),
+    )
+
+
+@router.post("/invoices")
+def create_invoice(
+    data: CreateInvoiceRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager", "cashier"):
+        raise HTTPException(403, "Not allowed to record sales")
+    result = IMSInvoiceService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        user_id=staff.get("cred_id") or "",
+        date=data.date,
+        branch_id=data.branch_id,
+        customer_id=data.customer_id,
+        payment_method=data.payment_method,
+        paid_amount=data.paid_amount,
+        note=data.note,
+        lines=[line.model_dump() for line in data.lines],
+        vat_registered=data.vat_registered,
+        vat_rate=data.vat_rate,
+        invoice_prefix=data.invoice_prefix,
+    )
+    if not result["success"]:
+        return _invoice_error(result["error_code"])
+    return success_response(
+        data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
+        message="Sale recorded",
         status_code=201,
     )

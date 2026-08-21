@@ -429,3 +429,66 @@ class CreatePurchaseRequest(BaseModel):
     # rate — CompanyProfile isn't a backend table yet, so this rides along
     # on the request instead of being looked up server-side.
     default_vat_rate: Decimal = Decimal(13)
+
+
+class InvoiceLineData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    product_id: str
+    variant_id: str
+    description: str
+    qty: Decimal
+    unit_id: str
+    rate: Decimal
+    discount: Decimal
+    taxable: bool
+
+
+class InvoiceData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    number: str
+    kind: str
+    date: datetime
+    date_bs: str
+    branch_id: str
+    customer_id: str
+    gross_amount: Decimal
+    discount_amount: Decimal
+    taxable_amount: Decimal
+    exempt_amount: Decimal
+    vat_amount: Decimal
+    total_amount: Decimal
+    payment_method: str
+    paid_amount: Decimal
+    status: str
+    note: str | None
+    user_id: str
+    created_at: datetime
+    lines: list[InvoiceLineData]
+
+
+class InvoiceLineInput(BaseModel):
+    variant_id: str
+    qty: Decimal
+    rate: Decimal
+    discount: Decimal = Decimal(0)
+    taxable: bool = True
+
+
+class CreateInvoiceRequest(BaseModel):
+    date: datetime
+    branch_id: str
+    customer_id: str
+    payment_method: str = "cash"
+    paid_amount: Decimal = Decimal(0)
+    note: str | None = None
+    lines: list[InvoiceLineInput]
+    # CompanyProfile isn't a backend table yet — same pattern as
+    # CreatePurchaseRequest.default_vat_rate.
+    vat_registered: bool = False
+    vat_rate: Decimal = Decimal(13)
+    invoice_prefix: str = "INV"

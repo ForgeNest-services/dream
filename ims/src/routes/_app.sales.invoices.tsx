@@ -1,5 +1,5 @@
-import { DateRangeFilter } from "@/components/common/date-picker";
-import { PaginationBar, usePagination } from "@/components/common/pagination";
+import { BsDateRangeFilter } from "@/components/common/bs-date-picker";
+import { TablePagination } from "@/components/common/table-pagination";
 import { DateText, EmptyState, Money, PageHeader, StatusPill } from "@/components/common/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,11 +11,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useApp } from "@/context/app-store";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { normalizeTableSearch } from "@/hooks/useTableQuery";
+import { useInvoices } from "@/hooks/useInvoices";
+import type { Invoice, InvoiceLine } from "@/data/types";
+import type { InvoiceDto } from "@/lib/invoices-api";
 import { downloadCsv } from "@/lib/csv";
-import { computeTotals } from "@/lib/invoice";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Download, Printer, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+
+interface InvoicesSearch {
+  q: string;
+  status: string;
+  from: string;
+  to: string;
+  page: number;
+  perPage: number;
+}
 
 export const Route = createFileRoute("/_app/sales/invoices")({
   head: () => ({
@@ -35,59 +48,113 @@ export const Route = createFileRoute("/_app/sales/invoices")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>): InvoicesSearch => {
+    const normalized = normalizeTableSearch({
+      page: Number(search.page) || 1,
+      perPage: Number(search.perPage) || 12,
+    });
+    return {
+      q: typeof search.q === "string" ? search.q : "",
+      status: typeof search.status === "string" ? search.status : "all",
+      // Bikram Sambat "YYYY-MM-DD" strings, sent straight through to the
+      // backend's bs_from/bs_to (see IMSInvoice.date_bs).
+      from: typeof search.from === "string" ? search.from : "",
+      to: typeof search.to === "string" ? search.to : "",
+      page: normalized.page,
+      perPage: normalized.perPage,
+    };
+  },
   component: InvoicesPage,
 });
 
+// Backend Decimal fields serialize as JSON strings — coerce before arithmetic.
+function dtoToInvoice(i: InvoiceDto): Invoice {
+  return {
+    id: i.id,
+    number: i.number,
+    kind: i.kind,
+    date: i.date,
+    branchId: i.branch_id,
+    customerId: i.customer_id,
+    lines: i.lines.map(
+      (l): InvoiceLine => ({
+        id: l.id,
+        productId: l.product_id,
+        variantId: l.variant_id,
+        description: l.description,
+        qty: Number(l.qty),
+        unitId: l.unit_id,
+        rate: Number(l.rate),
+        discount: Number(l.discount),
+        taxable: l.taxable,
+      }),
+    ),
+    paymentMethod: i.payment_method as Invoice["paymentMethod"],
+    paidAmount: Number(i.paid_amount),
+    status: i.status,
+    userId: i.user_id,
+    note: i.note ?? undefined,
+  };
+}
+
 function InvoicesPage() {
   const app = useApp();
-  const [q, setQ] = useState("");
-  const [status, setStatus] = useState("all");
-  const [from, setFrom] = useState<string | null>(null);
-  const [to, setTo] = useState<string | null>(null);
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
 
-  const rows = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    return app.invoices
-      .filter((i) => i.kind !== "quotation")
-      .filter((i) => (app.branchId === "all" ? true : i.branchId === app.branchId))
-      .filter((i) => (status === "all" ? true : i.status === status))
-      .filter((i) => (from ? i.date >= from : true))
-      .filter((i) => (to ? i.date <= to : true))
-      .filter((i) => {
-        if (!term) return true;
-        const cust = app.parties.find((p) => p.id === i.customerId);
-        return (
-          i.number.toLowerCase().includes(term) ||
-          (cust?.name.toLowerCase().includes(term) ?? false)
-        );
-      });
-  }, [app.invoices, app.parties, app.branchId, q, status, from, to]);
+  const setSearch = (patch: Partial<InvoicesSearch>) => {
+    navigate({ search: (prev) => ({ ...prev, ...patch }) });
+  };
 
-  const pag = usePagination(rows, 12);
+  const debouncedQ = useDebouncedValue(search.q, 300);
+
+  const { invoices: invoiceDtos, meta, isLoading } = useInvoices({
+    branch_id: app.branchId === "all" ? undefined : app.branchId,
+    status: search.status === "all" ? undefined : search.status,
+    q: debouncedQ || undefined,
+    bs_from: search.from || undefined,
+    bs_to: search.to || undefined,
+    page: search.page,
+    per_page: search.perPage,
+  });
+
+  useEffect(() => {
+    if (meta && search.page > meta.total_pages) {
+      setSearch({ page: 1 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta?.total_pages]);
+
+  const rows = invoiceDtos.map((dto) => {
+    const inv = dtoToInvoice(dto);
+    return {
+      inv,
+      taxable: Number(dto.taxable_amount),
+      vat: Number(dto.vat_amount),
+      total: Number(dto.total_amount),
+    };
+  });
 
   const exportCsv = () =>
     downloadCsv(
       "invoices",
-      rows.map((i) => {
-        const t = computeTotals(i.lines, app.company);
-        return {
-          number: i.number,
-          date: i.date.slice(0, 10),
-          customer: app.parties.find((p) => p.id === i.customerId)?.name ?? "",
-          taxable: t.taxable.toFixed(2),
-          vat: t.vat.toFixed(2),
-          total: t.total.toFixed(2),
-          paid: i.paidAmount.toFixed(2),
-          status: i.status,
-        };
-      }),
+      rows.map((r) => ({
+        number: r.inv.number,
+        date: r.inv.date.slice(0, 10),
+        customer: app.parties.find((p) => p.id === r.inv.customerId)?.name ?? "",
+        taxable: r.taxable.toFixed(2),
+        vat: r.vat.toFixed(2),
+        total: r.total.toFixed(2),
+        paid: r.inv.paidAmount.toFixed(2),
+        status: r.inv.status,
+      })),
     );
 
   return (
     <div>
       <PageHeader
         title="Invoices"
-        subtitle={`${rows.length} document${rows.length === 1 ? "" : "s"} in the current branch and date range`}
+        subtitle={`${meta?.total ?? rows.length} document${(meta?.total ?? rows.length) === 1 ? "" : "s"} in the current branch and date range`}
         actions={
           <Button variant="outline" size="sm" onClick={exportCsv}>
             <Download className="mr-1.5 h-4 w-4" /> CSV
@@ -99,13 +166,13 @@ function InvoicesPage() {
         <div className="relative min-w-[220px] flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
+            value={search.q}
+            onChange={(e) => setSearch({ q: e.target.value, page: 1 })}
             placeholder="Search invoice no. or customer"
             className="pl-9"
           />
         </div>
-        <Select value={status} onValueChange={setStatus}>
+        <Select value={search.status} onValueChange={(v) => setSearch({ status: v, page: 1 })}>
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
@@ -116,10 +183,15 @@ function InvoicesPage() {
             <SelectItem value="unpaid">Unpaid</SelectItem>
           </SelectContent>
         </Select>
-        <DateRangeFilter from={from} to={to} onFrom={setFrom} onTo={setTo} />
+        <BsDateRangeFilter
+          from={search.from}
+          to={search.to}
+          onFrom={(v) => setSearch({ from: v, page: 1 })}
+          onTo={(v) => setSearch({ to: v, page: 1 })}
+        />
       </div>
 
-      {rows.length === 0 ? (
+      {!isLoading && rows.length === 0 ? (
         <EmptyState title="No invoices found" description="Adjust the filters or make a sale." />
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card">
@@ -138,39 +210,38 @@ function InvoicesPage() {
               </tr>
             </thead>
             <tbody>
-              {pag.slice.map((i) => {
-                const t = computeTotals(i.lines, app.company);
-                const cust = app.parties.find((p) => p.id === i.customerId);
+              {rows.map((r) => {
+                const cust = app.parties.find((p) => p.id === r.inv.customerId);
                 return (
-                  <tr key={i.id} className="border-b last:border-0 hover:bg-accent/40">
+                  <tr key={r.inv.id} className="border-b last:border-0 hover:bg-accent/40">
                     <td className="num px-3 py-2.5">
-                      {i.number}
+                      {r.inv.number}
                       <span className="ml-1.5 text-xs capitalize text-muted-foreground">
-                        {i.kind}
+                        {r.inv.kind}
                       </span>
                     </td>
                     <td className="px-3 py-2.5">
-                      <DateText value={i.date} />
+                      <DateText value={r.inv.date} />
                     </td>
                     <td className="px-3 py-2.5">{cust?.name ?? "—"}</td>
                     <td className="px-3 py-2.5 text-right">
-                      <Money value={t.taxable} />
+                      <Money value={r.taxable} />
                     </td>
                     <td className="px-3 py-2.5 text-right">
-                      <Money value={t.vat} />
+                      <Money value={r.vat} />
                     </td>
                     <td className="px-3 py-2.5 text-right">
-                      <Money value={t.total} />
+                      <Money value={r.total} />
                     </td>
                     <td className="px-3 py-2.5 text-right">
-                      <Money value={Math.max(0, t.total - i.paidAmount)} />
+                      <Money value={Math.max(0, r.total - r.inv.paidAmount)} />
                     </td>
                     <td className="px-3 py-2.5">
-                      <StatusPill status={i.status} />
+                      <StatusPill status={r.inv.status} />
                     </td>
                     <td className="px-2 py-2.5 text-right">
                       <Button asChild variant="ghost" size="sm">
-                        <Link to="/print/$invoiceId" params={{ invoiceId: i.id }}>
+                        <Link to="/print/$invoiceId" params={{ invoiceId: r.inv.id }}>
                           <Printer className="h-4 w-4" />
                         </Link>
                       </Button>
@@ -180,12 +251,13 @@ function InvoicesPage() {
               })}
             </tbody>
           </table>
-          <PaginationBar
-            page={pag.page}
-            pageCount={pag.pageCount}
-            total={pag.total}
-            pageSize={pag.pageSize}
-            onChange={pag.setPage}
+          <TablePagination
+            page={meta?.page ?? search.page}
+            perPage={meta?.per_page ?? search.perPage}
+            totalItems={meta?.total ?? rows.length}
+            totalPages={meta?.total_pages ?? 1}
+            onPageChange={(p) => setSearch({ page: p })}
+            onPerPageChange={(pp) => setSearch({ perPage: pp, page: 1 })}
           />
         </div>
       )}
