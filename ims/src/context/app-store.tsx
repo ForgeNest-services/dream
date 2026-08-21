@@ -10,7 +10,12 @@ import {
 import { createSeedData, makeFiscalYear, type SeedData } from "@/data/mock";
 import { authApi } from "@/lib/auth-api";
 import { authStorage } from "@/lib/auth-storage";
-import { branchesApi, branchCode, type BranchDto } from "@/lib/branches-api";
+import {
+  branchesApi,
+  branchCode,
+  type BranchDto,
+  type TenantInfoDto,
+} from "@/lib/branches-api";
 import { categoriesApi, type CategoryDto } from "@/lib/categories-api";
 import { brandsApi, type BrandDto } from "@/lib/brands-api";
 import { unitsApi, type UnitDto } from "@/lib/units-api";
@@ -74,6 +79,18 @@ const toBranch = (b: BranchDto): Branch => ({
   name: b.name,
   code: branchCode(b.name),
   address: b.address ?? "",
+});
+/** PAN/VAT-registered/contact are real tenant fields (see GET /branches's
+ * meta.tenant); vatRate/invoicePrefix/qrImageUrl have no backend home yet
+ * and stay as whatever the local company state already had (Settings-editable). */
+const toCompanyPatch = (t: TenantInfoDto) => ({
+  name: t.name,
+  legalName: t.name,
+  pan: t.pan ?? "",
+  vatRegistered: t.is_vat_registered,
+  address: t.business_address ?? "",
+  phone: t.business_phone ?? "",
+  email: t.business_email ?? "",
 });
 const toCategory = (c: CategoryDto): Category => ({
   id: c.id,
@@ -471,8 +488,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const productDtos = productsRes.data ?? [];
         const fyDtos = fiscalYearsRes.data ?? [];
         const activeFy = fyDtos.find((f) => f.is_active) ?? fyDtos[fyDtos.length - 1];
+        const tenantInfo = branchesRes.meta?.tenant;
         setState((s) => ({
           ...s,
+          company: tenantInfo ? { ...s.company, ...toCompanyPatch(tenantInfo) } : s.company,
           branches: (branchesRes.data ?? []).map(toBranch),
           categories: (categoriesRes.data ?? []).map(toCategory),
           brands: (brandsRes.data ?? []).map(toBrand),

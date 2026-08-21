@@ -12,11 +12,30 @@ export interface BranchDto {
   updated_at: string;
 }
 
+/** Business identity shared by every branch (PAN/VAT status/contact live on
+ * the tenant, not the branch — see CLAUDE.md §2.9). Returned as
+ * `meta.tenant` on GET /branches — the only tenant-scoped fields a staff
+ * token (not a platform JWT) can read; printed receipts use this. */
+export interface TenantInfoDto {
+  name: string;
+  pan: string | null;
+  is_vat_registered: boolean;
+  business_address: string | null;
+  business_phone: string | null;
+  business_email: string | null;
+}
+
 export const branchesApi = {
   listMine() {
     // Unified /branches endpoint. Staff tokens (from any app) return either
     // the staff's single scoped branch or all tenant branches for owner staff.
-    return apiClient.get<BranchDto[]>("/branches");
+    // meta isn't typed on the shared ApiEnvelope (that's PageMeta-shaped for
+    // pagination elsewhere), so read it loosely here.
+    return apiClient.get<BranchDto[]>("/branches") as Promise<{
+      success: boolean;
+      data?: BranchDto[];
+      meta?: { tenant?: TenantInfoDto };
+    }>;
   },
 };
 

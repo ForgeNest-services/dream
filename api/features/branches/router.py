@@ -7,6 +7,7 @@ from features.branches.schemas import (
     BranchData,
     CreateBranchRequest,
     UpdateBranchRequest,
+    TenantInfoData,
 )
 from features.branches.service import BranchService
 from features.auth.repository import TenantRepository
@@ -21,17 +22,24 @@ def list_branches(
     db: Session = Depends(get_db),
 ):
     """List branches for the current tenant. Works for both platform users
-    (owner/manager via admin) and app staff (via pms/restro tokens).
-    Staff locked to a single branch see only that branch."""
+    (owner/manager via admin) and app staff (via pms/restro/ims tokens).
+    Staff locked to a single branch see only that branch. Also returns the
+    tenant's business identity (name/PAN/VAT status/contact) in `meta.tenant`
+    — the only tenant-scoped fields any staff app can read, since staff
+    tokens can't call the platform-only /auth/business-tax-info. Printed
+    receipts (pms/restro/ims) read business info from here."""
+    tenant = TenantRepository.get_by_id(db, scope["tenant_id"])
     if scope["source"] == "staff":
         branches = BranchService.list_for_staff(
             db, scope["tenant_id"], scope.get("branch_id")
         )
     else:
-        tenant = TenantRepository.get_by_id(db, scope["tenant_id"])
         branches = BranchService.list_for_tenant(db, scope["tenant_id"], tenant)
     return success_response(
-        data=[BranchData.model_validate(b).model_dump(mode="json") for b in branches]
+        data=[BranchData.model_validate(b).model_dump(mode="json") for b in branches],
+        meta={"tenant": TenantInfoData.model_validate(tenant).model_dump(mode="json")}
+        if tenant
+        else None,
     )
 
 
