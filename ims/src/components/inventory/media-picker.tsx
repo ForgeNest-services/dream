@@ -10,7 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useApp } from "@/context/app-store";
 import { cn } from "@/lib/utils";
-import { ImagePlus, Search, Upload } from "lucide-react";
+import { FolderOpen, ImagePlus, Search, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -45,6 +45,164 @@ export function MediaThumb({
       loading="lazy"
       className={cn("rounded-md border object-cover", className)}
     />
+  );
+}
+
+/** Compact square photo tile — click to upload directly, or use the small
+ *  corner button to browse/pick from the Media Center instead. One control
+ *  does both jobs, meant for a page corner rather than a form row. */
+export function PhotoTile({
+  value,
+  onChange,
+  className,
+}: {
+  value?: string | undefined;
+  onChange: (id: string | undefined) => void;
+  className?: string;
+}) {
+  const app = useApp();
+  const { media } = app;
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState<string | undefined>(value);
+  const [uploading, setUploading] = useState(false);
+
+  const filtered = media.filter((m) =>
+    `${m.name} ${m.folder}`.toLowerCase().includes(q.trim().toLowerCase()),
+  );
+
+  const upload = async (file: File) => {
+    setUploading(true);
+    try {
+      const res = await app.addMedia(file, "Uploads");
+      if (!res.ok || !res.media) {
+        toast.error(res.error ?? "Upload failed");
+        return;
+      }
+      onChange(res.media.id);
+      toast.success("Photo added");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className={cn("relative shrink-0", className)}>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) upload(f);
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        disabled={uploading}
+        aria-label={value ? "Change product photo" : "Add product photo"}
+        className="group relative block h-24 w-24 overflow-hidden rounded-lg border bg-muted/50 transition hover:border-primary/50 disabled:cursor-wait"
+      >
+        {value ? (
+          <MediaThumb mediaId={value} alt="Product photo" className="h-full w-full rounded-none border-0" />
+        ) : (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-muted-foreground">
+            <ImagePlus className="h-5 w-5" />
+            <span className="text-[10px]">{uploading ? "Uploading…" : "Add photo"}</span>
+          </div>
+        )}
+        {value && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100">
+            <span className="text-[10px] font-medium text-white">Change</span>
+          </div>
+        )}
+      </button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="absolute -bottom-2 -right-2 h-6 w-6 rounded-full bg-background shadow-sm"
+            aria-label="Choose from Media Center"
+            title="Choose from Media Center"
+            onClick={() => setSel(value)}
+          >
+            <FolderOpen className="h-3 w-3" />
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Media Center</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
+            >
+              <Upload className="mr-2 h-4 w-4" /> {uploading ? "Uploading…" : "Upload new image"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Uploads are saved to the Media Center so they can be reused later.
+            </p>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search images…"
+              className="pl-8"
+            />
+          </div>
+          <div className="grid max-h-[50vh] grid-cols-3 gap-3 overflow-y-auto sm:grid-cols-5">
+            {filtered.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setSel(m.id)}
+                className={cn(
+                  "group overflow-hidden rounded-md border text-left transition",
+                  sel === m.id ? "ring-2 ring-primary" : "hover:border-primary/50",
+                )}
+              >
+                <img src={m.url} alt={m.name} className="h-20 w-full object-cover" />
+                <p className="truncate px-1.5 py-1 text-[11px] text-muted-foreground">{m.name}</p>
+              </button>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                onChange(undefined);
+                setOpen(false);
+              }}
+            >
+              Remove image
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                onChange(sel);
+                setOpen(false);
+              }}
+            >
+              Use selected
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 

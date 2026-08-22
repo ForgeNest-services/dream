@@ -1,7 +1,9 @@
-import { MediaPicker } from "@/components/inventory/media-picker";
+import { PhotoTile } from "@/components/inventory/media-picker";
 import { CategoryCombobox, BrandCombobox } from "@/components/inventory/category-combobox";
+import { CreateCategoryDialog, CreateBrandDialog } from "@/components/inventory/quick-create-dialogs";
 import { ExpiryInput } from "@/components/inventory/expiry-input";
 import { CostHistoryPanel } from "@/components/inventory/cost-history-panel";
+import { NumericInput, DecimalTextInput } from "@/components/inventory/numeric-input";
 import { Money, PageHeader } from "@/components/common/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,6 +63,8 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
   const [variants, setVariants] = useState<DraftVariant[]>([]);
   const [taxable, setTaxable] = useState(true);
   const [taxRate, setTaxRate] = useState<number | "">("");
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
+  const [brandDialogOpen, setBrandDialogOpen] = useState(false);
 
   useEffect(() => {
     if (product) {
@@ -259,8 +263,10 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
     }
   };
 
+  const baseOpeningCost = baseCost * baseStock;
+
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-5xl pb-24">
       <div className="mb-2">
         <Button variant="ghost" size="sm" onClick={goToList}>
           <ArrowLeft className="mr-1.5 h-4 w-4" /> Back to products
@@ -273,44 +279,68 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
             ? "Stock levels are never edited here — use Adjust stock or Restock."
             : "Set an opening stock quantity below if you already have this item on hand."
         }
-        actions={
-          <Button onClick={submit} disabled={submitting}>
-            {submitting ? "Saving…" : editing ? "Save changes" : "Create product"}
-          </Button>
-        }
       />
 
       <div className="space-y-5">
-        <div className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label>Product name</Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. CPVC Elbow 1/2 inch"
-            />
+        <div className="rounded-lg border bg-card p-4">
+          <div className="flex flex-col gap-4 sm:flex-row">
+            <PhotoTile value={mediaId} onChange={setMediaId} />
+            <div className="grid flex-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Product name</Label>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. CPVC Elbow 1/2 inch"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>SKU</Label>
+                <Input
+                  value={sku}
+                  onChange={(e) => setSku(e.target.value)}
+                  placeholder="Leave blank to auto-generate"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Category</Label>
+                <div className="flex gap-1.5">
+                  <div className="min-w-0 flex-1">
+                    <CategoryCombobox value={categoryId} onChange={setCategoryId} />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    aria-label="New category"
+                    title="New category"
+                    onClick={() => setCategoryDialogOpen(true)}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Brand</Label>
+                <div className="flex gap-1.5">
+                  <div className="min-w-0 flex-1">
+                    <BrandCombobox value={brandId} onChange={setBrandId} />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    aria-label="New brand"
+                    title="New brand"
+                    onClick={() => setBrandDialogOpen(true)}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label>SKU</Label>
-            <Input
-              value={sku}
-              onChange={(e) => setSku(e.target.value)}
-              placeholder="Leave blank to auto-generate"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Category</Label>
-            <CategoryCombobox value={categoryId} onChange={setCategoryId} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Brand</Label>
-            <BrandCombobox value={brandId} onChange={setBrandId} />
-          </div>
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label>Product image</Label>
-            <MediaPicker value={mediaId} onChange={setMediaId} />
-          </div>
-          <div className="space-y-1.5 sm:col-span-2">
+          <div className="mt-4 space-y-1.5">
             <Label>Description</Label>
             <Textarea
               value={description}
@@ -336,8 +366,7 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
           {taxable && (
             <div className="mt-3 max-w-56 space-y-1.5">
               <Label className="text-xs">Tax rate (%)</Label>
-              <Input
-                type="number"
+              <NumericInput
                 value={taxRate}
                 onChange={(e) => setTaxRate(e.target.value === "" ? "" : Number(e.target.value))}
                 placeholder={`${app.company.vatRate}`}
@@ -366,16 +395,25 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Pricing &amp; stock
             </p>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Cost price</Label>
-                <Input
-                  type="number"
+                <NumericInput
                   value={baseCost}
                   onChange={(e) => setBaseCost(Number(e.target.value))}
                   placeholder="0.00"
                 />
               </div>
+              {!editing && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Opening stock</Label>
+                  <NumericInput
+                    value={baseStock}
+                    onChange={(e) => setBaseStock(Number(e.target.value))}
+                    placeholder="0"
+                  />
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label className="text-xs">Unit</Label>
                 <Select value={baseUnit} onValueChange={setBaseUnit}>
@@ -392,7 +430,18 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
                 </Select>
               </div>
 
-              <div className="space-y-1.5 sm:col-span-2">
+              {!editing && baseStock > 0 && baseCost > 0 && (
+                <div className="flex items-center justify-between rounded-md bg-muted/60 px-3 py-2 text-sm sm:col-span-2 lg:col-span-3">
+                  <span className="text-muted-foreground">
+                    Total cost of opening stock ({baseStock} × <Money value={baseCost} />)
+                  </span>
+                  <span className="font-medium">
+                    <Money value={baseOpeningCost} />
+                  </span>
+                </div>
+              )}
+
+              <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
                 <Label className="text-xs">
                   Selling price{taxable ? ` — VAT ${effectiveRate}%` : ""}
                 </Label>
@@ -401,8 +450,7 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
                     <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
                       Exc. VAT
                     </span>
-                    <Input
-                      type="number"
+                    <NumericInput
                       className="pl-[4.5rem]"
                       value={basePrice}
                       onChange={(e) => setBasePrice(Number(e.target.value))}
@@ -413,24 +461,21 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
                     <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
                       Inc. VAT
                     </span>
-                    <Input
-                      type="number"
+                    <DecimalTextInput
                       className="pl-[4.5rem]"
-                      value={priceInclTax(basePrice).toFixed(2)}
-                      onChange={(e) => setBasePrice(priceExclTax(Number(e.target.value)))}
+                      value={priceInclTax(basePrice)}
+                      onChange={(v) => setBasePrice(priceExclTax(v))}
                       placeholder="0.00"
                     />
                   </div>
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs text-muted-foreground">
                     {taxable
                       ? "Either box works — the other recalculates. Only the exclusive amount is stored; VAT is added at sale time."
                       : "Non-VAT item — both amounts are the same."}
                   </p>
-                  {basePrice > 0 && (
-                    <MarginBadge cost={baseCost} price={basePrice} />
-                  )}
+                  {basePrice > 0 && <MarginBadge cost={baseCost} price={basePrice} />}
                 </div>
               </div>
 
@@ -463,17 +508,6 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
                 </div>
               </div>
               <ExpiryInput value={baseExpiryDate} onChange={setBaseExpiryDate} />
-              {!editing && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Opening stock</Label>
-                  <Input
-                    type="number"
-                    value={baseStock}
-                    onChange={(e) => setBaseStock(Number(e.target.value))}
-                    placeholder="0"
-                  />
-                </div>
-              )}
             </div>
 
             {editing && product && (
@@ -493,144 +527,178 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
                 No variants yet — add at least one (e.g. by size or color).
               </div>
             ) : (
-              variants.map((v, i) => (
-                <div key={v.id ?? i} className="rounded-lg border bg-card p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <Input
-                      placeholder="Variant name — e.g. Red / Large"
-                      value={v.name}
-                      onChange={(e) => patchVariant(i, { name: e.target.value })}
-                      className="max-w-xs font-medium"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setVariants((vs) => vs.filter((_, idx) => idx !== i))}
-                      aria-label="Remove variant"
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Model no.</Label>
+              variants.map((v, i) => {
+                const openingCost = v.costPrice * v.initialStock;
+                return (
+                  <div key={v.id ?? i} className="rounded-lg border bg-card p-4">
+                    <div className="mb-3 flex items-center justify-between gap-2">
                       <Input
-                        placeholder="e.g. CE-90-RED"
-                        value={v.modelNo}
-                        onChange={(e) => patchVariant(i, { modelNo: e.target.value })}
+                        placeholder="Variant name — e.g. Red / Large"
+                        value={v.name}
+                        onChange={(e) => patchVariant(i, { name: e.target.value })}
+                        className="max-w-xs font-medium"
                       />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setVariants((vs) => vs.filter((_, idx) => idx !== i))}
+                        aria-label="Remove variant"
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Barcode</Label>
-                      <div className="flex gap-1">
-                        <Input
-                          value={v.barcode}
-                          onChange={(e) => patchVariant(i, { barcode: e.target.value })}
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Cost price</Label>
+                        <NumericInput
+                          placeholder="0.00"
+                          value={v.costPrice}
+                          onChange={(e) => patchVariant(i, { costPrice: Number(e.target.value) })}
                         />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          aria-label="Generate barcode"
-                          onClick={() =>
-                            patchVariant(i, {
-                              barcode: generateBarcode(`${name}-${v.name}-${v.modelNo}-${i}`),
-                            })
-                          }
-                        >
-                          <Barcode className="h-4 w-4" />
-                        </Button>
                       </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Unit</Label>
-                      <Select value={v.unitId} onValueChange={(val) => patchVariant(i, { unitId: val })}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {app.units.map((u) => (
-                            <SelectItem key={u.id} value={u.id}>
-                              {u.name} ({u.symbol})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Cost price</Label>
-                      <Input
-                        type="number"
-                        placeholder="0.00"
-                        value={v.costPrice}
-                        onChange={(e) => patchVariant(i, { costPrice: Number(e.target.value) })}
-                      />
-                    </div>
-
-                    <div className="space-y-1.5 sm:col-span-2 lg:col-span-2">
-                      <Label className="text-xs">
-                        Selling price{taxable ? ` — VAT ${effectiveRate}%` : ""}
-                      </Label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="relative">
-                          <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
-                            Exc. VAT
-                          </span>
-                          <Input
-                            type="number"
-                            className="pl-[4.5rem]"
-                            placeholder="0.00"
-                            value={v.sellingPrice}
-                            onChange={(e) => patchVariant(i, { sellingPrice: Number(e.target.value) })}
-                          />
-                        </div>
-                        <div className="relative">
-                          <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
-                            Inc. VAT
-                          </span>
-                          <Input
-                            type="number"
-                            className="pl-[4.5rem]"
-                            placeholder="0.00"
-                            value={priceInclTax(v.sellingPrice).toFixed(2)}
+                      {!editing && (
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Opening stock</Label>
+                          <NumericInput
+                            placeholder="0"
+                            value={v.initialStock}
                             onChange={(e) =>
-                              patchVariant(i, { sellingPrice: priceExclTax(Number(e.target.value)) })
+                              patchVariant(i, { initialStock: Number(e.target.value) })
                             }
                           />
                         </div>
-                      </div>
-                      {v.sellingPrice > 0 && (
-                        <div className="flex justify-end">
-                          <MarginBadge cost={v.costPrice} price={v.sellingPrice} />
-                        </div>
                       )}
-                    </div>
-
-                    <ExpiryInput
-                      value={v.expiryDate}
-                      onChange={(d) => patchVariant(i, { expiryDate: d })}
-                      label="Expiry (optional)"
-                    />
-                    {!editing && (
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Opening stock</Label>
+                        <Label className="text-xs">Unit</Label>
+                        <Select value={v.unitId} onValueChange={(val) => patchVariant(i, { unitId: val })}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {app.units.map((u) => (
+                              <SelectItem key={u.id} value={u.id}>
+                                {u.name} ({u.symbol})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Model no.</Label>
                         <Input
-                          type="number"
-                          placeholder="0"
-                          value={v.initialStock}
-                          onChange={(e) => patchVariant(i, { initialStock: Number(e.target.value) })}
+                          placeholder="e.g. CE-90-RED"
+                          value={v.modelNo}
+                          onChange={(e) => patchVariant(i, { modelNo: e.target.value })}
                         />
                       </div>
-                    )}
+
+                      {!editing && v.initialStock > 0 && v.costPrice > 0 && (
+                        <div className="flex items-center justify-between rounded-md bg-muted/60 px-3 py-2 text-sm sm:col-span-2 lg:col-span-4">
+                          <span className="text-muted-foreground">
+                            Total cost of opening stock ({v.initialStock} × <Money value={v.costPrice} />)
+                          </span>
+                          <span className="font-medium">
+                            <Money value={openingCost} />
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="space-y-1.5 sm:col-span-2 lg:col-span-2">
+                        <Label className="text-xs">
+                          Selling price{taxable ? ` — VAT ${effectiveRate}%` : ""}
+                        </Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="relative">
+                            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                              Exc. VAT
+                            </span>
+                            <NumericInput
+                              className="pl-[4.5rem]"
+                              placeholder="0.00"
+                              value={v.sellingPrice}
+                              onChange={(e) =>
+                                patchVariant(i, { sellingPrice: Number(e.target.value) })
+                              }
+                            />
+                          </div>
+                          <div className="relative">
+                            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                              Inc. VAT
+                            </span>
+                            <DecimalTextInput
+                              className="pl-[4.5rem]"
+                              placeholder="0.00"
+                              value={priceInclTax(v.sellingPrice)}
+                              onChange={(val) => patchVariant(i, { sellingPrice: priceExclTax(val) })}
+                            />
+                          </div>
+                        </div>
+                        {v.sellingPrice > 0 && (
+                          <div className="flex justify-end">
+                            <MarginBadge cost={v.costPrice} price={v.sellingPrice} />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Barcode</Label>
+                        <div className="flex gap-1">
+                          <Input
+                            value={v.barcode}
+                            onChange={(e) => patchVariant(i, { barcode: e.target.value })}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            aria-label="Generate barcode"
+                            onClick={() =>
+                              patchVariant(i, {
+                                barcode: generateBarcode(`${name}-${v.name}-${v.modelNo}-${i}`),
+                              })
+                            }
+                          >
+                            <Barcode className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                      <ExpiryInput
+                        value={v.expiryDate}
+                        onChange={(d) => patchVariant(i, { expiryDate: d })}
+                        label="Expiry (optional)"
+                      />
+                    </div>
+                    {editing && v.id && <CostHistoryPanel variantId={v.id} className="mt-3" />}
                   </div>
-                  {editing && v.id && <CostHistoryPanel variantId={v.id} className="mt-3" />}
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         )}
       </div>
+
+      <div className="fixed inset-x-0 bottom-0 z-10 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
+          <Button variant="outline" onClick={goToList} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={submitting}>
+            {submitting ? "Saving…" : editing ? "Save changes" : "Create product"}
+          </Button>
+        </div>
+      </div>
+
+      <CreateCategoryDialog
+        open={categoryDialogOpen}
+        onOpenChange={setCategoryDialogOpen}
+        onCreated={setCategoryId}
+      />
+      <CreateBrandDialog
+        open={brandDialogOpen}
+        onOpenChange={setBrandDialogOpen}
+        onCreated={setBrandId}
+      />
     </div>
   );
 }
