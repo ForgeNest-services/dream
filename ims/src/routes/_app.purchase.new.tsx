@@ -155,6 +155,7 @@ function NewPurchasePage() {
               qty: r.qty,
               unitCost: r.unitCost,
               sellingPrice: r.sellingPrice,
+              expiryDate: r.expiryDate || undefined,
             })),
         });
       } else {
@@ -184,6 +185,7 @@ function NewPurchasePage() {
             unitCost: r.unitCost,
             sellingPrice: r.sellingPrice,
             lowStockAt: r.lowStockAt,
+            expiryDate: r.expiryDate || undefined,
           })),
         });
       }

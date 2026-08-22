@@ -246,7 +246,13 @@ export type PurchaseDraftItem =
   | {
       kind: "existing";
       productId: string;
-      rows: { variantId: string; qty: number; unitCost: number; sellingPrice: number }[];
+      rows: {
+        variantId: string;
+        qty: number;
+        unitCost: number;
+        sellingPrice: number;
+        expiryDate?: string | undefined;
+      }[];
     }
   | {
       kind: "new";
@@ -266,6 +272,7 @@ export type PurchaseDraftItem =
         unitCost: number;
         sellingPrice: number;
         lowStockAt: number;
+        expiryDate?: string | undefined;
       }[];
     };
 
@@ -333,10 +340,13 @@ interface AppContextValue extends AppState {
    *  available to app.variantsOf()/app.stockOf() even if it wasn't already
    *  in the initial full-catalog fetch. */
   syncProducts: (products: ProductDto[]) => void;
-  addCategory: (name: string, parentId: string | null) => Promise<{ ok: boolean; error?: string }>;
+  addCategory: (
+    name: string,
+    parentId: string | null,
+  ) => Promise<{ ok: boolean; category?: Category; error?: string }>;
   renameCategory: (id: string, name: string) => Promise<{ ok: boolean; error?: string }>;
   deleteCategory: (id: string) => Promise<{ ok: boolean; error?: string }>;
-  addBrand: (name: string) => Promise<{ ok: boolean; error?: string }>;
+  addBrand: (name: string) => Promise<{ ok: boolean; brand?: Brand; error?: string }>;
   addMedia: (file: File, folder: string) => Promise<{ ok: boolean; media?: MediaItem; error?: string }>;
   adjustStock: (input: {
     variantId: string;
@@ -816,7 +826,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (!res.success || !res.data) return { ok: false, error: "Failed to create category" };
           const created = toCategory(res.data);
           setState((s) => ({ ...s, categories: [...s.categories, created] }));
-          return { ok: true };
+          return { ok: true, category: created };
         } catch (e) {
           return { ok: false, error: e instanceof ApiError ? e.message : "Failed to create category" };
         }
@@ -851,7 +861,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (!res.success || !res.data) return { ok: false, error: "Failed to create brand" };
           const created = toBrand(res.data);
           setState((s) => ({ ...s, brands: [...s.brands, created] }));
-          return { ok: true };
+          return { ok: true, brand: created };
         } catch (e) {
           return { ok: false, error: e instanceof ApiError ? e.message : "Failed to create brand" };
         }
@@ -958,6 +968,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   unit_cost: r.unitCost,
                   selling_price: r.sellingPrice,
                   low_stock_at: r.lowStockAt,
+                  expiry_date: r.expiryDate || undefined,
                 })),
               }
             : {
@@ -968,6 +979,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   qty: r.qty,
                   unit_cost: r.unitCost,
                   selling_price: r.sellingPrice,
+                  expiry_date: r.expiryDate || undefined,
                 })),
               },
         );

@@ -32,6 +32,7 @@ from features.ims.schemas import (
     RecordPaymentRequest,
     PurchaseData,
     CreatePurchaseRequest,
+    CostHistoryEntry,
     InvoiceData,
     CreateInvoiceRequest,
     ConvertQuotationRequest,
@@ -993,6 +994,20 @@ def create_purchase(
         data=PurchaseData.model_validate(result["purchase"]).model_dump(mode="json"),
         message="Purchase recorded",
         status_code=201,
+    )
+
+
+@router.get("/variants/{variant_id}/cost-history")
+def get_cost_history(
+    variant_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    result = IMSPurchaseService.cost_history_for_variant(db, staff["tenant_id"], variant_id)
+    if not result["success"]:
+        raise HTTPException(404, "Variant not found")
+    return success_response(
+        data=[CostHistoryEntry.model_validate(e).model_dump(mode="json") for e in result["entries"]],
     )
 
 

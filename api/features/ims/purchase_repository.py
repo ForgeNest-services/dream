@@ -77,6 +77,23 @@ class IMSPurchaseRepository:
         return items, total
 
     @staticmethod
+    def cost_history_for_variant(
+        db: Session, tenant_id: str, variant_id: str, limit: int = 20
+    ) -> list[tuple[IMSPurchaseLine, IMSPurchase]]:
+        """Cost of this variant over time, newest first — sourced from past
+        purchase lines rather than a dedicated history table, since
+        IMSPurchaseLine.unit_cost already snapshots the cost paid on every
+        purchase (purchases are append-only, so this is a stable log)."""
+        return (
+            db.query(IMSPurchaseLine, IMSPurchase)
+            .join(IMSPurchase, IMSPurchaseLine.purchase_id == IMSPurchase.id)
+            .filter(IMSPurchase.tenant_id == tenant_id, IMSPurchaseLine.variant_id == variant_id)
+            .order_by(IMSPurchase.date.desc(), IMSPurchase.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
     def exists_for_party(db: Session, tenant_id: str, party_id: str) -> bool:
         exists_query = (
             db.query(IMSPurchase)

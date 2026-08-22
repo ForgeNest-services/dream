@@ -45,6 +45,7 @@ export interface PurchaseNewItemRowPayload {
   unit_cost: number;
   selling_price: number;
   low_stock_at: number;
+  expiry_date?: string | undefined;
 }
 
 export interface PurchaseExistingItemRowPayload {
@@ -52,6 +53,7 @@ export interface PurchaseExistingItemRowPayload {
   qty: number;
   unit_cost: number;
   selling_price: number;
+  expiry_date?: string | undefined;
 }
 
 export type PurchaseItemPayload =

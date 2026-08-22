@@ -380,6 +380,16 @@ class PurchaseData(BaseModel):
     lines: list[PurchaseLineData]
 
 
+class CostHistoryEntry(BaseModel):
+    date: datetime
+    date_bs: str
+    unit_cost: Decimal
+    qty: Decimal
+    purchase_id: str
+    purchase_number: str
+    bill_no: str | None
+
+
 class PurchaseNewItemRow(BaseModel):
     name: str = ""
     model_no: str = ""
@@ -389,6 +399,7 @@ class PurchaseNewItemRow(BaseModel):
     unit_cost: Decimal
     selling_price: Decimal = Decimal(0)
     low_stock_at: int = 10
+    expiry_date: date | None = None
 
 
 class PurchaseExistingItemRow(BaseModel):
@@ -396,6 +407,7 @@ class PurchaseExistingItemRow(BaseModel):
     qty: Decimal
     unit_cost: Decimal
     selling_price: Decimal = Decimal(0)
+    expiry_date: date | None = None
 
 
 class PurchaseNewItem(BaseModel):

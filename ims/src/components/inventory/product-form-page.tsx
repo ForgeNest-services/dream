@@ -1,13 +1,9 @@
 import { MediaPicker } from "@/components/inventory/media-picker";
+import { CategoryCombobox, BrandCombobox } from "@/components/inventory/category-combobox";
+import { ExpiryInput } from "@/components/inventory/expiry-input";
+import { CostHistoryPanel } from "@/components/inventory/cost-history-panel";
+import { Money, PageHeader } from "@/components/common/primitives";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -22,7 +18,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { generateBarcode } from "@/lib/barcode";
 import { useApp } from "@/context/app-store";
 import type { Product } from "@/data/types";
-import { Barcode, Plus, Trash2 } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { ArrowLeft, Barcode, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -42,16 +39,15 @@ interface DraftVariant {
   initialStock: number;
 }
 
-export function ProductFormDialog({
-  open,
-  onOpenChange,
-  product,
-}: {
-  open: boolean;
-  onOpenChange: (o: boolean) => void;
-  product?: Product | undefined;
-}) {
+function margin(costPrice: number, sellingPrice: number): { pct: number; profit: number } {
+  const profit = sellingPrice - costPrice;
+  const pct = costPrice > 0 ? (profit / costPrice) * 100 : 0;
+  return { pct, profit };
+}
+
+export function ProductFormPage({ product }: { product?: Product | undefined }) {
   const app = useApp();
+  const navigate = useNavigate();
   const editing = Boolean(product);
   const defaultBranch = app.branchId === "all" ? (app.branches[0]?.id ?? "") : app.branchId;
 
@@ -67,7 +63,6 @@ export function ProductFormDialog({
   const [taxRate, setTaxRate] = useState<number | "">("");
 
   useEffect(() => {
-    if (!open) return;
     if (product) {
       const existingVariants = app.variantsOf(product.id);
       setName(product.name);
@@ -98,19 +93,11 @@ export function ProductFormDialog({
         })),
       );
     } else {
-      setName("");
-      setSku("");
-      setCategoryId(app.categories[0]?.id ?? "");
-      setBrandId("none");
-      setMediaId(undefined);
-      setDescription("");
-      setTaxable(true);
       setTaxRate(app.company.vatRate);
-      setHasVariants(false);
-      setVariants([]);
+      setCategoryId(app.categories[0]?.id ?? "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, product?.id]);
+  }, [product?.id]);
 
   const [baseCost, setBaseCost] = useState(0);
   const [basePrice, setBasePrice] = useState(0);
@@ -122,27 +109,20 @@ export function ProductFormDialog({
   const [baseExpiryDate, setBaseExpiryDate] = useState("");
 
   useEffect(() => {
-    if (open && !product) {
-      setBaseCost(0);
-      setBasePrice(0);
+    if (!product) {
       setBaseUnit(app.units[0]?.id ?? "");
-      setBaseModelNo("");
-      setBaseBarcode("");
-      setBaseStock(0);
-      setBaseLowStockAt(10);
-      setBaseExpiryDate("");
-    } else if (open && product) {
-      const first = app.variantsOf(product.id)[0];
-      setBaseCost(first?.costPrice ?? 0);
-      setBasePrice(first?.sellingPrice ?? 0);
-      setBaseUnit(first?.unitId ?? app.units[0]?.id ?? "");
-      setBaseModelNo(first?.modelNo ?? "");
-      setBaseBarcode(first?.barcode ?? "");
-      setBaseLowStockAt(first?.lowStockAt ?? 10);
-      setBaseExpiryDate(first?.expiryDate ?? "");
+      return;
     }
+    const first = app.variantsOf(product.id)[0];
+    setBaseCost(first?.costPrice ?? 0);
+    setBasePrice(first?.sellingPrice ?? 0);
+    setBaseUnit(first?.unitId ?? app.units[0]?.id ?? "");
+    setBaseModelNo(first?.modelNo ?? "");
+    setBaseBarcode(first?.barcode ?? "");
+    setBaseLowStockAt(first?.lowStockAt ?? 10);
+    setBaseExpiryDate(first?.expiryDate ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, product?.id]);
+  }, [product?.id]);
 
   const addVariant = () =>
     setVariants((vs) => [
@@ -168,14 +148,10 @@ export function ProductFormDialog({
     taxable ? sellingPrice + (sellingPrice * effectiveRate) / 100 : sellingPrice;
   const priceExclTax = (inclTax: number) =>
     taxable ? inclTax / (1 + effectiveRate / 100) : inclTax;
-  const gridCols = 9 + (!editing ? 1 : 0);
-  const gridColsClass =
-    {
-      9: "sm:grid-cols-9",
-      10: "sm:grid-cols-10",
-    }[gridCols] ?? "sm:grid-cols-10";
 
   const [submitting, setSubmitting] = useState(false);
+
+  const goToList = () => navigate({ to: "/inventory/products" });
 
   const submit = async () => {
     if (!name.trim() || !categoryId) {
@@ -183,7 +159,7 @@ export function ProductFormDialog({
       return;
     }
     if (hasVariants && variants.length === 0) {
-      toast.error("Add at least one variant, or switch off \"Has variants\"");
+      toast.error('Add at least one variant, or switch off "Has variants"');
       return;
     }
     const payload = {
@@ -236,6 +212,7 @@ export function ProductFormDialog({
           return;
         }
         toast.success("Product updated");
+        goToList();
       } else {
         const vs = (
           hasVariants
@@ -275,26 +252,36 @@ export function ProductFormDialog({
         toast.success(
           anyStock ? "Product created with opening stock" : "Product created — stock starts at 0",
         );
+        goToList();
       }
-      onOpenChange(false);
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{editing ? "Edit product" : "Add new product"}</DialogTitle>
-          <DialogDescription>
-            {editing
-              ? "Stock levels are never edited here — use Adjust stock or Restock."
-              : "Set an opening stock quantity below if you already have this item on hand."}
-          </DialogDescription>
-        </DialogHeader>
+    <div className="mx-auto max-w-5xl">
+      <div className="mb-2">
+        <Button variant="ghost" size="sm" onClick={goToList}>
+          <ArrowLeft className="mr-1.5 h-4 w-4" /> Back to products
+        </Button>
+      </div>
+      <PageHeader
+        title={editing ? `Edit ${product?.name}` : "Add new product"}
+        subtitle={
+          editing
+            ? "Stock levels are never edited here — use Adjust stock or Restock."
+            : "Set an opening stock quantity below if you already have this item on hand."
+        }
+        actions={
+          <Button onClick={submit} disabled={submitting}>
+            {submitting ? "Saving…" : editing ? "Save changes" : "Create product"}
+          </Button>
+        }
+      />
 
-        <div className="grid gap-4 sm:grid-cols-2">
+      <div className="space-y-5">
+        <div className="grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label>Product name</Label>
             <Input
@@ -313,34 +300,11 @@ export function ProductFormDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Category</Label>
-            <Select value={categoryId} onValueChange={setCategoryId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select category" />
-              </SelectTrigger>
-              <SelectContent className="max-h-72">
-                {app.categories.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {app.categoryPath(c.id)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <CategoryCombobox value={categoryId} onChange={setCategoryId} />
           </div>
           <div className="space-y-1.5">
             <Label>Brand</Label>
-            <Select value={brandId} onValueChange={setBrandId}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No brand</SelectItem>
-                {app.brands.map((b) => (
-                  <SelectItem key={b.id} value={b.id}>
-                    {b.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <BrandCombobox value={brandId} onChange={setBrandId} />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label>Product image</Label>
@@ -357,7 +321,7 @@ export function ProductFormDialog({
           </div>
         </div>
 
-        <div className="rounded-lg border bg-muted/30 p-3">
+        <div className="rounded-lg border bg-muted/30 p-4">
           <div className="flex items-center gap-3">
             <Switch checked={taxable} onCheckedChange={setTaxable} />
             <div>
@@ -386,7 +350,7 @@ export function ProductFormDialog({
           )}
         </div>
 
-        <div className="flex items-center gap-3 rounded-lg border p-3">
+        <div className="flex items-center gap-3 rounded-lg border p-4">
           <Switch checked={hasVariants} onCheckedChange={setHasVariants} />
           <div>
             <p className="text-sm">Has variants</p>
@@ -398,11 +362,11 @@ export function ProductFormDialog({
         </div>
 
         {!hasVariants ? (
-          <div className="rounded-lg border bg-muted/30 p-3">
+          <div className="rounded-lg border bg-card p-4">
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Pricing &amp; stock
             </p>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label className="text-xs">Cost price</Label>
                 <Input
@@ -412,9 +376,25 @@ export function ProductFormDialog({
                   placeholder="0.00"
                 />
               </div>
-              <div className="space-y-1.5 sm:col-span-2 lg:col-span-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Unit</Label>
+                <Select value={baseUnit} onValueChange={setBaseUnit}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {app.units.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.name} ({u.symbol})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5 sm:col-span-2">
                 <Label className="text-xs">
-                  Selling price{taxable ? ` (VAT ${effectiveRate}%)` : ""}
+                  Selling price{taxable ? ` — VAT ${effectiveRate}%` : ""}
                 </Label>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="relative">
@@ -442,27 +422,18 @@ export function ProductFormDialog({
                     />
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {taxable
-                    ? "Either box works — the other recalculates. Only the exclusive amount is stored; VAT is added at sale time."
-                    : "Non-VAT item — both amounts are the same."}
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    {taxable
+                      ? "Either box works — the other recalculates. Only the exclusive amount is stored; VAT is added at sale time."
+                      : "Non-VAT item — both amounts are the same."}
+                  </p>
+                  {basePrice > 0 && (
+                    <MarginBadge cost={baseCost} price={basePrice} />
+                  )}
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Unit</Label>
-                <Select value={baseUnit} onValueChange={setBaseUnit}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {app.units.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.name} ({u.symbol})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+
               <div className="space-y-1.5">
                 <Label className="text-xs">Model no.</Label>
                 <Input
@@ -491,14 +462,7 @@ export function ProductFormDialog({
                   </Button>
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Expiry date (optional)</Label>
-                <Input
-                  type="date"
-                  value={baseExpiryDate}
-                  onChange={(e) => setBaseExpiryDate(e.target.value)}
-                />
-              </div>
+              <ExpiryInput value={baseExpiryDate} onChange={setBaseExpiryDate} />
               {!editing && (
                 <div className="space-y-1.5">
                   <Label className="text-xs">Opening stock</Label>
@@ -511,138 +475,180 @@ export function ProductFormDialog({
                 </div>
               )}
             </div>
+
+            {editing && product && (
+              <CostHistoryPanel variantId={app.variantsOf(product.id)[0]?.id} className="mt-4" />
+            )}
           </div>
         ) : (
-          <div className="rounded-lg border">
-            <div className="flex items-center justify-between border-b px-3 py-2">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
               <p className="text-sm font-medium">Variants</p>
               <Button type="button" size="sm" variant="outline" onClick={addVariant}>
                 <Plus className="mr-1.5 h-4 w-4" /> Add variant
               </Button>
             </div>
             {variants.length === 0 ? (
-              <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+              <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
                 No variants yet — add at least one (e.g. by size or color).
-              </p>
+              </div>
             ) : (
-              <div className="space-y-3 p-3">
-                <div
-                  className={`hidden gap-2 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:grid ${gridColsClass}`}
-                >
-                  <span className="sm:col-span-2">Variant name</span>
-                  <span>Model no.</span>
-                  <span>Barcode</span>
-                  <span>Unit</span>
-                  <span>Cost price</span>
-                  <span>Price (exc. VAT)</span>
-                  <span>Price (inc. VAT)</span>
-                  <span>Expiry (optional)</span>
-                  {!editing && <span>Opening stock</span>}
-                  <span className="sr-only">Actions</span>
-                </div>
-                {variants.map((v, i) => (
-                  <div key={v.id ?? i} className={`grid items-center gap-2 rounded-md border p-3 ${gridColsClass}`}>
+              variants.map((v, i) => (
+                <div key={v.id ?? i} className="rounded-lg border bg-card p-4">
+                  <div className="mb-3 flex items-center justify-between">
                     <Input
-                      className="sm:col-span-2"
-                      placeholder="e.g. Red / Large"
+                      placeholder="Variant name — e.g. Red / Large"
                       value={v.name}
                       onChange={(e) => patchVariant(i, { name: e.target.value })}
+                      className="max-w-xs font-medium"
                     />
-                    <Input
-                      placeholder="e.g. CE-90-RED"
-                      value={v.modelNo}
-                      onChange={(e) => patchVariant(i, { modelNo: e.target.value })}
-                    />
-                    <div className="flex gap-1">
-                      <Input
-                        placeholder="Scan or generate"
-                        value={v.barcode}
-                        onChange={(e) => patchVariant(i, { barcode: e.target.value })}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        title="Generate barcode"
-                        aria-label="Generate barcode"
-                        onClick={() =>
-                          patchVariant(i, {
-                            barcode: generateBarcode(`${name}-${v.name}-${v.modelNo}-${i}`),
-                          })
-                        }
-                      >
-                        <Barcode className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <Select value={v.unitId} onValueChange={(val) => patchVariant(i, { unitId: val })}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {app.units.map((u) => (
-                          <SelectItem key={u.id} value={u.id}>
-                            {u.symbol}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      type="number"
-                      placeholder="0.00"
-                      value={v.costPrice}
-                      onChange={(e) => patchVariant(i, { costPrice: Number(e.target.value) })}
-                    />
-                    <Input
-                      type="number"
-                      placeholder="0.00"
-                      value={v.sellingPrice}
-                      onChange={(e) => patchVariant(i, { sellingPrice: Number(e.target.value) })}
-                    />
-                    <Input
-                      type="number"
-                      placeholder="0.00"
-                      value={priceInclTax(v.sellingPrice).toFixed(2)}
-                      onChange={(e) =>
-                        patchVariant(i, { sellingPrice: priceExclTax(Number(e.target.value)) })
-                      }
-                    />
-                    <Input
-                      type="date"
-                      value={v.expiryDate}
-                      onChange={(e) => patchVariant(i, { expiryDate: e.target.value })}
-                    />
-                    {!editing && (
-                      <Input
-                        type="number"
-                        placeholder="0"
-                        value={v.initialStock}
-                        onChange={(e) => patchVariant(i, { initialStock: Number(e.target.value) })}
-                      />
-                    )}
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
                       onClick={() => setVariants((vs) => vs.filter((_, idx) => idx !== i))}
+                      aria-label="Remove variant"
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </div>
-                ))}
-              </div>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Model no.</Label>
+                      <Input
+                        placeholder="e.g. CE-90-RED"
+                        value={v.modelNo}
+                        onChange={(e) => patchVariant(i, { modelNo: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Barcode</Label>
+                      <div className="flex gap-1">
+                        <Input
+                          value={v.barcode}
+                          onChange={(e) => patchVariant(i, { barcode: e.target.value })}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          aria-label="Generate barcode"
+                          onClick={() =>
+                            patchVariant(i, {
+                              barcode: generateBarcode(`${name}-${v.name}-${v.modelNo}-${i}`),
+                            })
+                          }
+                        >
+                          <Barcode className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Unit</Label>
+                      <Select value={v.unitId} onValueChange={(val) => patchVariant(i, { unitId: val })}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {app.units.map((u) => (
+                            <SelectItem key={u.id} value={u.id}>
+                              {u.name} ({u.symbol})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Cost price</Label>
+                      <Input
+                        type="number"
+                        placeholder="0.00"
+                        value={v.costPrice}
+                        onChange={(e) => patchVariant(i, { costPrice: Number(e.target.value) })}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5 sm:col-span-2 lg:col-span-2">
+                      <Label className="text-xs">
+                        Selling price{taxable ? ` — VAT ${effectiveRate}%` : ""}
+                      </Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                            Exc. VAT
+                          </span>
+                          <Input
+                            type="number"
+                            className="pl-[4.5rem]"
+                            placeholder="0.00"
+                            value={v.sellingPrice}
+                            onChange={(e) => patchVariant(i, { sellingPrice: Number(e.target.value) })}
+                          />
+                        </div>
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                            Inc. VAT
+                          </span>
+                          <Input
+                            type="number"
+                            className="pl-[4.5rem]"
+                            placeholder="0.00"
+                            value={priceInclTax(v.sellingPrice).toFixed(2)}
+                            onChange={(e) =>
+                              patchVariant(i, { sellingPrice: priceExclTax(Number(e.target.value)) })
+                            }
+                          />
+                        </div>
+                      </div>
+                      {v.sellingPrice > 0 && (
+                        <div className="flex justify-end">
+                          <MarginBadge cost={v.costPrice} price={v.sellingPrice} />
+                        </div>
+                      )}
+                    </div>
+
+                    <ExpiryInput
+                      value={v.expiryDate}
+                      onChange={(d) => patchVariant(i, { expiryDate: d })}
+                      label="Expiry (optional)"
+                    />
+                    {!editing && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Opening stock</Label>
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          value={v.initialStock}
+                          onChange={(e) => patchVariant(i, { initialStock: Number(e.target.value) })}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  {editing && v.id && <CostHistoryPanel variantId={v.id} className="mt-3" />}
+                </div>
+              ))
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={submitting}>
-            {submitting ? "Saving…" : editing ? "Save changes" : "Create product"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+function MarginBadge({ cost, price }: { cost: number; price: number }) {
+  const { pct, profit } = margin(cost, price);
+  const positive = profit >= 0;
+  return (
+    <span
+      className={
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium " +
+        (positive
+          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+          : "bg-destructive/10 text-destructive")
+      }
+    >
+      {positive ? "+" : ""}
+      <Money value={profit} /> margin ({pct.toFixed(0)}%)
+    </span>
   );
 }

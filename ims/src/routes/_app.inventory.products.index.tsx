@@ -1,7 +1,6 @@
 import { EmptyState, Money, PageHeader, Qty, StatusPill } from "@/components/common/primitives";
 import { TablePagination } from "@/components/common/table-pagination";
 import { MediaThumb } from "@/components/inventory/media-picker";
-import { ProductFormDialog } from "@/components/inventory/product-form-dialog";
 import { AdjustStockDialog, RestockDialog } from "@/components/inventory/stock-dialogs";
 import {
   AlertDialog,
@@ -30,7 +29,7 @@ import { useProducts } from "@/hooks/useProducts";
 import type { Product } from "@/data/types";
 import type { ProductDto } from "@/lib/products-api";
 import { downloadCsv } from "@/lib/csv";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Barcode as BarcodeIcon,
   ChevronDown,
@@ -72,7 +71,7 @@ interface ProductsSearch {
   perPage: number;
 }
 
-export const Route = createFileRoute("/_app/inventory/products")({
+export const Route = createFileRoute("/_app/inventory/products/")({
   head: () => ({
     meta: [
       { title: "Products & Variants — SROTA IMS" },
@@ -119,8 +118,6 @@ function ProductsPage() {
   const [barcode, setBarcode] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [labelsFor, setLabelsFor] = useState<string | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<Product | undefined>(undefined);
   const [adjustFor, setAdjustFor] = useState<{ p: string; v: string } | null>(null);
   const [restockFor, setRestockFor] = useState<{ p: string; v: string } | null>(null);
   const [deleteFor, setDeleteFor] = useState<Product | null>(null);
@@ -237,14 +234,10 @@ function ProductsPage() {
               </Button>
             ) : null}
             {canEdit ? (
-              <Button
-                size="sm"
-                onClick={() => {
-                  setEditing(undefined);
-                  setFormOpen(true);
-                }}
-              >
-                <Plus className="mr-1.5 h-4 w-4" /> Add product
+              <Button asChild size="sm">
+                <Link to="/inventory/products/new">
+                  <Plus className="mr-1.5 h-4 w-4" /> Add product
+                </Link>
               </Button>
             ) : null}
           </>
@@ -444,16 +437,10 @@ function ProductsPage() {
                               <BarcodeIcon className="h-4 w-4" />
                             </Button>
                             {canEdit ? (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                aria-label="Edit product"
-                                onClick={() => {
-                                  setEditing(p);
-                                  setFormOpen(true);
-                                }}
-                              >
-                                <Pencil className="h-4 w-4" />
+                              <Button asChild variant="ghost" size="icon" aria-label="Edit product">
+                                <Link to="/inventory/products/$productId" params={{ productId: p.id }}>
+                                  <Pencil className="h-4 w-4" />
+                                </Link>
                               </Button>
                             ) : null}
                             {canDelete ? (
@@ -553,14 +540,6 @@ function ProductsPage() {
         productId={labelsFor}
         open={labelsFor !== null}
         onOpenChange={(o) => !o && setLabelsFor(null)}
-      />
-      <ProductFormDialog
-        open={formOpen}
-        onOpenChange={(o) => {
-          setFormOpen(o);
-          if (!o) refetch();
-        }}
-        product={editing}
       />
       <AdjustStockDialog
         open={adjustFor !== null}

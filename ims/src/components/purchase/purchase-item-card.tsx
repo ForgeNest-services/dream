@@ -1,4 +1,5 @@
 import { MediaPicker } from "@/components/inventory/media-picker";
+import { CategoryCombobox, BrandCombobox } from "@/components/inventory/category-combobox";
 import { Money } from "@/components/common/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,7 @@ export interface DraftRow {
   unitCost: number;
   sellingPrice: number;
   lowStockAt: number;
+  expiryDate: string;
 }
 
 export interface DraftItem {
@@ -58,6 +60,7 @@ export function emptyRow(unitId: string): DraftRow {
     unitCost: 0,
     sellingPrice: 0,
     lowStockAt: 10,
+    expiryDate: "",
   };
 }
 
@@ -107,6 +110,7 @@ export function PurchaseItemCard({
       unitCost: v.costPrice,
       sellingPrice: v.sellingPrice,
       lowStockAt: v.lowStockAt,
+      expiryDate: v.expiryDate ?? "",
     }));
     onChange({
       ...item,
@@ -193,37 +197,14 @@ export function PurchaseItemCard({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Category</Label>
-            <Select
+            <CategoryCombobox
               value={item.categoryId}
-              onValueChange={(v) => onChange({ ...item, categoryId: v })}
-            >
-              <SelectTrigger className="h-8">
-                <SelectValue placeholder="Choose" />
-              </SelectTrigger>
-              <SelectContent className="max-h-72">
-                {app.categories.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {app.categoryPath(c.id)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(v) => onChange({ ...item, categoryId: v })}
+            />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Brand</Label>
-            <Select value={item.brandId} onValueChange={(v) => onChange({ ...item, brandId: v })}>
-              <SelectTrigger className="h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No brand</SelectItem>
-                {app.brands.map((b) => (
-                  <SelectItem key={b.id} value={b.id}>
-                    {b.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <BrandCombobox value={item.brandId} onChange={(v) => onChange({ ...item, brandId: v })} />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Image</Label>
@@ -269,9 +250,10 @@ export function PurchaseItemCard({
               <th className="py-1 text-left font-medium">Barcode</th>
               <th className="py-1 text-left font-medium">Unit</th>
               <th className="py-1 text-right font-medium">Qty</th>
-              <th className="py-1 text-right font-medium">Cost (excl. tax)</th>
-              {taxable && <th className="py-1 text-right font-medium">Cost (incl. tax)</th>}
+              <th className="py-1 text-right font-medium">Cost (exc. VAT)</th>
+              {taxable && <th className="py-1 text-right font-medium">Cost (inc. VAT)</th>}
               <th className="py-1 text-right font-medium">Selling</th>
+              <th className="py-1 text-left font-medium">Expiry</th>
               <th className="py-1 text-right font-medium">Amount</th>
               <th />
             </tr>
@@ -279,7 +261,7 @@ export function PurchaseItemCard({
           <tbody>
             {item.rows.length === 0 ? (
               <tr>
-                <td colSpan={taxable ? 10 : 9} className="py-3 text-center text-xs text-muted-foreground">
+                <td colSpan={taxable ? 11 : 10} className="py-3 text-center text-xs text-muted-foreground">
                   Choose a product to load its variants.
                 </td>
               </tr>
@@ -376,6 +358,14 @@ export function PurchaseItemCard({
                       value={r.sellingPrice}
                       onChange={(e) => setRow(r.key, { sellingPrice: Number(e.target.value) || 0 })}
                       className="num h-8 w-24 text-right"
+                    />
+                  </td>
+                  <td className="py-1.5 pr-2">
+                    <Input
+                      type="date"
+                      value={r.expiryDate}
+                      onChange={(e) => setRow(r.key, { expiryDate: e.target.value })}
+                      className="h-8 min-w-36"
                     />
                   </td>
                   <td className="py-1.5 pr-2 text-right">

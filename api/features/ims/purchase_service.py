@@ -119,6 +119,7 @@ class IMSPurchaseService:
                             cost_price=row["unit_cost"],
                             selling_price=row.get("selling_price") or 0,
                             low_stock_at=row.get("low_stock_at") or 10,
+                            expiry_date=row.get("expiry_date"),
                         )
                         qty = row["qty"]
                         line_amount = qty * row["unit_cost"]
@@ -176,6 +177,7 @@ class IMSPurchaseService:
                             variant,
                             cost_price=row["unit_cost"],
                             selling_price=row.get("selling_price") or variant.selling_price,
+                            expiry_date=row.get("expiry_date") or variant.expiry_date,
                         )
                         line_amount = qty * row["unit_cost"]
                         vat_amount = (line_amount * rate) / 100 if taxable else Decimal(0)
@@ -253,3 +255,24 @@ class IMSPurchaseService:
 
         logger.info(f"IMS purchase created: {purchase.id}", extra={"tenant_id": tenant_id})
         return {"success": True, "purchase": IMSPurchaseRepository.get_by_id(db, tenant_id, purchase.id)}
+
+    @staticmethod
+    def cost_history_for_variant(db: Session, tenant_id: str, variant_id: str) -> dict:
+        if not IMSProductRepository.get_variant(db, tenant_id, variant_id):
+            return {"success": False, "error_code": "VARIANT_NOT_FOUND"}
+        rows = IMSPurchaseRepository.cost_history_for_variant(db, tenant_id, variant_id)
+        return {
+            "success": True,
+            "entries": [
+                {
+                    "date": purchase.date,
+                    "date_bs": purchase.date_bs,
+                    "unit_cost": line.unit_cost,
+                    "qty": line.qty,
+                    "purchase_id": purchase.id,
+                    "purchase_number": purchase.number,
+                    "bill_no": purchase.bill_no,
+                }
+                for line, purchase in rows
+            ],
+        }
