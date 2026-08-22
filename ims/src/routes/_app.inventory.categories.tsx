@@ -56,10 +56,16 @@ function CategoriesPage() {
     );
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!name.trim() || !dialog) return;
-    if (dialog.mode === "add") app.addCategory(name.trim(), dialog.parentId);
-    else app.renameCategory(dialog.cat.id, name.trim());
+    const res =
+      dialog.mode === "add"
+        ? await app.addCategory(name.trim(), dialog.parentId)
+        : await app.renameCategory(dialog.cat.id, name.trim());
+    if (!res.ok) {
+      toast.error(res.error ?? "Something went wrong");
+      return;
+    }
     toast.success(dialog.mode === "add" ? "Category added" : "Category renamed");
     setDialog(null);
     setName("");
@@ -118,8 +124,12 @@ function CategoriesPage() {
                 variant="ghost"
                 size="icon"
                 aria-label="Delete"
-                onClick={() => {
-                  app.deleteCategory(cat.id);
+                onClick={async () => {
+                  const res = await app.deleteCategory(cat.id);
+                  if (!res.ok) {
+                    toast.error(res.error ?? "Failed to delete category");
+                    return;
+                  }
                   toast.success("Category removed");
                 }}
               >
@@ -190,9 +200,13 @@ function CategoriesPage() {
                 placeholder="New brand name"
               />
               <Button
-                onClick={() => {
+                onClick={async () => {
                   if (!brand.trim()) return;
-                  app.addBrand(brand.trim());
+                  const res = await app.addBrand(brand.trim());
+                  if (!res.ok) {
+                    toast.error(res.error ?? "Failed to add brand");
+                    return;
+                  }
                   setBrand("");
                   toast.success("Brand added");
                 }}

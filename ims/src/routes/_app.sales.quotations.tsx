@@ -1,13 +1,39 @@
-import { PaginationBar, usePagination } from "@/components/common/pagination";
+import { TablePagination } from "@/components/common/table-pagination";
 import { DateText, EmptyState, Money, PageHeader } from "@/components/common/primitives";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useApp } from "@/context/app-store";
-import { computeTotals } from "@/lib/invoice";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { normalizeTableSearch } from "@/hooks/useTableQuery";
+import { useInvoices } from "@/hooks/useInvoices";
+import type { Invoice, InvoiceLine, PaymentMethod } from "@/data/types";
+import type { InvoiceDto } from "@/lib/invoices-api";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRightLeft, Printer, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+
+interface QuotationsSearch {
+  q: string;
+  page: number;
+  perPage: number;
+}
 
 export const Route = createFileRoute("/_app/sales/quotations")({
   head: () => ({
@@ -27,28 +53,82 @@ export const Route = createFileRoute("/_app/sales/quotations")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>): QuotationsSearch => {
+    const normalized = normalizeTableSearch({
+      page: Number(search.page) || 1,
+      perPage: Number(search.perPage) || 12,
+    });
+    return {
+      q: typeof search.q === "string" ? search.q : "",
+      page: normalized.page,
+      perPage: normalized.perPage,
+    };
+  },
   component: QuotationsPage,
 });
 
+function dtoToInvoice(i: InvoiceDto): Invoice {
+  return {
+    id: i.id,
+    number: i.number,
+    kind: i.kind,
+    date: i.date,
+    branchId: i.branch_id,
+    customerId: i.customer_id,
+    lines: i.lines.map(
+      (l): InvoiceLine => ({
+        id: l.id,
+        productId: l.product_id,
+        variantId: l.variant_id,
+        description: l.description,
+        qty: Number(l.qty),
+        unitId: l.unit_id,
+        rate: Number(l.rate),
+        discount: Number(l.discount),
+        taxable: l.taxable,
+        taxRate: Number(l.tax_rate),
+        vatAmount: Number(l.vat_amount),
+      }),
+    ),
+    paymentMethod: i.payment_method as PaymentMethod,
+    paidAmount: Number(i.paid_amount),
+    status: i.status,
+    userId: i.user_id,
+    note: i.note ?? undefined,
+  };
+}
+
 function QuotationsPage() {
   const app = useApp();
-  const [q, setQ] = useState("");
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
 
-  const rows = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    return app.invoices
-      .filter((i) => i.kind === "quotation")
-      .filter((i) => (app.branchId === "all" ? true : i.branchId === app.branchId))
-      .filter((i) => {
-        if (!term) return true;
-        const c = app.parties.find((p) => p.id === i.customerId);
-        return (
-          i.number.toLowerCase().includes(term) || (c?.name.toLowerCase().includes(term) ?? false)
-        );
-      });
-  }, [app.invoices, app.parties, app.branchId, q]);
+  const setSearch = (patch: Partial<QuotationsSearch>) => {
+    navigate({ search: (prev) => ({ ...prev, ...patch }) });
+  };
 
-  const pag = usePagination(rows, 12);
+  const debouncedQ = useDebouncedValue(search.q, 300);
+  const [convertFor, setConvertFor] = useState<Invoice | null>(null);
+
+  const { invoices: quoteDtos, meta, isLoading, refetch } = useInvoices({
+    branch_id: app.branchId === "all" ? undefined : app.branchId,
+    kind: "quotation",
+    q: debouncedQ || undefined,
+    page: search.page,
+    per_page: search.perPage,
+  });
+
+  useEffect(() => {
+    if (meta && search.page > meta.total_pages) {
+      setSearch({ page: 1 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta?.total_pages]);
+
+  const rows = quoteDtos.map((dto) => ({
+    inv: dtoToInvoice(dto),
+    total: Number(dto.total_amount),
+  }));
 
   return (
     <div>
@@ -57,7 +137,9 @@ function QuotationsPage() {
         subtitle="Price offers sent to customers. Convert to an invoice when accepted."
         actions={
           <Button asChild size="sm">
-            <Link to="/sales/pos">New quotation from POS</Link>
+            <Link to="/sales/pos" search={{ mode: "quotation" }}>
+              New quotation from POS
+            </Link>
           </Button>
         }
       />
@@ -65,14 +147,14 @@ function QuotationsPage() {
       <div className="relative mb-3 max-w-sm">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
+          value={search.q}
+          onChange={(e) => setSearch({ q: e.target.value, page: 1 })}
           placeholder="Search quotation no. or customer"
           className="pl-9"
         />
       </div>
 
-      {rows.length === 0 ? (
+      {!isLoading && rows.length === 0 ? (
         <EmptyState title="No quotations yet" description="Create one from the POS screen." />
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card">
@@ -88,54 +170,147 @@ function QuotationsPage() {
               </tr>
             </thead>
             <tbody>
-              {pag.slice.map((i) => {
-                const t = computeTotals(i.lines, app.company);
-                return (
-                  <tr key={i.id} className="border-b last:border-0 hover:bg-accent/40">
-                    <td className="num px-3 py-2.5">{i.number}</td>
-                    <td className="px-3 py-2.5">
-                      <DateText value={i.date} />
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {app.parties.find((p) => p.id === i.customerId)?.name ?? "—"}
-                    </td>
-                    <td className="num px-3 py-2.5 text-right">{i.lines.length}</td>
-                    <td className="px-3 py-2.5 text-right">
-                      <Money value={t.total} />
-                    </td>
-                    <td className="px-2 py-2.5 text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            app.convertQuotation(i.id);
-                            toast.success(`${i.number} converted to invoice`);
-                          }}
-                        >
-                          <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" /> Convert
-                        </Button>
-                        <Button asChild variant="ghost" size="sm">
-                          <Link to="/print/$invoiceId" params={{ invoiceId: i.id }}>
-                            <Printer className="h-4 w-4" />
-                          </Link>
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {rows.map((r) => (
+                <tr key={r.inv.id} className="border-b last:border-0 hover:bg-accent/40">
+                  <td className="num px-3 py-2.5">{r.inv.number}</td>
+                  <td className="px-3 py-2.5">
+                    <DateText value={r.inv.date} />
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {app.parties.find((p) => p.id === r.inv.customerId)?.name ?? "—"}
+                  </td>
+                  <td className="num px-3 py-2.5 text-right">{r.inv.lines.length}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    <Money value={r.total} />
+                  </td>
+                  <td className="px-2 py-2.5 text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="outline" size="sm" onClick={() => setConvertFor(r.inv)}>
+                        <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" /> Convert
+                      </Button>
+                      <Button asChild variant="ghost" size="sm">
+                        <Link to="/print/$invoiceId" params={{ invoiceId: r.inv.id }}>
+                          <Printer className="h-4 w-4" />
+                        </Link>
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
-          <PaginationBar
-            page={pag.page}
-            pageCount={pag.pageCount}
-            total={pag.total}
-            pageSize={pag.pageSize}
-            onChange={pag.setPage}
+          <TablePagination
+            page={meta?.page ?? search.page}
+            perPage={meta?.per_page ?? search.perPage}
+            totalItems={meta?.total ?? rows.length}
+            totalPages={meta?.total_pages ?? 1}
+            onPageChange={(p) => setSearch({ page: p })}
+            onPerPageChange={(pp) => setSearch({ perPage: pp, page: 1 })}
           />
         </div>
       )}
+
+      <ConvertQuotationDialog
+        invoice={convertFor}
+        onOpenChange={(o) => !o && setConvertFor(null)}
+        onConverted={() => {
+          setConvertFor(null);
+          refetch();
+        }}
+      />
     </div>
+  );
+}
+
+function ConvertQuotationDialog({
+  invoice,
+  onOpenChange,
+  onConverted,
+}: {
+  invoice: Invoice | null;
+  onOpenChange: (open: boolean) => void;
+  onConverted: () => void;
+}) {
+  const app = useApp();
+  const [method, setMethod] = useState<PaymentMethod>("cash");
+  const [paidAmount, setPaidAmount] = useState(0);
+  const [converting, setConverting] = useState(false);
+
+  const total = invoice
+    ? invoice.lines.reduce((s, l) => s + (l.rate - l.discount) * l.qty, 0)
+    : 0;
+
+  useEffect(() => {
+    if (invoice) setPaidAmount(total);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoice?.id]);
+
+  if (!invoice) return null;
+
+  const convert = async () => {
+    setConverting(true);
+    try {
+      const res = await app.convertQuotation(invoice.id, {
+        paymentMethod: method,
+        paidAmount,
+      });
+      if (!res.ok || !res.invoice) {
+        toast.error(res.error ?? "Failed to convert quotation");
+        return;
+      }
+      toast.success(`${res.invoice.number} — stock deducted and ledger updated`);
+      onConverted();
+    } finally {
+      setConverting(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Convert {invoice.number} to invoice</DialogTitle>
+          <DialogDescription>
+            This deducts stock and posts the sale to the customer's ledger.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="flex justify-between text-sm">
+            <span className="text-muted-foreground">Total</span>
+            <Money value={total} />
+          </div>
+          <div>
+            <Label className="text-xs">Payment method</Label>
+            <Select value={method} onValueChange={(v) => setMethod(v as PaymentMethod)}>
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="cash">Cash</SelectItem>
+                <SelectItem value="qr">QR</SelectItem>
+                <SelectItem value="bank">Bank</SelectItem>
+                <SelectItem value="credit">Credit (unpaid)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Amount paid now</Label>
+            <Input
+              value={paidAmount}
+              onChange={(e) => setPaidAmount(Number(e.target.value) || 0)}
+              className="num mt-1 text-right"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={converting}>
+            Cancel
+          </Button>
+          <Button onClick={() => void convert()} disabled={converting}>
+            {converting ? "Converting…" : "Convert"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

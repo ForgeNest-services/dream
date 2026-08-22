@@ -129,6 +129,12 @@ def require_restro_staff(role: str | None = None):
     return _make_staff_dep(decode_staff_token)(role)
 
 
+def require_ims_staff(role: str | None = None):
+    from features.ims.auth import decode_staff_token
+
+    return _make_staff_dep(decode_staff_token)(role)
+
+
 def require_tenant_scope(
     token: str = Depends(get_token_from_header),
     db: Session = Depends(get_db),

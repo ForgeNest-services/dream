@@ -1,11 +1,12 @@
-export type Role = "owner" | "manager" | "storekeeper" | "cashier" | "accountant";
+// Only 3 roles have a real backend login type (see api/features/ims/roles.py's
+// IMSRole enum) — cashier/accountant were mock-only and could never actually
+// log in, so they were removed rather than left as unreachable dead ends.
+export type Role = "owner" | "manager" | "storekeeper";
 
 export const ROLE_LABELS: Record<Role, string> = {
   owner: "Owner",
   manager: "Manager",
   storekeeper: "Store Keeper",
-  cashier: "Cashier",
-  accountant: "Accountant",
 };
 
 export type ModuleKey =
@@ -21,8 +22,6 @@ export const ROLE_MODULES: Record<Role, ModuleKey[]> = {
   owner: ["dashboard", "inventory", "purchase", "sales", "parties", "reports", "settings"],
   manager: ["dashboard", "inventory", "purchase", "sales", "parties", "reports"],
   storekeeper: ["dashboard", "inventory", "purchase"],
-  cashier: ["dashboard", "sales", "parties"],
-  accountant: ["dashboard", "parties", "reports"],
 };
 
 export type Permission =
@@ -58,8 +57,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     "report.view",
   ],
   storekeeper: ["product.edit", "stock.adjust", "stock.restock", "purchase.create"],
-  cashier: ["sale.create", "payment.record"],
-  accountant: ["payment.record", "report.view"],
 };
 
 export interface User {
@@ -74,6 +71,8 @@ export interface User {
 export interface Branch {
   id: string;
   name: string;
+  /** Short display code — derived client-side (first letters of the name),
+   *  not stored on the backend, which has no use for it beyond IMS's UI. */
   code: string;
   address: string;
 }
@@ -120,6 +119,9 @@ export interface Variant {
   /** stock per branch id */
   stock: Record<string, number>;
   lowStockAt: number;
+  /** Optional single expiry date (ISO "YYYY-MM-DD"), one per variant — not
+   *  per batch/lot. Restocking with a new expiry overwrites this. */
+  expiryDate?: string | undefined;
 }
 
 export interface Product {
@@ -191,10 +193,17 @@ export interface InvoiceLine {
   description: string;
   qty: number;
   unitId: string;
-  rate: number; // VAT inclusive when company is VAT registered
+  /** VAT-EXCLUSIVE — same convention as Product.sellingPrice and Purchase's
+   * unitCost (see docs/arch.md). VAT is added on top, never backed out. */
+  rate: number;
   discount: number;
   /** false = VAT exempt / non-taxable item. Undefined is treated as taxable. */
   taxable?: boolean | undefined;
+  /** Snapshotted at sale time — 0 for exempt lines or non-VAT-registered
+   * sales. Present once loaded back from the backend; a freshly-built POS
+   * cart line won't have these until the invoice is actually created. */
+  taxRate?: number | undefined;
+  vatAmount?: number | undefined;
 }
 
 export type InvoiceStatus = "paid" | "partial" | "unpaid" | "cancelled";
@@ -219,7 +228,15 @@ export interface CompanyProfile {
   name: string;
   legalName: string;
   pan: string;
+  /** Whether VAT is currently applied on bills — the per-branch operational
+   * toggle (IMSBranchSettings.vat_enabled). This is what every VAT
+   * calculation (computeTotals, POS, print) actually reads. */
   vatRegistered: boolean;
+  /** Whether the *tenant* is legally VAT-registered (Tenant.is_vat_registered,
+   * read-only here — edited in the admin app). Gates whether vatRegistered
+   * can ever be toggled on: a PAN-only business can't turn VAT on no matter
+   * what. Undefined until the real tenant info has loaded. */
+  isVatRegisteredTenant?: boolean | undefined;
   address: string;
   phone: string;
   email: string;

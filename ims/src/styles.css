@@ -216,3 +216,12 @@
     background: #fff;
   }
 }
+
+/* Zeroes the margin Chrome reserves for its built-in header/footer (date,
+   page title, URL, page number) — the only way a page can influence that
+   without the user disabling "Headers and footers" in the print dialog
+   themselves. Browsers with a fixed print-header-height ignore this and
+   still show it, but Chrome (and Chromium-based printers) respect it. */
+@page {
+  margin: 0;
+}

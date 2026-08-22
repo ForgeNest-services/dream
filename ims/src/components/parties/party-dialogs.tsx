@@ -64,38 +64,57 @@ export function CustomerDialog({
     });
   }, [open, party]);
 
-  const save = () => {
+  const [saving, setSaving] = useState(false);
+
+  const isEdit = Boolean(party);
+
+  const save = async () => {
     if (!form.name.trim()) {
       toast.error("Name is required");
       return;
     }
-    const created = app.addParty({
-      name: form.name.trim(),
-      kind,
-      phone: form.phone,
-      email: form.email || undefined,
-      address: form.address,
-      pan: form.pan || undefined,
-      isVatRegistered: form.isVatRegistered,
-      creditLimit: kind === "customer" ? form.creditLimit : undefined,
-      openingBalance: form.openingBalance,
-      terms: form.terms || undefined,
-    });
-    toast.success(`${kind === "customer" ? "Customer" : "Supplier"} added`);
-    onCreated?.(created);
-    onOpenChange(false);
+    setSaving(true);
+    try {
+      const payload = {
+        name: form.name.trim(),
+        phone: form.phone,
+        email: form.email || undefined,
+        address: form.address,
+        pan: form.pan || undefined,
+        isVatRegistered: form.isVatRegistered,
+        creditLimit: kind === "customer" ? form.creditLimit : undefined,
+        openingBalance: form.openingBalance,
+        terms: form.terms || undefined,
+      };
+      const res = isEdit
+        ? await app.updateParty(party!.id, payload)
+        : await app.addParty({ ...payload, kind });
+      if (!res.ok || !res.party) {
+        toast.error(res.error ?? `Failed to ${isEdit ? "update" : "add"} party`);
+        return;
+      }
+      toast.success(`${kind === "customer" ? "Customer" : "Supplier"} ${isEdit ? "updated" : "added"}`);
+      onCreated?.(res.party);
+      onOpenChange(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>New {kind}</DialogTitle>
+          <DialogTitle>
+            {isEdit ? "Edit" : "New"} {kind}
+          </DialogTitle>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Label className="text-xs">Name</Label>
             <Input
+              name="party-name"
+              autoComplete="off"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               className="mt-1"
@@ -104,6 +123,12 @@ export function CustomerDialog({
           <div>
             <Label className="text-xs">Phone</Label>
             <Input
+              name="party-phone"
+              // Chrome ignores a literal autocomplete="off" on fields it
+              // heuristically detects as contact info (a deliberate Chrome
+              // policy, not a bug) — a nonsense token it doesn't recognize
+              // as a real autofill category is the actual way to opt out.
+              autoComplete="new-party-phone"
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
               className="mt-1"
@@ -112,6 +137,8 @@ export function CustomerDialog({
           <div>
             <Label className="text-xs">Email</Label>
             <Input
+              name="party-email"
+              autoComplete="new-party-email"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               className="mt-1"
@@ -120,6 +147,8 @@ export function CustomerDialog({
           <div className="sm:col-span-2">
             <Label className="text-xs">Address</Label>
             <Input
+              name="party-address"
+              autoComplete="off"
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
               className="mt-1"
@@ -128,6 +157,8 @@ export function CustomerDialog({
           <div>
             <Label className="text-xs">PAN / VAT no.</Label>
             <Input
+              name="party-pan"
+              autoComplete="off"
               value={form.pan}
               onChange={(e) => setForm({ ...form, pan: e.target.value })}
               className="num mt-1"
@@ -144,6 +175,8 @@ export function CustomerDialog({
             <div>
               <Label className="text-xs">Credit limit</Label>
               <Input
+                name="party-credit-limit"
+                autoComplete="off"
                 value={form.creditLimit}
                 onChange={(e) => setForm({ ...form, creditLimit: Number(e.target.value) || 0 })}
                 className="num mt-1"
@@ -153,6 +186,8 @@ export function CustomerDialog({
             <div>
               <Label className="text-xs">Payment terms</Label>
               <Input
+                name="party-terms"
+                autoComplete="off"
                 value={form.terms}
                 onChange={(e) => setForm({ ...form, terms: e.target.value })}
                 className="mt-1"
@@ -165,6 +200,8 @@ export function CustomerDialog({
               Opening balance ({kind === "supplier" ? "payable to them" : "receivable"})
             </Label>
             <Input
+              name="party-opening-balance"
+              autoComplete="off"
               value={form.openingBalance}
               onChange={(e) => setForm({ ...form, openingBalance: Number(e.target.value) || 0 })}
               className="num mt-1"
@@ -175,7 +212,9 @@ export function CustomerDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={save}>Save</Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Save"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -203,18 +242,22 @@ export function PaymentDialog({
 
   if (!party) return null;
 
-  const save = () => {
+  const save = async () => {
     if (amount <= 0) {
       toast.error("Enter an amount");
       return;
     }
-    app.recordPayment({
+    const res = await app.recordPayment({
       partyId: party.id,
       amount,
       date: date ?? new Date().toISOString(),
       method,
       reference: reference || undefined,
     });
+    if (!res.ok) {
+      toast.error(res.error ?? "Failed to record payment");
+      return;
+    }
     toast.success("Payment recorded");
     onOpenChange(false);
     setReference("");

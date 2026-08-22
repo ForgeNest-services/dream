@@ -63,7 +63,13 @@ export interface UpdateBranchPayload {
   phone?: string | null;
 }
 
-export const BRANCH_SCOPED_ROLES = new Set(['manager', 'front_desk', 'waiter', 'chef']);
+export const BRANCH_SCOPED_ROLES = new Set([
+  'manager',
+  'front_desk',
+  'waiter',
+  'chef',
+  'storekeeper',
+]);
 
 export const HOTEL_PMS_ROLES = [
   { code: 'app_owner', label: 'App Owner' },
@@ -78,16 +84,24 @@ export const RESTRO_ROLES = [
   { code: 'chef', label: 'Chef' },
 ] as const;
 
+export const IMS_ROLES = [
+  { code: 'owner', label: 'Owner' },
+  { code: 'manager', label: 'Manager' },
+  { code: 'storekeeper', label: 'Store Keeper' },
+] as const;
+
 // Keyed on the display `code` stored in the apps catalog row (renamed to
-// srota_pms / srota_rms during the Srota rebrand). The backend API prefixes
-// intentionally stay /hotel-pms and /restro — those are the actual FastAPI
-// router prefixes, unrelated to the display code.
+// srota_pms / srota_rms / srota_ims during the Srota rebrand). The backend
+// API prefixes intentionally stay /hotel-pms, /restro, /ims — those are the
+// actual FastAPI router prefixes, unrelated to the display code.
 export const APP_CODE_TO_API_PREFIX: Record<string, string> = {
   srota_pms: '/hotel-pms',
   srota_rms: '/restro',
+  srota_ims: '/ims',
 };
 
 export const APP_CODE_TO_ROLES: Record<string, ReadonlyArray<{ code: string; label: string }>> = {
   srota_pms: HOTEL_PMS_ROLES,
   srota_rms: RESTRO_ROLES,
+  srota_ims: IMS_ROLES,
 };

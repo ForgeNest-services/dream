@@ -1,11 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/context/app-store";
 import { amountInWords, formatMoney } from "@/lib/format";
-import { computeTotals, lineGross } from "@/lib/invoice";
+import { computeStoredTotals, lineGross } from "@/lib/invoice";
 import { formatAd, formatBs } from "@/lib/nepali-date";
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { ArrowLeft, Printer } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/print/$invoiceId")({
   head: () => ({
@@ -31,8 +31,24 @@ export const Route = createFileRoute("/print/$invoiceId")({
 function PrintInvoicePage() {
   const app = useApp();
   const { invoiceId } = useParams({ from: "/print/$invoiceId" });
-  const [size, setSize] = useState<"a4" | "thermal">("a4");
+  const [size, setSize] = useState<"a4" | "thermal">("thermal");
   const [copy, setCopy] = useState<"original" | "copy">("original");
+
+  // @page is a document-level at-rule — it can't be scoped by a CSS class,
+  // so switching between A4 and 80mm needs a JS-injected <style> that's
+  // updated whenever the toggle changes (same technique RMS's
+  // MenuQrPrintButton uses to override its thermal-receipt default).
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.textContent =
+      size === "thermal"
+        ? "@media print { @page { size: 80mm auto; margin: 0; } }"
+        : "@media print { @page { size: A4 portrait; margin: 0; } }";
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, [size]);
 
   const inv = app.invoices.find((i) => i.id === invoiceId);
   if (!inv) {
@@ -51,16 +67,23 @@ function PrintInvoicePage() {
   const c = app.company;
   const cust = app.parties.find((p) => p.id === inv.customerId);
   const branch = app.branches.find((b) => b.id === inv.branchId);
-  const t = computeTotals(inv.lines, c);
+  const t = computeStoredTotals(inv.lines);
   const date = new Date(inv.date);
   const isQuote = inv.kind === "quotation";
+  // Whether this invoice actually carries VAT is a property of the invoice
+  // itself (its stored lines), not today's live company.vatRegistered
+  // toggle — a bill made when VAT was off must always print as a plain
+  // invoice, even if the company later turns VAT on, and vice versa.
+  const hasVat = t.vat > 0;
+  const displayVatRate = inv.lines.find((l) => l.taxable !== false && l.taxRate)?.taxRate ?? c.vatRate;
   const docTitle = isQuote
     ? "Quotation / कोटेशन"
-    : c.vatRegistered
+    : hasVat
       ? inv.kind === "abbreviated"
         ? "Abbreviated Tax Invoice / संक्षिप्त कर बीजक"
         : "Tax Invoice / कर बीजक"
       : "Invoice / बीजक";
+  const isThermal = size === "thermal";
 
   return (
     <div className="min-h-screen bg-muted/40 py-6 print:bg-white print:py-0">
@@ -100,22 +123,22 @@ function PrintInvoicePage() {
       </div>
 
       <div
-        className={`mx-auto bg-white p-6 text-[13px] text-black shadow-sm print:shadow-none ${
-          size === "a4" ? "max-w-[820px]" : "max-w-[320px] text-[11px]"
+        className={`mx-auto bg-white text-black shadow-sm print:absolute print:inset-0 print:m-0 print:shadow-none ${
+          isThermal ? "max-w-[302px] p-2 text-left text-[11px]" : "max-w-[820px] p-6 text-[13px]"
         }`}
       >
-        <div className="border-b border-black/70 pb-3 text-center">
+        <div className={`border-b border-black/70 pb-3 ${isThermal ? "text-left" : "text-center"}`}>
           <h1 className="text-lg font-semibold uppercase tracking-wide">{c.legalName}</h1>
           <p>{c.address}</p>
           <p>
             Tel: {c.phone} · {c.email}
           </p>
           <p className="font-medium">
-            {c.vatRegistered ? "VAT No." : "PAN No."} {c.pan}
+            {hasVat ? "VAT No." : "PAN No."} {c.pan}
           </p>
         </div>
 
-        <div className="my-3 text-center">
+        <div className={`my-3 ${isThermal ? "text-left" : "text-center"}`}>
           <p className="inline-block border border-black/70 px-3 py-1 text-sm font-semibold uppercase">
             {docTitle}
           </p>
@@ -170,7 +193,7 @@ function PrintInvoicePage() {
                 <td className="px-1 py-1.5">{idx + 1}</td>
                 <td className="px-1 py-1.5">
                   {l.description}
-                  {c.vatRegistered && l.taxable === false ? (
+                  {hasVat && l.taxable === false ? (
                     <span className="ml-1 text-[9px] uppercase text-black/60">(non-taxable)</span>
                   ) : null}
                 </td>
@@ -186,8 +209,8 @@ function PrintInvoicePage() {
           </tbody>
         </table>
 
-        <div className="mt-3 flex justify-end">
-          <dl className="w-full max-w-xs space-y-1 text-xs">
+        <div className={`mt-3 flex ${isThermal ? "" : "justify-end"}`}>
+          <dl className={`space-y-1 text-xs ${isThermal ? "w-full" : "w-full max-w-xs"}`}>
             <div className="flex justify-between">
               <dt>Sub total</dt>
               <dd>{formatMoney(t.gross, app.currency)}</dd>
@@ -196,7 +219,7 @@ function PrintInvoicePage() {
               <dt>Discount</dt>
               <dd>{formatMoney(t.discount, app.currency)}</dd>
             </div>
-            {c.vatRegistered && (
+            {hasVat && (
               <>
                 {t.exempt > 0 ? (
                   <div className="flex justify-between">
@@ -209,7 +232,7 @@ function PrintInvoicePage() {
                   <dd>{formatMoney(t.taxable, app.currency)}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt>VAT @ {c.vatRate}%</dt>
+                  <dt>VAT @ {displayVatRate}%</dt>
                   <dd>{formatMoney(t.vat, app.currency)}</dd>
                 </div>
               </>

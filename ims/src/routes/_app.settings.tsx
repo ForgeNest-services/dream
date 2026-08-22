@@ -1,22 +1,24 @@
 import { PageHeader } from "@/components/common/primitives";
-import { MediaPicker } from "@/components/inventory/media-picker";
+import { DirectImageUpload } from "@/components/common/direct-image-upload";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useApp } from "@/context/app-store";
-import { ROLE_LABELS, type DateSystem, type Role } from "@/data/types";
-import { CURRENCIES } from "@/lib/format";
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { Check, Info, Lock, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/settings")({
@@ -26,12 +28,12 @@ export const Route = createFileRoute("/_app/settings")({
       {
         name: "description",
         content:
-          "Configure company PAN/VAT profile, VAT rate, invoice numbering, branches, users and roles, units, and payment QR.",
+          "Company profile, VAT toggle, invoice numbering, branches, units and payment QR.",
       },
       { property: "og:title", content: "Settings — SROTA IMS" },
       {
         property: "og:description",
-        content: "Company profile, branches, users and roles, units and payment configuration.",
+        content: "Company profile, branches, units and payment configuration.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -44,11 +46,8 @@ function SettingsPage() {
   const app = useApp();
   const [form, setForm] = useState(app.company);
   const [fyStart, setFyStart] = useState("");
-
-  const save = () => {
-    app.updateCompany(form);
-    toast.success("Company profile saved");
-  };
+  const [deleteFyId, setDeleteFyId] = useState<string | null>(null);
+  const [deletingFy, setDeletingFy] = useState(false);
 
   return (
     <div className="mx-auto max-w-[1100px] px-4 py-6">
@@ -62,130 +61,48 @@ function SettingsPage() {
           <TabsTrigger value="company">Company</TabsTrigger>
           <TabsTrigger value="branches">Branches</TabsTrigger>
           <TabsTrigger value="fiscal">Fiscal years</TabsTrigger>
-          <TabsTrigger value="users">Users &amp; roles</TabsTrigger>
           <TabsTrigger value="units">Units &amp; brands</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="company" className="mt-4">
-          <div className="grid gap-4 rounded-lg border bg-card p-5 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <Label className="text-xs">Trade name</Label>
-              <Input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="mt-1"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <Label className="text-xs">Legal name (as registered)</Label>
-              <Input
-                value={form.legalName}
-                onChange={(e) => setForm({ ...form, legalName: e.target.value })}
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">PAN / VAT number</Label>
-              <Input
-                value={form.pan}
-                onChange={(e) => setForm({ ...form, pan: e.target.value })}
-                className="num mt-1"
-              />
-            </div>
-            <div className="flex items-end gap-3 pb-1">
-              <Switch
-                checked={form.vatRegistered}
-                onCheckedChange={(v) => setForm({ ...form, vatRegistered: v })}
-              />
+        <TabsContent value="company" className="mt-4 space-y-4">
+          <div className="rounded-lg border bg-card p-5">
+            <p className="text-sm font-medium">Business profile</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Fetched from your business registration — edit it from the admin app
+              (app.dream.com), not here.
+            </p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <Label className="text-xs">Trade / legal name</Label>
+                <p className="mt-1 text-sm">{app.company.legalName || "—"}</p>
+              </div>
               <div>
-                <p className="text-sm">VAT registered</p>
-                <p className="text-xs text-muted-foreground">
-                  {form.vatRegistered
-                    ? "Documents print as Tax Invoice with a VAT breakdown."
-                    : "PAN-only: documents print as Invoice, no VAT columns."}
+                <Label className="text-xs">PAN / VAT number</Label>
+                <p className="num mt-1 text-sm">{app.company.pan || "—"}</p>
+              </div>
+              <div>
+                <Label className="text-xs">Registration status</Label>
+                <p className="mt-1 text-sm">
+                  {app.company.isVatRegisteredTenant ? "VAT registered" : "PAN only"}
                 </p>
               </div>
-            </div>
-            <div>
-              <Label className="text-xs">VAT rate (%)</Label>
-              <Input
-                value={form.vatRate}
-                onChange={(e) => setForm({ ...form, vatRate: Number(e.target.value) || 0 })}
-                className="num mt-1"
-                disabled={!form.vatRegistered}
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Invoice prefix</Label>
-              <Input
-                value={form.invoicePrefix}
-                onChange={(e) => setForm({ ...form, invoicePrefix: e.target.value })}
-                className="mt-1"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <Label className="text-xs">Address</Label>
-              <Input
-                value={form.address}
-                onChange={(e) => setForm({ ...form, address: e.target.value })}
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Phone</Label>
-              <Input
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Email</Label>
-              <Input
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="mt-1"
-              />
-            </div>
-
-            <div className="sm:col-span-2 grid gap-4 border-t pt-4 sm:grid-cols-2">
-              <div>
-                <Label className="text-xs">Default date system</Label>
-                <Select
-                  value={app.dateSystem}
-                  onValueChange={(v) => app.setDateSystem(v as DateSystem)}
-                >
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="BS">Bikram Sambat (BS)</SelectItem>
-                    <SelectItem value="AD">Gregorian (AD)</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="sm:col-span-2">
+                <Label className="text-xs">Address</Label>
+                <p className="mt-1 text-sm">{app.company.address || "—"}</p>
               </div>
               <div>
-                <Label className="text-xs">Default currency</Label>
-                <Select value={app.currency} onValueChange={app.setCurrency}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CURRENCIES.map((c) => (
-                      <SelectItem key={c.code} value={c.code}>
-                        {c.code} — {c.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs">Phone</Label>
+                <p className="mt-1 text-sm">{app.company.phone || "—"}</p>
               </div>
-            </div>
-
-            <div className="sm:col-span-2 flex justify-end">
-              <Button onClick={save}>Save profile</Button>
+              <div>
+                <Label className="text-xs">Email</Label>
+                <p className="mt-1 text-sm">{app.company.email || "—"}</p>
+              </div>
             </div>
           </div>
+
+          <VatSettingsCard />
         </TabsContent>
 
         <TabsContent value="fiscal" className="mt-4">
@@ -205,35 +122,58 @@ function SettingsPage() {
                     <th className="px-3 py-2.5 text-left font-medium">Starts</th>
                     <th className="px-3 py-2.5 text-left font-medium">Ends</th>
                     <th className="px-3 py-2.5 text-right font-medium">Status</th>
+                    <th />
                   </tr>
                 </thead>
                 <tbody>
-                  {app.fiscalYears.map((f) => (
-                    <tr key={f.id} className="border-b last:border-0">
-                      <td className="num px-3 py-2.5 font-medium">{f.label}</td>
-                      <td className="num px-3 py-2.5 text-muted-foreground">
-                        {new Date(f.startDate).toISOString().slice(0, 10)}
-                      </td>
-                      <td className="num px-3 py-2.5 text-muted-foreground">
-                        {new Date(f.endDate).toISOString().slice(0, 10)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        {app.fiscalYear.id === f.id ? (
-                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                            Active
-                          </span>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => app.setFiscalYearId(f.id)}
-                          >
-                            Set active
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {app.fiscalYears.map((f) => {
+                    const isActive = app.fiscalYear.id === f.id;
+                    return (
+                      <tr key={f.id} className="border-b last:border-0">
+                        <td className="num px-3 py-2.5 font-medium">{f.label}</td>
+                        <td className="num px-3 py-2.5 text-muted-foreground">
+                          {new Date(f.startDate).toISOString().slice(0, 10)}
+                        </td>
+                        <td className="num px-3 py-2.5 text-muted-foreground">
+                          {new Date(f.endDate).toISOString().slice(0, 10)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          {isActive ? (
+                            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                              Active
+                            </span>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={async () => {
+                                const res = await app.setFiscalYearId(f.id);
+                                if (!res.ok) {
+                                  toast.error(res.error ?? "Failed to switch fiscal year");
+                                  return;
+                                }
+                                toast.success(`${f.label} set active`);
+                              }}
+                            >
+                              Set active
+                            </Button>
+                          )}
+                        </td>
+                        <td className="px-2 py-2.5 text-right">
+                          {!isActive && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => setDeleteFyId(f.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -248,18 +188,18 @@ function SettingsPage() {
                 />
               </div>
               <Button
-                onClick={() => {
+                onClick={async () => {
                   const year = Number(fyStart);
                   if (!year || year < 2075 || year > 2089) {
                     toast.error("Enter a BS year between 2075 and 2089");
                     return;
                   }
-                  const created = app.addFiscalYear(year);
-                  if (!created) {
-                    toast.error(`Fiscal year ${year} already exists`);
+                  const res = await app.addFiscalYear(year);
+                  if (!res.ok || !res.fiscalYear) {
+                    toast.error(res.error ?? `Fiscal year ${year} already exists`);
                     return;
                   }
-                  toast.success(`Fiscal year ${created.label} created and set active`);
+                  toast.success(`Fiscal year ${res.fiscalYear.label} created`);
                   setFyStart("");
                 }}
               >
@@ -288,43 +228,6 @@ function SettingsPage() {
                     <td className="px-3 py-2.5 text-muted-foreground">{b.address}</td>
                     <td className="num px-3 py-2.5 text-right">
                       {app.users.filter((u) => u.branchIds.includes(b.id)).length}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="users" className="mt-4">
-          <div className="overflow-hidden rounded-lg border bg-card">
-            <table className="w-full text-sm">
-              <thead className="border-b text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2.5 text-left font-medium">Name</th>
-                  <th className="px-3 py-2.5 text-left font-medium">Username</th>
-                  <th className="px-3 py-2.5 text-left font-medium">Role</th>
-                  <th className="px-3 py-2.5 text-left font-medium">Branches</th>
-                  <th className="px-3 py-2.5 text-left font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {app.users.map((u) => (
-                  <tr key={u.id} className="border-b last:border-0">
-                    <td className="px-3 py-2.5 font-medium">{u.name}</td>
-                    <td className="num px-3 py-2.5">{u.username}</td>
-                    <td className="px-3 py-2.5">{ROLE_LABELS[u.role as Role]}</td>
-                    <td className="px-3 py-2.5 text-muted-foreground">
-                      {u.branchIds
-                        .map((id) => app.branches.find((b) => b.id === id)?.code ?? id)
-                        .join(", ")}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs ${u.active ? "bg-success/12 text-success" : "bg-muted text-muted-foreground"}`}
-                      >
-                        {u.active ? "Active" : "Disabled"}
-                      </span>
                     </td>
                   </tr>
                 ))}
@@ -377,14 +280,13 @@ function SettingsPage() {
               later.
             </p>
             <div className="mt-3">
-              <MediaPicker
-                label="Choose or upload QR"
-                value={undefined}
-                onChange={(id) => {
-                  const m = app.media.find((x) => x.id === id);
-                  setForm({ ...form, qrImageUrl: m?.url });
-                  app.updateCompany({ qrImageUrl: m?.url });
-                  toast.success("Payment QR updated");
+              <DirectImageUpload
+                label="Upload QR"
+                folder="Payment QR"
+                imageUrl={form.qrImageUrl}
+                onChange={(url) => {
+                  setForm({ ...form, qrImageUrl: url });
+                  app.updateCompany({ qrImageUrl: url });
                 }}
               />
             </div>
@@ -398,6 +300,161 @@ function SettingsPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={deleteFyId !== null} onOpenChange={(o) => !o && setDeleteFyId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this fiscal year?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This can't be undone. It won't affect any purchases or invoices already recorded —
+              only removes it from this list.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingFy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletingFy}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!deleteFyId) return;
+                setDeletingFy(true);
+                try {
+                  const res = await app.deleteFiscalYear(deleteFyId);
+                  if (!res.ok) {
+                    toast.error(res.error ?? "Failed to delete fiscal year");
+                    return;
+                  }
+                  toast.success("Fiscal year deleted");
+                  setDeleteFyId(null);
+                } finally {
+                  setDeletingFy(false);
+                }
+              }}
+            >
+              {deletingFy ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function VatSettingsCard() {
+  const app = useApp();
+  const canToggleVat = app.company.isVatRegisteredTenant === true;
+  const [rateDraft, setRateDraft] = useState(String(app.company.vatRate ?? 13));
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  useEffect(() => {
+    setRateDraft(String(app.company.vatRate ?? 13));
+  }, [app.company.vatRate]);
+
+  const flashSaved = () => {
+    setSavedFlash(true);
+    window.setTimeout(() => setSavedFlash(false), 1200);
+  };
+
+  return (
+    <div className="rounded-lg border bg-card p-5">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-medium">Tax</p>
+        {savedFlash && (
+          <span className="flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success">
+            <Check className="h-3 w-3" />
+            Saved
+          </span>
+        )}
+      </div>
+      <div className="mt-3 rounded-md border bg-muted/40 p-3 text-xs">
+        <p className="flex items-center gap-1.5 font-medium">
+          <Info className="h-3.5 w-3.5" />
+          Business tax status
+        </p>
+        <p className="mt-1 text-muted-foreground">
+          {app.company.isVatRegisteredTenant ? (
+            <>
+              <span className="font-semibold text-primary">VAT-registered</span>
+              {app.company.pan && <> · PAN {app.company.pan}</>} — VAT can be applied to bills.
+            </>
+          ) : app.company.pan ? (
+            <>
+              <span className="font-semibold">PAN only</span> · PAN {app.company.pan} — VAT isn't
+              available. Change this in the admin app if you register for VAT.
+            </>
+          ) : (
+            <>No PAN or VAT on file. Update your business info in the admin app.</>
+          )}
+        </p>
+      </div>
+      <div
+        className={`mt-4 flex items-center justify-between rounded-md p-4 ${
+          canToggleVat ? "bg-muted/40" : "bg-muted/20 opacity-70"
+        }`}
+      >
+        <div>
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            {!canToggleVat && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
+            Apply VAT on bills
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {canToggleVat
+              ? "Applied as a single line on every purchase, sale and invoice."
+              : "Only available for VAT-registered businesses."}
+          </p>
+        </div>
+        <Switch
+          checked={canToggleVat && app.company.vatRegistered}
+          disabled={!canToggleVat}
+          onCheckedChange={async (v) => {
+            const res = await app.updateVatSettings({ vatEnabled: v });
+            if (!res.ok) {
+              toast.error(res.error ?? "Failed to update VAT setting");
+              return;
+            }
+            flashSaved();
+          }}
+        />
+      </div>
+      {canToggleVat && app.company.vatRegistered && (
+        <div className="mt-4 space-y-2">
+          <Label className="text-xs">VAT rate (%)</Label>
+          <Input
+            type="number"
+            min={0}
+            max={100}
+            step="0.01"
+            value={rateDraft}
+            onChange={(e) => setRateDraft(e.target.value)}
+            onBlur={async () => {
+              const next = Number(rateDraft);
+              if (
+                !Number.isFinite(next) ||
+                next < 0 ||
+                next > 100 ||
+                next === app.company.vatRate
+              ) {
+                setRateDraft(String(app.company.vatRate ?? 13));
+                if (Number.isFinite(next) && (next < 0 || next > 100)) {
+                  toast.error("VAT rate must be between 0 and 100");
+                }
+                return;
+              }
+              const res = await app.updateVatSettings({ vatRate: next });
+              if (!res.ok) {
+                toast.error(res.error ?? "Failed to update VAT rate");
+                return;
+              }
+              flashSaved();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+            className="num mt-1"
+          />
+          <p className="text-[11px] text-muted-foreground">Auto-saves when you tab out or press Enter.</p>
+        </div>
+      )}
     </div>
   );
 }

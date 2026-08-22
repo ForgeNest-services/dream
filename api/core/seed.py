@@ -7,6 +7,7 @@ from core.configs import settings
 from core.security import hash_password
 from core.storage import upload_file_at_key, build_public_url
 from shared_models import PlatformAdmin, App
+from utils.bikram_sambat import to_bs_iso
 from utils.logger import logger
 
 
@@ -145,6 +146,233 @@ def _ensure_apps_schema(db) -> None:
         "ADD COLUMN IF NOT EXISTS icon_url VARCHAR(500)"
     ))
     db.commit()
+
+
+def ensure_ims_products_schema() -> None:
+    """Same back-fill pattern as _ensure_apps_schema, for the is_active
+    column added to ims_products for soft-delete. Also drops the old plain
+    unique constraint on (tenant_id, sku) if it still exists from before the
+    partial-unique-index migration, so a soft-deleted product's SKU can be
+    reused — IF EXISTS makes both statements safe to re-run."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.ims_products "
+            "ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.ims_products "
+            "DROP CONSTRAINT IF EXISTS uq_ims_product_tenant_sku"
+        ))
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_ims_product_tenant_sku_active "
+            "ON public.ims_products (tenant_id, sku) WHERE is_active = true"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill ims_products schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
+def ensure_ims_parties_schema() -> None:
+    """Back-fill ON DELETE CASCADE onto ims_ledger_entries.party_id so a
+    hard-deleted party (see IMSPartyService.delete) also removes its ledger
+    entries at the DB level. Base.create_all doesn't ALTER existing FKs, so
+    this drops and recreates the constraint — IF EXISTS/re-running is a
+    no-op once the cascade is in place."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.ims_ledger_entries "
+            "DROP CONSTRAINT IF EXISTS ims_ledger_entries_party_id_fkey"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.ims_ledger_entries "
+            "ADD CONSTRAINT ims_ledger_entries_party_id_fkey "
+            "FOREIGN KEY (party_id) REFERENCES public.ims_parties(id) ON DELETE CASCADE"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill ims_parties schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
+def ensure_ims_bs_date_schema() -> None:
+    """Back-fill the date_bs mirror column onto ims_purchases and
+    ims_stock_movements (added so Purchase Bills / Stock Movements can
+    filter natively in Bikram Sambat, matching restro_order.placed_at_bs —
+    see api/utils/bikram_sambat.py). Existing rows' date_bs can't be derived
+    with a SQL constant like the other backfills here, so this adds the
+    column nullable, converts each row's AD `date` in Python via
+    to_bs_iso(), then sets NOT NULL — safe to re-run since the UPDATE only
+    touches rows where date_bs IS NULL."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.ims_purchases ADD COLUMN IF NOT EXISTS date_bs VARCHAR(10)"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.ims_stock_movements ADD COLUMN IF NOT EXISTS date_bs VARCHAR(10)"
+        ))
+        db.commit()
+
+        for table in ("ims_purchases", "ims_stock_movements"):
+            rows = db.execute(text(
+                f"SELECT id, date FROM public.{table} WHERE date_bs IS NULL"
+            )).fetchall()
+            for row in rows:
+                bs = to_bs_iso(row.date) or ""
+                db.execute(
+                    text(f"UPDATE public.{table} SET date_bs = :bs WHERE id = :id"),
+                    {"bs": bs, "id": row.id},
+                )
+            db.commit()
+
+        db.execute(text(
+            "ALTER TABLE public.ims_purchases ALTER COLUMN date_bs SET NOT NULL"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.ims_stock_movements ALTER COLUMN date_bs SET NOT NULL"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ims_purchase_branch_date_bs "
+            "ON public.ims_purchases (branch_id, date_bs)"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ims_stock_movement_branch_date_bs "
+            "ON public.ims_stock_movements (branch_id, date_bs)"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill ims BS date schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
+def ensure_ims_invoice_line_vat_schema() -> None:
+    """Back-fill tax_rate/vat_amount onto ims_invoice_lines (added so a
+    historical invoice's VAT can be recomputed from its own lines, matching
+    IMSPurchaseLine's existing tax_rate/vat_amount columns — see
+    IMSInvoiceLine's docstring). Existing rows predate per-line VAT
+    snapshotting, so they back-fill to 0 rather than a guessed value — the
+    header-level taxable_amount/vat_amount on ims_invoices is still correct
+    and unaffected; only the per-line breakdown is unknown for old rows."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.ims_invoice_lines "
+            "ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2) NOT NULL DEFAULT 0"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.ims_invoice_lines "
+            "ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(12,2) NOT NULL DEFAULT 0"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill ims_invoice_lines VAT schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
+def ensure_ims_variant_expiry_schema() -> None:
+    """Back-fill the optional expiry_date column onto ims_variants (single
+    date per variant, no batch/lot tracking — see IMSVariant's docstring)."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.ims_variants ADD COLUMN IF NOT EXISTS expiry_date DATE"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill ims_variants expiry schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
+def ensure_ims_fiscal_year_link_schema() -> None:
+    """Back-fill fiscal_year_id onto ims_invoices and ims_purchases (see
+    both models' docstrings) — a real FK so sales/purchases are directly
+    filterable/joinable by fiscal year, instead of the fiscal year only
+    ever appearing baked into the human-readable `number` string. Existing
+    rows are resolved from their own date_bs via the same
+    Shrawan-1-through-Ashad-end rule used for new rows, auto-creating any
+    fiscal_years row that doesn't exist yet — safe to re-run since the
+    UPDATE only touches rows where fiscal_year_id IS NULL."""
+    from features.ims.nepali_date import fiscal_year_start_for_bs_date
+    from shared_models import IMSFiscalYear
+
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.ims_invoices "
+            "ADD COLUMN IF NOT EXISTS fiscal_year_id VARCHAR(36) "
+            "REFERENCES public.ims_fiscal_years(id)"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.ims_purchases "
+            "ADD COLUMN IF NOT EXISTS fiscal_year_id VARCHAR(36) "
+            "REFERENCES public.ims_fiscal_years(id)"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ims_invoice_fiscal_year "
+            "ON public.ims_invoices (fiscal_year_id)"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ims_purchase_fiscal_year "
+            "ON public.ims_purchases (fiscal_year_id)"
+        ))
+        db.commit()
+
+        # tenant_id + start_year -> fiscal_year_id, populated lazily as rows
+        # are resolved below rather than pre-scanning every tenant.
+        fy_cache: dict[tuple[str, int], str] = {}
+
+        def resolve_fy_id(tenant_id: str, date_bs: str) -> str:
+            start_year = fiscal_year_start_for_bs_date(date_bs)
+            key = (tenant_id, start_year)
+            if key in fy_cache:
+                return fy_cache[key]
+            fy = (
+                db.query(IMSFiscalYear)
+                .filter(IMSFiscalYear.tenant_id == tenant_id, IMSFiscalYear.start_year == start_year)
+                .first()
+            )
+            if not fy:
+                fy = IMSFiscalYear(tenant_id=tenant_id, start_year=start_year, is_active=False)
+                db.add(fy)
+                db.flush()
+            fy_cache[key] = fy.id
+            return fy.id
+
+        for table in ("ims_invoices", "ims_purchases"):
+            rows = db.execute(text(
+                f"SELECT id, tenant_id, date_bs FROM public.{table} WHERE fiscal_year_id IS NULL"
+            )).fetchall()
+            for row in rows:
+                fy_id = resolve_fy_id(row.tenant_id, row.date_bs)
+                db.execute(
+                    text(f"UPDATE public.{table} SET fiscal_year_id = :fy_id WHERE id = :id"),
+                    {"fy_id": fy_id, "id": row.id},
+                )
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill ims fiscal year link schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
 
 
 def seed_apps():

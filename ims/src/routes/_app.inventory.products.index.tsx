@@ -1,8 +1,17 @@
 import { EmptyState, Money, PageHeader, Qty, StatusPill } from "@/components/common/primitives";
-import { PaginationBar, usePagination } from "@/components/common/pagination";
+import { TablePagination } from "@/components/common/table-pagination";
 import { MediaThumb } from "@/components/inventory/media-picker";
-import { ProductFormDialog } from "@/components/inventory/product-form-dialog";
 import { AdjustStockDialog, RestockDialog } from "@/components/inventory/stock-dialogs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,9 +23,13 @@ import {
 } from "@/components/ui/select";
 import { BarcodeLabelsDialog } from "@/components/inventory/barcode-labels-dialog";
 import { useApp } from "@/context/app-store";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { normalizeTableSearch } from "@/hooks/useTableQuery";
+import { useProducts } from "@/hooks/useProducts";
 import type { Product } from "@/data/types";
+import type { ProductDto } from "@/lib/products-api";
 import { downloadCsv } from "@/lib/csv";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Barcode as BarcodeIcon,
   ChevronDown,
@@ -27,10 +40,38 @@ import {
   Plus,
   Search,
   SlidersHorizontal,
+  Trash2,
 } from "lucide-react";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { toast } from "sonner";
 
-export const Route = createFileRoute("/_app/inventory/products")({
+function dtoToProduct(p: ProductDto): Product {
+  return {
+    id: p.id,
+    name: p.name,
+    sku: p.sku,
+    categoryId: p.category_id,
+    brandId: p.brand_id ?? undefined,
+    mediaId: p.media_id ?? undefined,
+    description: p.description ?? undefined,
+    taxable: p.taxable ?? undefined,
+    // Backend Decimal fields serialize as JSON strings — coerce or
+    // arithmetic on this silently does string concatenation.
+    taxRate: p.tax_rate == null ? undefined : Number(p.tax_rate),
+    createdAt: p.created_at,
+  };
+}
+
+interface ProductsSearch {
+  q: string;
+  categoryId: string;
+  brandId: string;
+  stockFilter: string;
+  page: number;
+  perPage: number;
+}
+
+export const Route = createFileRoute("/_app/inventory/products/")({
   head: () => ({
     meta: [
       { title: "Products & Variants — SROTA IMS" },
@@ -48,27 +89,73 @@ export const Route = createFileRoute("/_app/inventory/products")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>): ProductsSearch => {
+    const normalized = normalizeTableSearch({
+      page: Number(search.page) || 1,
+      perPage: Number(search.perPage) || 25,
+    });
+    return {
+      q: typeof search.q === "string" ? search.q : "",
+      categoryId: typeof search.categoryId === "string" ? search.categoryId : "all",
+      brandId: typeof search.brandId === "string" ? search.brandId : "all",
+      stockFilter: typeof search.stockFilter === "string" ? search.stockFilter : "all",
+      page: normalized.page,
+      perPage: normalized.perPage,
+    };
+  },
   component: ProductsPage,
 });
 
 function ProductsPage() {
   const app = useApp();
-  const [q, setQ] = useState("");
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+
+  const setSearch = (patch: Partial<ProductsSearch>) => {
+    navigate({ search: (prev) => ({ ...prev, ...patch }) });
+  };
+
   const [barcode, setBarcode] = useState("");
-  const [categoryId, setCategoryId] = useState("all");
-  const [brandId, setBrandId] = useState("all");
-  const [stockFilter, setStockFilter] = useState("all");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [labelsFor, setLabelsFor] = useState<string | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<Product | undefined>(undefined);
   const [adjustFor, setAdjustFor] = useState<{ p: string; v: string } | null>(null);
   const [restockFor, setRestockFor] = useState<{ p: string; v: string } | null>(null);
+  const [deleteFor, setDeleteFor] = useState<Product | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const debouncedQ = useDebouncedValue(search.q, 300);
+  const debouncedBarcode = useDebouncedValue(barcode, 300);
+  // Barcode filter has no separate backend param — it's just another term
+  // that matches the same q search (name/sku/variant name/model_no/barcode).
+  const effectiveQ = debouncedBarcode.trim() || debouncedQ;
 
   const descendantIds = (id: string): string[] => {
     const kids = app.categories.filter((c) => c.parentId === id);
     return [id, ...kids.flatMap((k) => descendantIds(k.id))];
   };
+  const categoryIdParam =
+    search.categoryId === "all" ? undefined : descendantIds(search.categoryId).join(",");
+
+  const { products, meta, isLoading, refetch } = useProducts({
+    q: effectiveQ || undefined,
+    category_id: categoryIdParam,
+    brand_id: search.brandId === "all" ? undefined : search.brandId,
+    stock_status: search.stockFilter === "all" ? "" : (search.stockFilter as "in-stock" | "low" | "out"),
+    page: search.page,
+    per_page: search.perPage,
+  });
+
+  useEffect(() => {
+    app.syncProducts(products);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products]);
+
+  useEffect(() => {
+    if (meta && search.page > meta.total_pages) {
+      setSearch({ page: 1 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta?.total_pages]);
 
   const statusOf = (productId: string) => {
     const vs = app.variantsOf(productId);
@@ -78,28 +165,24 @@ function ProductsPage() {
     return "in-stock";
   };
 
-  const rows = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    const code = barcode.trim().toLowerCase();
-    const cats = categoryId === "all" ? null : new Set(descendantIds(categoryId));
-    return app.products.filter((p) => {
-      const vs = app.variantsOf(p.id);
-      if (
-        term &&
-        !`${p.name} ${p.sku}`.toLowerCase().includes(term) &&
-        !vs.some((v) => `${v.name} ${v.modelNo} ${v.barcode}`.toLowerCase().includes(term))
-      )
-        return false;
-      if (code && !vs.some((v) => v.barcode.toLowerCase().includes(code))) return false;
-      if (cats && !cats.has(p.categoryId)) return false;
-      if (brandId !== "all" && p.brandId !== brandId) return false;
-      if (stockFilter !== "all" && statusOf(p.id) !== stockFilter) return false;
-      return true;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [app.products, app.variants, app.branchId, q, barcode, categoryId, brandId, stockFilter]);
+  const EXPIRY_WARN_DAYS = 14;
+  const daysUntil = (isoDate: string) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(isoDate);
+    target.setHours(0, 0, 0, 0);
+    return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  };
+  /** Soonest expiry across a product's variants that still have stock —
+   *  an already-sold-out expired variant isn't worth flagging. */
+  const soonestExpiry = (productId: string): { days: number; date: string } | null => {
+    const vs = app.variantsOf(productId).filter((v) => v.expiryDate && app.stockOf(v) > 0);
+    if (vs.length === 0) return null;
+    const soonest = vs.reduce((a, b) => (a.expiryDate! < b.expiryDate! ? a : b));
+    return { days: daysUntil(soonest.expiryDate!), date: soonest.expiryDate! };
+  };
 
-  const { page, setPage, pageCount, slice, total, pageSize } = usePagination(rows, 10);
+  const rows = products.map(dtoToProduct);
 
   const exportCsv = () =>
     downloadCsv(
@@ -122,12 +205,15 @@ function ProductsPage() {
     );
 
   const canEdit = app.can("product.edit");
+  // Backend only allows owner/manager to delete a product — storekeeper can
+  // edit but not delete, matching the same restriction server-side.
+  const canDelete = canEdit && app.effectiveRole !== "storekeeper";
 
   return (
     <div>
       <PageHeader
         title="Products & Variants"
-        subtitle={`${app.products.length} products · ${app.variants.length} variants`}
+        subtitle={`${meta?.total ?? rows.length} products`}
         actions={
           <>
             <Button variant="outline" size="sm" onClick={exportCsv}>
@@ -148,14 +234,10 @@ function ProductsPage() {
               </Button>
             ) : null}
             {canEdit ? (
-              <Button
-                size="sm"
-                onClick={() => {
-                  setEditing(undefined);
-                  setFormOpen(true);
-                }}
-              >
-                <Plus className="mr-1.5 h-4 w-4" /> Add product
+              <Button asChild size="sm">
+                <Link to="/inventory/products/new">
+                  <Plus className="mr-1.5 h-4 w-4" /> Add product
+                </Link>
               </Button>
             ) : null}
           </>
@@ -166,11 +248,8 @@ function ProductsPage() {
         <div className="relative min-w-56 flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              setPage(1);
-            }}
+            value={search.q}
+            onChange={(e) => setSearch({ q: e.target.value, page: 1 })}
             placeholder="Search name, SKU, model or barcode…"
             className="pl-8"
           />
@@ -179,16 +258,16 @@ function ProductsPage() {
           <BarcodeIcon className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             value={barcode}
-            onChange={(e) => {
-              setBarcode(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setBarcode(e.target.value)}
             placeholder="Scan / filter by barcode"
             className="num pl-8"
             aria-label="Filter by barcode"
           />
         </div>
-        <Select value={categoryId} onValueChange={setCategoryId}>
+        <Select
+          value={search.categoryId}
+          onValueChange={(v) => setSearch({ categoryId: v, page: 1 })}
+        >
           <SelectTrigger className="w-56">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
@@ -201,7 +280,7 @@ function ProductsPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={brandId} onValueChange={setBrandId}>
+        <Select value={search.brandId} onValueChange={(v) => setSearch({ brandId: v, page: 1 })}>
           <SelectTrigger className="w-40">
             <SelectValue placeholder="Brand" />
           </SelectTrigger>
@@ -214,7 +293,10 @@ function ProductsPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={stockFilter} onValueChange={setStockFilter}>
+        <Select
+          value={search.stockFilter}
+          onValueChange={(v) => setSearch({ stockFilter: v, page: 1 })}
+        >
           <SelectTrigger className="w-36">
             <SelectValue />
           </SelectTrigger>
@@ -227,7 +309,7 @@ function ProductsPage() {
         </Select>
       </div>
 
-      {rows.length === 0 ? (
+      {!isLoading && rows.length === 0 ? (
         <EmptyState
           title="No products match these filters"
           description="Try clearing the search or switching category."
@@ -249,11 +331,11 @@ function ProductsPage() {
                 </tr>
               </thead>
               <tbody>
-                {slice.map((p) => {
+                {rows.map((p) => {
                   const vs = app.variantsOf(p.id);
                   const prices = vs.map((v) => v.sellingPrice);
-                  const min = Math.min(...prices, 0 || Infinity);
-                  const max = Math.max(...prices, 0);
+                  const min = prices.length ? Math.min(...prices) : 0;
+                  const max = prices.length ? Math.max(...prices) : 0;
                   const open = expanded[p.id] ?? false;
                   return (
                     <Fragment key={p.id}>
@@ -297,12 +379,33 @@ function ProductsPage() {
                             <Money value={max} />
                           ) : (
                             <span className="num">
-                              <Money value={Number.isFinite(min) ? min : 0} /> – <Money value={max} />
+                              <Money value={min} /> – <Money value={max} />
                             </span>
                           )}
                         </td>
                         <td className="px-3 py-2.5">
-                          <StatusPill status={statusOf(p.id)} />
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <StatusPill status={statusOf(p.id)} />
+                            {(() => {
+                              const exp = soonestExpiry(p.id);
+                              if (!exp) return null;
+                              if (exp.days < 0) {
+                                return (
+                                  <span className="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                                    Expired
+                                  </span>
+                                );
+                              }
+                              if (exp.days <= EXPIRY_WARN_DAYS) {
+                                return (
+                                  <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                                    Expires in {exp.days}d
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
+                          </div>
                         </td>
                         <td className="px-3 py-2.5 text-right">
                           <div className="flex justify-end gap-1">
@@ -334,16 +437,20 @@ function ProductsPage() {
                               <BarcodeIcon className="h-4 w-4" />
                             </Button>
                             {canEdit ? (
+                              <Button asChild variant="ghost" size="icon" aria-label="Edit product">
+                                <Link to="/inventory/products/$productId" params={{ productId: p.id }}>
+                                  <Pencil className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                            ) : null}
+                            {canDelete ? (
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                aria-label="Edit product"
-                                onClick={() => {
-                                  setEditing(p);
-                                  setFormOpen(true);
-                                }}
+                                aria-label="Delete product"
+                                onClick={() => setDeleteFor(p)}
                               >
-                                <Pencil className="h-4 w-4" />
+                                <Trash2 className="h-4 w-4 text-destructive" />
                               </Button>
                             ) : null}
                           </div>
@@ -363,29 +470,50 @@ function ProductsPage() {
                                   <th className="py-1 text-right font-medium">Cost</th>
                                   <th className="py-1 text-right font-medium">Selling</th>
                                   <th className="py-1 text-right font-medium">Stock</th>
+                                  <th className="py-1 text-left font-medium">Expiry</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {vs.map((v) => (
-                                  <tr key={v.id} className="border-t border-border/60">
-                                    <td className="py-1.5">{v.name}</td>
-                                    <td className="num py-1.5">{v.modelNo || "—"}</td>
-                                    <td className="num py-1.5">{v.barcode || "—"}</td>
-                                    <td className="py-1.5">{app.unitSymbol(v.unitId)}</td>
-                                    <td className="py-1.5 text-right">
-                                      <Money value={v.costPrice} />
-                                    </td>
-                                    <td className="py-1.5 text-right">
-                                      <Money value={v.sellingPrice} />
-                                    </td>
-                                    <td className="py-1.5 text-right">
-                                      <Qty
-                                        value={app.stockOf(v)}
-                                        unit={app.unitSymbol(v.unitId)}
-                                      />
-                                    </td>
-                                  </tr>
-                                ))}
+                                {vs.map((v) => {
+                                  const days = v.expiryDate ? daysUntil(v.expiryDate) : null;
+                                  return (
+                                    <tr key={v.id} className="border-t border-border/60">
+                                      <td className="py-1.5">{v.name}</td>
+                                      <td className="num py-1.5">{v.modelNo || "—"}</td>
+                                      <td className="num py-1.5">{v.barcode || "—"}</td>
+                                      <td className="py-1.5">{app.unitSymbol(v.unitId)}</td>
+                                      <td className="py-1.5 text-right">
+                                        <Money value={v.costPrice} />
+                                      </td>
+                                      <td className="py-1.5 text-right">
+                                        <Money value={v.sellingPrice} />
+                                      </td>
+                                      <td className="py-1.5 text-right">
+                                        <Qty
+                                          value={app.stockOf(v)}
+                                          unit={app.unitSymbol(v.unitId)}
+                                        />
+                                      </td>
+                                      <td className="num py-1.5">
+                                        {v.expiryDate ? (
+                                          <span
+                                            className={
+                                              days !== null && days < 0
+                                                ? "text-destructive"
+                                                : days !== null && days <= EXPIRY_WARN_DAYS
+                                                  ? "text-amber-600 dark:text-amber-400"
+                                                  : ""
+                                            }
+                                          >
+                                            {v.expiryDate}
+                                          </span>
+                                        ) : (
+                                          "—"
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </td>
@@ -397,12 +525,13 @@ function ProductsPage() {
               </tbody>
             </table>
           </div>
-          <PaginationBar
-            page={page}
-            pageCount={pageCount}
-            total={total}
-            pageSize={pageSize}
-            onChange={setPage}
+          <TablePagination
+            page={meta?.page ?? search.page}
+            perPage={meta?.per_page ?? search.perPage}
+            totalItems={meta?.total ?? rows.length}
+            totalPages={meta?.total_pages ?? 1}
+            onPageChange={(p) => setSearch({ page: p })}
+            onPerPageChange={(pp) => setSearch({ perPage: pp, page: 1 })}
           />
         </div>
       )}
@@ -412,17 +541,63 @@ function ProductsPage() {
         open={labelsFor !== null}
         onOpenChange={(o) => !o && setLabelsFor(null)}
       />
-      <ProductFormDialog open={formOpen} onOpenChange={setFormOpen} product={editing} />
       <AdjustStockDialog
         open={adjustFor !== null}
-        onOpenChange={(o) => !o && setAdjustFor(null)}
+        onOpenChange={(o) => {
+          if (!o) {
+            setAdjustFor(null);
+            refetch();
+          }
+        }}
         productId={adjustFor?.p || undefined}
       />
       <RestockDialog
         open={restockFor !== null}
-        onOpenChange={(o) => !o && setRestockFor(null)}
+        onOpenChange={(o) => {
+          if (!o) {
+            setRestockFor(null);
+            refetch();
+          }
+        }}
         productId={restockFor?.p || undefined}
       />
+
+      <AlertDialog open={deleteFor !== null} onOpenChange={(o) => !o && setDeleteFor(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{deleteFor?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the product from the catalogue. Stock movement history for its
+              variants is kept for the audit trail — it isn't erased.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!deleteFor) return;
+                setDeleting(true);
+                try {
+                  const res = await app.deleteProduct(deleteFor.id);
+                  if (!res.ok) {
+                    toast.error(res.error ?? "Failed to delete product");
+                    return;
+                  }
+                  toast.success("Product deleted");
+                  setDeleteFor(null);
+                  refetch();
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
