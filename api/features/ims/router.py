@@ -937,6 +937,7 @@ def _purchase_error(code: str):
 def list_purchases(
     branch_id: str | None = None,
     party_id: str | None = None,
+    fiscal_year_id: str | None = None,
     q: str | None = None,
     bs_from: str | None = None,
     bs_to: str | None = None,
@@ -953,6 +954,7 @@ def list_purchases(
         staff["tenant_id"],
         branch_id,
         party_id,
+        fiscal_year_id,
         q,
         bs_from,
         bs_to,
@@ -1038,6 +1040,7 @@ def _invoice_error(code: str):
 def list_invoices(
     branch_id: str | None = None,
     customer_id: str | None = None,
+    fiscal_year_id: str | None = None,
     status: str | None = None,
     kind: str | None = None,
     q: str | None = None,
@@ -1058,6 +1061,7 @@ def list_invoices(
         staff["tenant_id"],
         branch_id,
         customer_id,
+        fiscal_year_id,
         status,
         kind,
         q,

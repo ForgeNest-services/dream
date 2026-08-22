@@ -5,6 +5,8 @@ from features.ims.invoice_repository import IMSInvoiceRepository
 from features.ims.product_repository import IMSProductRepository
 from features.ims.party_repository import IMSPartyRepository
 from features.ims.fiscal_year_service import IMSFiscalYearService
+from features.ims.fiscal_year_repository import IMSFiscalYearRepository
+from features.ims.nepali_date import fiscal_year_start_for_bs_date
 from features.branches.repository import BranchRepository
 from features.ims import purchase_txn_helpers as txn
 from utils.bikram_sambat import to_bs_iso
@@ -63,6 +65,7 @@ class IMSInvoiceService:
         tenant_id: str,
         branch_id: str | None,
         customer_id: str | None,
+        fiscal_year_id: str | None,
         status: str | None,
         kind: str | None,
         q: str | None,
@@ -72,7 +75,7 @@ class IMSInvoiceService:
         limit: int,
     ) -> dict:
         items, total = IMSInvoiceRepository.list_for_tenant(
-            db, tenant_id, branch_id, customer_id, status, kind, q, bs_from, bs_to, offset, limit
+            db, tenant_id, branch_id, customer_id, fiscal_year_id, status, kind, q, bs_from, bs_to, offset, limit
         )
         return {"success": True, "invoices": items, "total": total}
 
@@ -92,6 +95,7 @@ class IMSInvoiceService:
         vat_rate: Decimal,
         invoice_prefix: str,
         is_quotation: bool = False,
+        show_vat_breakdown: bool | None = None,
     ) -> dict:
         if not BranchRepository.get_by_id(db, tenant_id, branch_id):
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
@@ -100,6 +104,16 @@ class IMSInvoiceService:
         if not lines:
             return {"success": False, "error_code": "NO_ITEMS"}
 
+        # vat_registered always drives the REAL math below (VAT is genuinely
+        # added on top of the exclusive rate whenever the business is
+        # VAT-registered — the customer pays the same total either way).
+        # show_vat_breakdown is a separate, display-only choice: an
+        # "abbreviated" bill still has the same total_amount/vat_amount
+        # stored on it, it's just not itemized on screen/print. Defaults to
+        # vat_registered so callers that don't pass it (any non-POS caller)
+        # keep the original one-flag behavior.
+        show_breakdown = vat_registered if show_vat_breakdown is None else show_vat_breakdown
+
         fy_result = IMSFiscalYearService.get_active(db, tenant_id)
         start_year = fy_result["fiscal_year"].start_year if fy_result["success"] else datetime.now().year
 
@@ -107,7 +121,13 @@ class IMSInvoiceService:
             seq = IMSInvoiceRepository.count_for_tenant(db, tenant_id) + 1
             number = f"QT-{1000 + seq}" if is_quotation else f"{invoice_prefix}-{start_year}-{1000 + seq}"
             date_bs = to_bs_iso(date) or ""
-            kind = "quotation" if is_quotation else ("tax" if vat_registered else "abbreviated")
+            kind = "quotation" if is_quotation else ("tax" if show_breakdown else "abbreviated")
+            # Resolved from this invoice's OWN date, not the active fiscal
+            # year — a backdated sale must land in the fiscal year its date
+            # actually falls in (see nepali_date.fiscal_year_start_for_bs_date).
+            fy = IMSFiscalYearRepository.get_or_create_by_start_year(
+                db, tenant_id, fiscal_year_start_for_bs_date(date_bs)
+            )
 
             invoice = IMSInvoiceRepository.create(
                 db,
@@ -116,6 +136,7 @@ class IMSInvoiceService:
                 kind=kind,
                 date=date,
                 date_bs=date_bs,
+                fiscal_year_id=fy.id,
                 branch_id=branch_id,
                 customer_id=customer_id,
                 gross_amount=Decimal(0),

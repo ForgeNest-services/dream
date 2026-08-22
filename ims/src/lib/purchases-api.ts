@@ -22,6 +22,7 @@ export interface PurchaseDto {
   number: string;
   date: string;
   date_bs: string;
+  fiscal_year_id: string | null;
   branch_id: string;
   party_id: string | null;
   bill_no: string | null;
@@ -93,6 +94,7 @@ export const purchasesApi = {
     params: {
       branch_id?: string;
       party_id?: string;
+      fiscal_year_id?: string;
       q?: string;
       bs_from?: string;
       bs_to?: string;
@@ -103,6 +105,7 @@ export const purchasesApi = {
     const qs = new URLSearchParams();
     if (params.branch_id) qs.set("branch_id", params.branch_id);
     if (params.party_id) qs.set("party_id", params.party_id);
+    if (params.fiscal_year_id) qs.set("fiscal_year_id", params.fiscal_year_id);
     if (params.q) qs.set("q", params.q);
     if (params.bs_from) qs.set("bs_from", params.bs_from);
     if (params.bs_to) qs.set("bs_to", params.bs_to);

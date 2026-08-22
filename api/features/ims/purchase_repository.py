@@ -35,6 +35,7 @@ class IMSPurchaseRepository:
         tenant_id: str,
         branch_id: str | None,
         party_id: str | None,
+        fiscal_year_id: str | None,
         q: str | None,
         bs_from: str | None,
         bs_to: str | None,
@@ -52,6 +53,8 @@ class IMSPurchaseRepository:
             query = query.filter(IMSPurchase.branch_id == branch_id)
         if party_id:
             query = query.filter(IMSPurchase.party_id == party_id)
+        if fiscal_year_id:
+            query = query.filter(IMSPurchase.fiscal_year_id == fiscal_year_id)
         # date_bs is "YYYY-MM-DD" — lexical comparison sorts correctly,
         # same as restro_order.placed_at_bs (see api/utils/bikram_sambat.py).
         if bs_from:

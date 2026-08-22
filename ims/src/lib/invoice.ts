@@ -47,3 +47,23 @@ export function computeTotals(
 export function invoiceDue(inv: Invoice, total: number) {
   return Math.max(0, total - inv.paidAmount);
 }
+
+/** Totals for an ALREADY-SAVED invoice — sums each line's own stored
+ *  taxRate/vatAmount snapshot instead of recomputing from today's live
+ *  company.vatRegistered/vatRate. This is what print/invoices-list must use:
+ *  a bill made while VAT was on must keep showing its real VAT breakdown
+ *  even if the company later turns VAT off (and vice versa) — recomputing
+ *  live would silently rewrite history. Falls back to live computeTotals
+ *  only for lines that predate per-line VAT snapshotting (taxRate/vatAmount
+ *  undefined — see IMSInvoiceLine's schema-backfill note in api/core/seed.py). */
+export function computeStoredTotals(lines: InvoiceLine[]): InvoiceTotals {
+  const gross = lines.reduce((s, l) => s + l.rate * l.qty, 0);
+  const discount = lines.reduce((s, l) => s + l.discount * l.qty, 0);
+  const taxableLines = lines.filter(isTaxable);
+  const exemptLines = lines.filter((l) => !isTaxable(l));
+  const taxable = taxableLines.reduce((s, l) => s + lineGross(l), 0);
+  const exempt = exemptLines.reduce((s, l) => s + lineGross(l), 0);
+  const vat = taxableLines.reduce((s, l) => s + (l.vatAmount ?? 0), 0);
+  const total = taxable + vat + exempt;
+  return { gross, discount, taxable, exempt, vat, total };
+}

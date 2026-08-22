@@ -1,6 +1,7 @@
 import { DatePicker } from "@/components/common/date-picker";
 import { EmptyState, Money, PageHeader } from "@/components/common/primitives";
 import { MediaThumb } from "@/components/inventory/media-picker";
+import { DecimalTextInput, NumericInput } from "@/components/inventory/numeric-input";
 import { DirectImageUpload } from "@/components/common/direct-image-upload";
 import { CustomerDialog } from "@/components/parties/party-dialogs";
 import { PartyCombobox } from "@/components/parties/party-combobox";
@@ -15,9 +16,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useApp } from "@/context/app-store";
 import type { InvoiceLine } from "@/data/types";
 import { computeTotals } from "@/lib/invoice";
+import { priceWithVat, priceWithoutVat } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Minus, Plus, QrCode, Search, Trash2, UserPlus, Wallet } from "lucide-react";
@@ -70,6 +73,12 @@ function PosPage() {
   const [qrOpen, setQrOpen] = useState(false);
   const [date, setDate] = useState<string | null>(new Date().toISOString());
   const [custOpen, setCustOpen] = useState(false);
+  // Per-sale override of the company's VAT registration — defaults to the
+  // company setting, but lets staff print a plain no-breakdown bill for a
+  // walk-in customer who doesn't need a tax invoice, without touching the
+  // business's actual VAT registration. Only meaningful when the business
+  // is genuinely VAT-registered; a PAN-only business has nothing to toggle.
+  const [vatBillOn, setVatBillOn] = useState(app.company.vatRegistered);
 
   const branchId = app.branchId === "all" ? (app.branches[0]?.id ?? "") : app.branchId;
   const customers = app.parties.filter((p) => p.kind === "customer");
@@ -92,7 +101,19 @@ function PosPage() {
       .slice(0, 8);
   }, [q, app.variants, app.products]);
 
+  // Always the real math (VAT genuinely added on top of the exclusive
+  // rate when the business is VAT-registered) — vatBillOn only controls
+  // whether the Taxable/VAT breakdown is DISPLAYED below and on the
+  // printed bill. The customer pays the same total either way; a
+  // "VAT bill" toggled off just doesn't itemize how that total was made up.
   const totals = computeTotals(lines, app.company);
+  // Customer-facing "Sub total" — sum of shelf prices (inclusive), before
+  // discount. totals.gross is the exclusive rate sum, which is the right
+  // input for VAT math but the wrong number to show as a headline figure.
+  const inclusiveSubtotal = lines.reduce(
+    (s, l) => s + priceWithVat(l.rate, app.company.vatRate, l.taxable !== false) * l.qty,
+    0,
+  );
   const paid = cash + qr;
   const change = Math.max(0, paid - totals.total);
 
@@ -116,6 +137,7 @@ function PosPage() {
           unitId: v.unitId,
           rate: v.sellingPrice,
           discount: 0,
+          taxable: p?.taxable,
           maxStock: v.stock[branchId] ?? 0,
         },
       ];
@@ -141,16 +163,19 @@ function PosPage() {
     }
     setCheckingOut(true);
     try {
-      const res = await app.createInvoice({
-        kind: isQuotation ? "quotation" : app.company.vatRegistered ? "tax" : "abbreviated",
-        date: date ?? new Date().toISOString(),
-        branchId,
-        customerId,
-        lines: lines.map(({ maxStock: _m, ...l }) => l),
-        paymentMethod: isQuotation ? "cash" : qr > 0 && cash > 0 ? "cash" : qr > 0 ? "qr" : "cash",
-        paidAmount: isQuotation ? 0 : Math.min(paid, totals.total),
-        status: isQuotation ? "unpaid" : paid >= totals.total ? "paid" : paid > 0 ? "partial" : "unpaid",
-      });
+      const res = await app.createInvoice(
+        {
+          kind: isQuotation ? "quotation" : vatBillOn ? "tax" : "abbreviated",
+          date: date ?? new Date().toISOString(),
+          branchId,
+          customerId,
+          lines: lines.map(({ maxStock: _m, ...l }) => l),
+          paymentMethod: isQuotation ? "cash" : qr > 0 && cash > 0 ? "cash" : qr > 0 ? "qr" : "cash",
+          paidAmount: isQuotation ? 0 : Math.min(paid, totals.total),
+          status: isQuotation ? "unpaid" : paid >= totals.total ? "paid" : paid > 0 ? "partial" : "unpaid",
+        },
+        { vatOverride: vatBillOn },
+      );
       if (!res.ok || !res.invoice) {
         toast.error(res.error ?? (isQuotation ? "Failed to save quotation" : "Failed to record sale"));
         return;
@@ -230,7 +255,10 @@ function PosPage() {
                           {v.name} · {v.barcode || v.modelNo}
                         </span>
                       </span>
-                      <Money value={v.sellingPrice} className="text-sm" />
+                      <Money
+                        value={priceWithVat(v.sellingPrice, app.company.vatRate, p?.taxable !== false)}
+                        className="text-sm"
+                      />
                     </button>
                   );
                 })}
@@ -290,21 +318,29 @@ function PosPage() {
                       </div>
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <Input
-                        value={l.rate}
-                        onChange={(e) => patch(l.id, { rate: Number(e.target.value) || 0 })}
-                        className="num h-7 w-24 text-right"
+                      <DecimalTextInput
+                        value={priceWithVat(l.rate, app.company.vatRate, l.taxable !== false)}
+                        onChange={(v) =>
+                          patch(l.id, {
+                            rate: priceWithoutVat(v, app.company.vatRate, l.taxable !== false),
+                          })
+                        }
+                        className="h-7 w-24 text-right"
+                        title="Shelf price (incl. VAT)"
                       />
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <Input
+                      <NumericInput
                         value={l.discount}
                         onChange={(e) => patch(l.id, { discount: Number(e.target.value) || 0 })}
-                        className="num h-7 w-20 text-right"
+                        className="h-7 w-20 text-right"
+                        title="Discount, excl. VAT"
                       />
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <Money value={(l.rate - l.discount) * l.qty} />
+                      <Money
+                        value={priceWithVat(l.rate - l.discount, app.company.vatRate, l.taxable !== false) * l.qty}
+                      />
                     </td>
                     <td className="px-2">
                       <Button
@@ -349,20 +385,35 @@ function PosPage() {
           </div>
 
           <div className="rounded-lg border bg-card p-4">
+            {app.company.vatRegistered && (
+              <div className="mb-3 flex items-center justify-between rounded-md bg-muted/50 px-3 py-2">
+                <div>
+                  <p className="text-sm">VAT bill</p>
+                  <p className="text-xs text-muted-foreground">
+                    {vatBillOn
+                      ? "Tax invoice with taxable amount + VAT breakdown"
+                      : "Plain bill — shelf price only, no VAT breakdown"}
+                  </p>
+                </div>
+                <Switch checked={vatBillOn} onCheckedChange={setVatBillOn} />
+              </div>
+            )}
             <dl className="space-y-1.5 text-sm">
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">Sub total</dt>
                 <dd>
-                  <Money value={totals.gross} />
+                  <Money value={inclusiveSubtotal} />
                 </dd>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-muted-foreground">Discount</dt>
-                <dd>
-                  <Money value={-totals.discount} />
-                </dd>
-              </div>
-              {app.company.vatRegistered && (
+              {totals.discount > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">Discount</dt>
+                  <dd>
+                    <Money value={-totals.discount} />
+                  </dd>
+                </div>
+              )}
+              {vatBillOn && (
                 <>
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Taxable amount</dt>

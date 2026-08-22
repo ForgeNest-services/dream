@@ -62,3 +62,15 @@ def current_fiscal_year_start() -> int:
     year is the start year; earlier months belong to the prior FY."""
     bs_year, bs_month = ad_to_bs_year_month(date.today())
     return bs_year if bs_month >= 4 else bs_year - 1
+
+
+def fiscal_year_start_for_bs_date(date_bs: str) -> int:
+    """Same Shrawan-1-through-Ashad-end rule as current_fiscal_year_start,
+    but for an arbitrary BS "YYYY-MM-DD" string — used to resolve which
+    fiscal year a transaction's own date belongs to (not necessarily
+    whichever fiscal year happens to be marked active right now), so a
+    backdated purchase/sale lands in the correct FY even if entered after
+    that FY has already been closed out."""
+    bs_year = int(date_bs[:4])
+    bs_month = int(date_bs[5:7])
+    return bs_year if bs_month >= 4 else bs_year - 1

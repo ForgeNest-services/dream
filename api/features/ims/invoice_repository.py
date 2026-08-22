@@ -35,6 +35,7 @@ class IMSInvoiceRepository:
         tenant_id: str,
         branch_id: str | None,
         customer_id: str | None,
+        fiscal_year_id: str | None,
         status: str | None,
         kind: str | None,
         q: str | None,
@@ -54,6 +55,8 @@ class IMSInvoiceRepository:
             query = query.filter(IMSInvoice.branch_id == branch_id)
         if customer_id:
             query = query.filter(IMSInvoice.customer_id == customer_id)
+        if fiscal_year_id:
+            query = query.filter(IMSInvoice.fiscal_year_id == fiscal_year_id)
         if status:
             query = query.filter(IMSInvoice.status == status)
         if kind == "quotation":

@@ -6,6 +6,7 @@ import type { PageMeta } from "@/lib/api-client";
 export interface InvoicesQuery {
   branch_id?: string;
   customer_id?: string;
+  fiscal_year_id?: string;
   status?: string;
   kind?: string;
   q?: string;
@@ -16,11 +17,11 @@ export interface InvoicesQuery {
 }
 
 export function useInvoices(options: InvoicesQuery = {}) {
-  const { branch_id, customer_id, status, kind, q, bs_from, bs_to, page, per_page } = options;
+  const { branch_id, customer_id, fiscal_year_id, status, kind, q, bs_from, bs_to, page, per_page } = options;
 
   const params = useMemo<InvoicesQuery>(
-    () => ({ branch_id, customer_id, status, kind, q, bs_from, bs_to, page, per_page }),
-    [branch_id, customer_id, status, kind, q, bs_from, bs_to, page, per_page],
+    () => ({ branch_id, customer_id, fiscal_year_id, status, kind, q, bs_from, bs_to, page, per_page }),
+    [branch_id, customer_id, fiscal_year_id, status, kind, q, bs_from, bs_to, page, per_page],
   );
 
   const [invoices, setInvoices] = useState<InvoiceDto[]>([]);

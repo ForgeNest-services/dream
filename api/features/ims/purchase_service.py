@@ -6,6 +6,8 @@ from features.ims.product_repository import IMSProductRepository
 from features.ims.category_repository import IMSCategoryRepository
 from features.ims.party_repository import IMSPartyRepository
 from features.ims.fiscal_year_service import IMSFiscalYearService
+from features.ims.fiscal_year_repository import IMSFiscalYearRepository
+from features.ims.nepali_date import fiscal_year_start_for_bs_date
 from features.branches.repository import BranchRepository
 from features.ims import purchase_txn_helpers as txn
 from utils.bikram_sambat import to_bs_iso
@@ -19,6 +21,7 @@ class IMSPurchaseService:
         tenant_id: str,
         branch_id: str | None,
         party_id: str | None,
+        fiscal_year_id: str | None,
         q: str | None,
         bs_from: str | None,
         bs_to: str | None,
@@ -26,7 +29,7 @@ class IMSPurchaseService:
         limit: int,
     ) -> dict:
         items, total = IMSPurchaseRepository.list_for_tenant(
-            db, tenant_id, branch_id, party_id, q, bs_from, bs_to, offset, limit
+            db, tenant_id, branch_id, party_id, fiscal_year_id, q, bs_from, bs_to, offset, limit
         )
         return {"success": True, "purchases": items, "total": total}
 
@@ -61,6 +64,11 @@ class IMSPurchaseService:
             seq = IMSPurchaseRepository.count_for_tenant(db, tenant_id) + 1
             number = f"PB-{start_year}-{1000 + seq}"
             date_bs = to_bs_iso(date) or ""
+            # Resolved from this purchase's OWN date, not the active fiscal
+            # year — see IMSInvoiceService.create's matching comment.
+            fy = IMSFiscalYearRepository.get_or_create_by_start_year(
+                db, tenant_id, fiscal_year_start_for_bs_date(date_bs)
+            )
 
             purchase = IMSPurchaseRepository.create(
                 db,
@@ -68,6 +76,7 @@ class IMSPurchaseService:
                 number=number,
                 date=date,
                 date_bs=date_bs,
+                fiscal_year_id=fy.id,
                 branch_id=branch_id,
                 party_id=party_id,
                 bill_no=bill_no,

@@ -24,6 +24,7 @@ export interface InvoiceDto {
   kind: "tax" | "abbreviated" | "quotation";
   date: string;
   date_bs: string;
+  fiscal_year_id: string | null;
   branch_id: string;
   customer_id: string;
   gross_amount: number | string;
@@ -76,6 +77,7 @@ export const invoicesApi = {
     params: {
       branch_id?: string;
       customer_id?: string;
+      fiscal_year_id?: string;
       status?: string;
       kind?: string;
       q?: string;
@@ -88,6 +90,7 @@ export const invoicesApi = {
     const qs = new URLSearchParams();
     if (params.branch_id) qs.set("branch_id", params.branch_id);
     if (params.customer_id) qs.set("customer_id", params.customer_id);
+    if (params.fiscal_year_id) qs.set("fiscal_year_id", params.fiscal_year_id);
     if (params.status) qs.set("status", params.status);
     if (params.kind) qs.set("kind", params.kind);
     if (params.q) qs.set("q", params.q);

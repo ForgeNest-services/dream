@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/context/app-store";
 import { amountInWords, formatMoney } from "@/lib/format";
-import { computeTotals, lineGross } from "@/lib/invoice";
+import { computeStoredTotals, lineGross } from "@/lib/invoice";
 import { formatAd, formatBs } from "@/lib/nepali-date";
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { ArrowLeft, Printer } from "lucide-react";
@@ -67,12 +67,18 @@ function PrintInvoicePage() {
   const c = app.company;
   const cust = app.parties.find((p) => p.id === inv.customerId);
   const branch = app.branches.find((b) => b.id === inv.branchId);
-  const t = computeTotals(inv.lines, c);
+  const t = computeStoredTotals(inv.lines);
   const date = new Date(inv.date);
   const isQuote = inv.kind === "quotation";
+  // Whether this invoice actually carries VAT is a property of the invoice
+  // itself (its stored lines), not today's live company.vatRegistered
+  // toggle — a bill made when VAT was off must always print as a plain
+  // invoice, even if the company later turns VAT on, and vice versa.
+  const hasVat = t.vat > 0;
+  const displayVatRate = inv.lines.find((l) => l.taxable !== false && l.taxRate)?.taxRate ?? c.vatRate;
   const docTitle = isQuote
     ? "Quotation / कोटेशन"
-    : c.vatRegistered
+    : hasVat
       ? inv.kind === "abbreviated"
         ? "Abbreviated Tax Invoice / संक्षिप्त कर बीजक"
         : "Tax Invoice / कर बीजक"
@@ -128,7 +134,7 @@ function PrintInvoicePage() {
             Tel: {c.phone} · {c.email}
           </p>
           <p className="font-medium">
-            {c.vatRegistered ? "VAT No." : "PAN No."} {c.pan}
+            {hasVat ? "VAT No." : "PAN No."} {c.pan}
           </p>
         </div>
 
@@ -187,7 +193,7 @@ function PrintInvoicePage() {
                 <td className="px-1 py-1.5">{idx + 1}</td>
                 <td className="px-1 py-1.5">
                   {l.description}
-                  {c.vatRegistered && l.taxable === false ? (
+                  {hasVat && l.taxable === false ? (
                     <span className="ml-1 text-[9px] uppercase text-black/60">(non-taxable)</span>
                   ) : null}
                 </td>
@@ -213,7 +219,7 @@ function PrintInvoicePage() {
               <dt>Discount</dt>
               <dd>{formatMoney(t.discount, app.currency)}</dd>
             </div>
-            {c.vatRegistered && (
+            {hasVat && (
               <>
                 {t.exempt > 0 ? (
                   <div className="flex justify-between">
@@ -226,7 +232,7 @@ function PrintInvoicePage() {
                   <dd>{formatMoney(t.taxable, app.currency)}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt>VAT @ {c.vatRate}%</dt>
+                  <dt>VAT @ {displayVatRate}%</dt>
                   <dd>{formatMoney(t.vat, app.currency)}</dd>
                 </div>
               </>

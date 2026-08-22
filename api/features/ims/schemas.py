@@ -366,6 +366,7 @@ class PurchaseData(BaseModel):
     number: str
     date: datetime
     date_bs: str
+    fiscal_year_id: str | None
     branch_id: str
     party_id: str | None
     bill_no: str | None
@@ -470,6 +471,7 @@ class InvoiceData(BaseModel):
     kind: str
     date: datetime
     date_bs: str
+    fiscal_year_id: str | None
     branch_id: str
     customer_id: str
     gross_amount: Decimal

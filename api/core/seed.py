@@ -301,6 +301,80 @@ def ensure_ims_variant_expiry_schema() -> None:
         db.close()
 
 
+def ensure_ims_fiscal_year_link_schema() -> None:
+    """Back-fill fiscal_year_id onto ims_invoices and ims_purchases (see
+    both models' docstrings) — a real FK so sales/purchases are directly
+    filterable/joinable by fiscal year, instead of the fiscal year only
+    ever appearing baked into the human-readable `number` string. Existing
+    rows are resolved from their own date_bs via the same
+    Shrawan-1-through-Ashad-end rule used for new rows, auto-creating any
+    fiscal_years row that doesn't exist yet — safe to re-run since the
+    UPDATE only touches rows where fiscal_year_id IS NULL."""
+    from features.ims.nepali_date import fiscal_year_start_for_bs_date
+    from shared_models import IMSFiscalYear
+
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.ims_invoices "
+            "ADD COLUMN IF NOT EXISTS fiscal_year_id VARCHAR(36) "
+            "REFERENCES public.ims_fiscal_years(id)"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.ims_purchases "
+            "ADD COLUMN IF NOT EXISTS fiscal_year_id VARCHAR(36) "
+            "REFERENCES public.ims_fiscal_years(id)"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ims_invoice_fiscal_year "
+            "ON public.ims_invoices (fiscal_year_id)"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_ims_purchase_fiscal_year "
+            "ON public.ims_purchases (fiscal_year_id)"
+        ))
+        db.commit()
+
+        # tenant_id + start_year -> fiscal_year_id, populated lazily as rows
+        # are resolved below rather than pre-scanning every tenant.
+        fy_cache: dict[tuple[str, int], str] = {}
+
+        def resolve_fy_id(tenant_id: str, date_bs: str) -> str:
+            start_year = fiscal_year_start_for_bs_date(date_bs)
+            key = (tenant_id, start_year)
+            if key in fy_cache:
+                return fy_cache[key]
+            fy = (
+                db.query(IMSFiscalYear)
+                .filter(IMSFiscalYear.tenant_id == tenant_id, IMSFiscalYear.start_year == start_year)
+                .first()
+            )
+            if not fy:
+                fy = IMSFiscalYear(tenant_id=tenant_id, start_year=start_year, is_active=False)
+                db.add(fy)
+                db.flush()
+            fy_cache[key] = fy.id
+            return fy.id
+
+        for table in ("ims_invoices", "ims_purchases"):
+            rows = db.execute(text(
+                f"SELECT id, tenant_id, date_bs FROM public.{table} WHERE fiscal_year_id IS NULL"
+            )).fetchall()
+            for row in rows:
+                fy_id = resolve_fy_id(row.tenant_id, row.date_bs)
+                db.execute(
+                    text(f"UPDATE public.{table} SET fiscal_year_id = :fy_id WHERE id = :id"),
+                    {"fy_id": fy_id, "id": row.id},
+                )
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill ims fiscal year link schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
 def seed_apps():
     db = SessionLocal()
     try:

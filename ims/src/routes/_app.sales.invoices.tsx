@@ -24,6 +24,7 @@ import { useEffect, useState } from "react";
 interface InvoicesSearch {
   q: string;
   status: string;
+  fiscalYearId: string;
   from: string;
   to: string;
   page: number;
@@ -56,6 +57,7 @@ export const Route = createFileRoute("/_app/sales/invoices")({
     return {
       q: typeof search.q === "string" ? search.q : "",
       status: typeof search.status === "string" ? search.status : "all",
+      fiscalYearId: typeof search.fiscalYearId === "string" ? search.fiscalYearId : "all",
       // Bikram Sambat "YYYY-MM-DD" strings, sent straight through to the
       // backend's bs_from/bs_to (see IMSInvoice.date_bs).
       from: typeof search.from === "string" ? search.from : "",
@@ -113,6 +115,7 @@ function InvoicesPage() {
   const { invoices: invoiceDtos, meta, isLoading } = useInvoices({
     branch_id: app.branchId === "all" ? undefined : app.branchId,
     status: search.status === "all" ? undefined : search.status,
+    fiscal_year_id: search.fiscalYearId === "all" ? undefined : search.fiscalYearId,
     q: debouncedQ || undefined,
     bs_from: search.from || undefined,
     bs_to: search.to || undefined,
@@ -183,6 +186,22 @@ function InvoicesPage() {
             <SelectItem value="paid">Paid</SelectItem>
             <SelectItem value="partial">Partial</SelectItem>
             <SelectItem value="unpaid">Unpaid</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={search.fiscalYearId}
+          onValueChange={(v) => setSearch({ fiscalYearId: v, page: 1 })}
+        >
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All fiscal years</SelectItem>
+            {app.fiscalYears.map((f) => (
+              <SelectItem key={f.id} value={f.id} className="num">
+                {f.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <BsDateRangeFilter

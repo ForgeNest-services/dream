@@ -387,6 +387,7 @@ interface AppContextValue extends AppState {
   }) => Promise<{ ok: boolean; error?: string }>;
   createInvoice: (
     inv: Omit<Invoice, "id" | "number" | "userId">,
+    options?: { vatOverride?: boolean | undefined } | undefined,
   ) => Promise<{ ok: boolean; invoice?: Invoice; error?: string }>;
   convertQuotation: (
     id: string,
@@ -1169,8 +1170,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       },
 
-      createInvoice: async (inv) => {
+      createInvoice: async (inv, options) => {
         const isQuotation = inv.kind === "quotation";
+        // Per-sale VAT-bill toggle (POS) overrides the company-wide
+        // setting for this one sale only — lets staff print a plain
+        // no-breakdown bill for a walk-in customer even on a VAT-registered
+        // business, without touching the company's actual VAT registration.
+        const vatRegistered = options?.vatOverride ?? state.company.vatRegistered;
         const payload: CreateInvoicePayload = {
           date: inv.date,
           branch_id: inv.branchId,
@@ -1185,7 +1191,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             discount: l.discount,
             taxable: l.taxable,
           })),
-          vat_registered: state.company.vatRegistered,
+          vat_registered: vatRegistered,
           vat_rate: state.company.vatRate,
           invoice_prefix: state.company.invoicePrefix,
           is_quotation: isQuotation,

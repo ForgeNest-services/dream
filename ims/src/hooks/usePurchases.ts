@@ -6,6 +6,7 @@ import type { PageMeta } from "@/lib/api-client";
 export interface PurchasesQuery {
   branch_id?: string;
   party_id?: string;
+  fiscal_year_id?: string;
   q?: string;
   bs_from?: string;
   bs_to?: string;
@@ -14,11 +15,11 @@ export interface PurchasesQuery {
 }
 
 export function usePurchases(options: PurchasesQuery = {}) {
-  const { branch_id, party_id, q, bs_from, bs_to, page, per_page } = options;
+  const { branch_id, party_id, fiscal_year_id, q, bs_from, bs_to, page, per_page } = options;
 
   const params = useMemo<PurchasesQuery>(
-    () => ({ branch_id, party_id, q, bs_from, bs_to, page, per_page }),
-    [branch_id, party_id, q, bs_from, bs_to, page, per_page],
+    () => ({ branch_id, party_id, fiscal_year_id, q, bs_from, bs_to, page, per_page }),
+    [branch_id, party_id, fiscal_year_id, q, bs_from, bs_to, page, per_page],
   );
 
   const [purchases, setPurchases] = useState<PurchaseDto[]>([]);

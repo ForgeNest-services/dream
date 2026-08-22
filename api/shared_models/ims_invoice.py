@@ -18,6 +18,7 @@ class IMSInvoice(Base):
     __tablename__ = "ims_invoices"
     __table_args__ = (
         Index("ix_ims_invoice_branch_date_bs", "branch_id", "date_bs"),
+        Index("ix_ims_invoice_fiscal_year", "fiscal_year_id"),
         {"schema": "public"},
     )
 
@@ -27,6 +28,11 @@ class IMSInvoice(Base):
     kind = Column(String(20), nullable=False)  # "tax" | "abbreviated"
     date = Column(DateTime, nullable=False)
     date_bs = Column(String(10), nullable=False)
+    # Resolved from the invoice's own date_bs (see
+    # nepali_date.fiscal_year_start_for_bs_date), not whichever fiscal year
+    # happens to be active at creation time — a backdated invoice still
+    # lands in the fiscal year its own date actually falls in.
+    fiscal_year_id = Column(String(36), ForeignKey("public.ims_fiscal_years.id"), nullable=True)
     branch_id = Column(String(36), ForeignKey("public.branches.id"), nullable=False, index=True)
     customer_id = Column(String(36), ForeignKey("public.ims_parties.id"), nullable=False, index=True)
 

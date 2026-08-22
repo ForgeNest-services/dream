@@ -17,6 +17,7 @@ class IMSPurchase(Base):
         # BS date-range filters (Purchase Bills page) hit this index —
         # same pattern as restro_order.placed_at_bs.
         Index("ix_ims_purchase_branch_date_bs", "branch_id", "date_bs"),
+        Index("ix_ims_purchase_fiscal_year", "fiscal_year_id"),
         {"schema": "public"},
     )
 
@@ -28,6 +29,10 @@ class IMSPurchase(Base):
     # (not a view) so BS range filters hit an index and records survive
     # calendar-table corrections. See api/utils/bikram_sambat.py.
     date_bs = Column(String(10), nullable=False)
+    # Resolved from the purchase's own date_bs (see
+    # nepali_date.fiscal_year_start_for_bs_date) — see IMSInvoice's matching
+    # column for why this isn't just "whichever FY is active right now".
+    fiscal_year_id = Column(String(36), ForeignKey("public.ims_fiscal_years.id"), nullable=True)
     branch_id = Column(String(36), ForeignKey("public.branches.id"), nullable=False, index=True)
     # Not ON DELETE CASCADE/SET NULL on purpose — a party with purchase
     # history can never be hard-deleted (see IMSPartyService.delete's
