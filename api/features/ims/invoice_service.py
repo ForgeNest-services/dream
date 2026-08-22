@@ -12,14 +12,19 @@ from utils.logger import logger
 
 
 def _compute_totals(lines: list[dict], vat_registered: bool, vat_rate: Decimal) -> dict:
-    """Mirrors lib/invoice.ts's computeTotals — gross/discount are sums of
-    (rate, discount) as entered; taxable/vat come from a VAT-inclusive split
-    of the taxable lines' net amount (rate already includes VAT when the
-    tenant is registered)."""
+    """Mirrors lib/invoice.ts's computeTotals. rate is VAT-EXCLUSIVE (see
+    docs/arch.md) — the same convention as IMSPurchaseLine.unit_cost and
+    IMSVariant.selling_price. VAT is added on top of the taxable lines' net
+    amount, never backed out of it — a line priced at 100 sells for 113 at
+    13% VAT, not 100 total. Also returns each line's per-line vat_amount
+    (line_gross * vat_rate / 100, 0 if not taxable/not vat_registered) so
+    the caller can snapshot it on IMSInvoiceLine.vat_amount."""
     gross = Decimal(0)
     discount_total = Decimal(0)
     taxable_net = Decimal(0)
     exempt_net = Decimal(0)
+    line_vats: list[Decimal] = []
+    effective_rate = vat_rate if vat_registered else Decimal(0)
     for line in lines:
         qty = line["qty"]
         rate = line["rate"]
@@ -28,26 +33,26 @@ def _compute_totals(lines: list[dict], vat_registered: bool, vat_rate: Decimal) 
         line_gross = (rate - discount) * qty
         gross += rate * qty
         discount_total += discount * qty
-        if taxable:
+        if taxable and vat_registered:
             taxable_net += line_gross
+            line_vat = (line_gross * effective_rate) / 100
         else:
             exempt_net += line_gross
+            line_vat = Decimal(0)
+        line_vats.append(line_vat)
 
-    if vat_registered and vat_rate > 0:
-        taxable_amount = taxable_net / (1 + vat_rate / 100)
-        vat_amount = taxable_net - taxable_amount
-    else:
-        taxable_amount = taxable_net
-        vat_amount = Decimal(0)
-    total_amount = taxable_amount + vat_amount + exempt_net
+    vat_amount = taxable_net * effective_rate / 100 if vat_registered else Decimal(0)
+    total_amount = taxable_net + vat_amount + exempt_net
 
     return {
         "gross": gross,
         "discount": discount_total,
-        "taxable": taxable_amount,
+        "taxable": taxable_net,
         "exempt": exempt_net,
         "vat": vat_amount,
         "total": total_amount,
+        "line_vats": line_vats,
+        "effective_rate": effective_rate,
     }
 
 
@@ -126,14 +131,17 @@ class IMSInvoiceService:
                 user_id=user_id,
             )
 
+            totals = _compute_totals(lines, vat_registered, vat_rate)
+
             lines_written = 0
-            for line in lines:
+            for line, line_vat in zip(lines, totals["line_vats"]):
                 variant = IMSProductRepository.get_variant(db, tenant_id, line["variant_id"])
                 if not variant:
                     db.rollback()
                     return {"success": False, "error_code": "VARIANT_NOT_FOUND"}
                 product = IMSProductRepository.get_by_id(db, tenant_id, variant.product_id)
 
+                taxable = line.get("taxable", True) is not False
                 IMSInvoiceRepository.add_line(
                     db,
                     invoice_id=invoice.id,
@@ -144,7 +152,9 @@ class IMSInvoiceService:
                     unit_id=variant.unit_id,
                     rate=line["rate"],
                     discount=line.get("discount") or Decimal(0),
-                    taxable=line.get("taxable", True) is not False,
+                    taxable=taxable,
+                    tax_rate=totals["effective_rate"] if taxable else Decimal(0),
+                    vat_amount=line_vat,
                 )
                 lines_written += 1
 
@@ -175,7 +185,6 @@ class IMSInvoiceService:
                 db.rollback()
                 return {"success": False, "error_code": "NO_ITEMS"}
 
-            totals = _compute_totals(lines, vat_registered, vat_rate)
             invoice.gross_amount = totals["gross"]
             invoice.discount_amount = totals["discount"]
             invoice.taxable_amount = totals["taxable"]
@@ -271,7 +280,9 @@ class IMSInvoiceService:
                 for line in invoice.lines
             ]
 
-            for line_dict, line in zip(lines_as_dicts, invoice.lines):
+            totals = _compute_totals(lines_as_dicts, vat_registered, vat_rate)
+
+            for line_dict, line, line_vat in zip(lines_as_dicts, invoice.lines, totals["line_vats"]):
                 variant = IMSProductRepository.get_variant(db, tenant_id, line.variant_id)
                 if not variant:
                     db.rollback()
@@ -293,8 +304,12 @@ class IMSInvoiceService:
                     reference=number,
                     user_id=user_id,
                 )
+                # A quotation's lines are written with tax_rate/vat_amount at
+                # 0 (no VAT applies to a price offer) — snapshot the real
+                # values now that this is becoming a real, VAT-applicable sale.
+                line.tax_rate = totals["effective_rate"] if line_dict["taxable"] else Decimal(0)
+                line.vat_amount = line_vat
 
-            totals = _compute_totals(lines_as_dicts, vat_registered, vat_rate)
             capped_paid = min(paid_amount, totals["total"]) if paid_amount > 0 else Decimal(0)
 
             invoice.number = number

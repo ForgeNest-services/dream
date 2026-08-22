@@ -257,6 +257,50 @@ def ensure_ims_bs_date_schema() -> None:
         db.close()
 
 
+def ensure_ims_invoice_line_vat_schema() -> None:
+    """Back-fill tax_rate/vat_amount onto ims_invoice_lines (added so a
+    historical invoice's VAT can be recomputed from its own lines, matching
+    IMSPurchaseLine's existing tax_rate/vat_amount columns — see
+    IMSInvoiceLine's docstring). Existing rows predate per-line VAT
+    snapshotting, so they back-fill to 0 rather than a guessed value — the
+    header-level taxable_amount/vat_amount on ims_invoices is still correct
+    and unaffected; only the per-line breakdown is unknown for old rows."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.ims_invoice_lines "
+            "ADD COLUMN IF NOT EXISTS tax_rate NUMERIC(5,2) NOT NULL DEFAULT 0"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.ims_invoice_lines "
+            "ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(12,2) NOT NULL DEFAULT 0"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill ims_invoice_lines VAT schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
+def ensure_ims_variant_expiry_schema() -> None:
+    """Back-fill the optional expiry_date column onto ims_variants (single
+    date per variant, no batch/lot tracking — see IMSVariant's docstring)."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.ims_variants ADD COLUMN IF NOT EXISTS expiry_date DATE"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill ims_variants expiry schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
 def seed_apps():
     db = SessionLocal()
     try:

@@ -5,10 +5,12 @@ from core.database import Base
 
 
 class IMSInvoiceLine(Base):
-    """One product/variant sold on an invoice. rate is VAT-inclusive when the
-    tenant is VAT-registered (matches InvoiceLine.rate's mock doc comment —
-    see lib/invoice.ts's splitVatInclusive). taxable is snapshotted at sale
-    time, same convention as IMSPurchaseLine."""
+    """One product/variant sold on an invoice. rate is VAT-EXCLUSIVE — the
+    same convention as IMSPurchaseLine.unit_cost and IMSVariant.selling_price
+    (see docs/arch.md). VAT is added on top of rate, never backed out of it.
+    tax_rate/vat_amount are snapshotted per line at sale time (mirrors
+    IMSPurchaseLine) so a historical invoice's VAT can be recomputed from its
+    own lines even if the branch's vat_rate changes later."""
 
     __tablename__ = "ims_invoice_lines"
     __table_args__ = ({"schema": "public"},)
@@ -25,6 +27,8 @@ class IMSInvoiceLine(Base):
     rate = Column(Numeric(10, 2), nullable=False)
     discount = Column(Numeric(10, 2), nullable=False, default=0)
     taxable = Column(Boolean, nullable=False, default=True)
+    tax_rate = Column(Numeric(5, 2), nullable=False, default=0)
+    vat_amount = Column(Numeric(12, 2), nullable=False, default=0)
 
     invoice = relationship("IMSInvoice", back_populates="lines")
 

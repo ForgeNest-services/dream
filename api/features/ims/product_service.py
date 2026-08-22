@@ -103,6 +103,7 @@ class IMSProductService:
                 cost_price=v.get("cost_price") or 0,
                 selling_price=v.get("selling_price") or 0,
                 low_stock_at=v.get("low_stock_at") or 10,
+                expiry_date=v.get("expiry_date"),
             )
             initial_stock = v.get("initial_stock") or 0
             if initial_stock and branch_id_for_stock:
@@ -196,6 +197,7 @@ class IMSProductService:
                     cost_price=v.get("cost_price") or 0,
                     selling_price=v.get("selling_price") or 0,
                     low_stock_at=v.get("low_stock_at") or 10,
+                    expiry_date=v.get("expiry_date"),
                 )
             else:
                 IMSProductRepository.add_variant(
@@ -210,6 +212,7 @@ class IMSProductService:
                     cost_price=v.get("cost_price") or 0,
                     selling_price=v.get("selling_price") or 0,
                     low_stock_at=v.get("low_stock_at") or 10,
+                    expiry_date=v.get("expiry_date"),
                 )
 
         for vid, variant in existing_by_id.items():

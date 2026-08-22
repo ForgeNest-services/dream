@@ -119,6 +119,9 @@ export interface Variant {
   /** stock per branch id */
   stock: Record<string, number>;
   lowStockAt: number;
+  /** Optional single expiry date (ISO "YYYY-MM-DD"), one per variant — not
+   *  per batch/lot. Restocking with a new expiry overwrites this. */
+  expiryDate?: string | undefined;
 }
 
 export interface Product {
@@ -190,10 +193,17 @@ export interface InvoiceLine {
   description: string;
   qty: number;
   unitId: string;
-  rate: number; // VAT inclusive when company is VAT registered
+  /** VAT-EXCLUSIVE — same convention as Product.sellingPrice and Purchase's
+   * unitCost (see docs/arch.md). VAT is added on top, never backed out. */
+  rate: number;
   discount: number;
   /** false = VAT exempt / non-taxable item. Undefined is treated as taxable. */
   taxable?: boolean | undefined;
+  /** Snapshotted at sale time — 0 for exempt lines or non-VAT-registered
+   * sales. Present once loaded back from the backend; a freshly-built POS
+   * cart line won't have these until the invoice is actually created. */
+  taxRate?: number | undefined;
+  vatAmount?: number | undefined;
 }
 
 export type InvoiceStatus = "paid" | "partial" | "unpaid" | "cancelled";

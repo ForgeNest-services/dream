@@ -14,6 +14,8 @@ from core.seed import (
     ensure_ims_products_schema,
     ensure_ims_parties_schema,
     ensure_ims_bs_date_schema,
+    ensure_ims_invoice_line_vat_schema,
+    ensure_ims_variant_expiry_schema,
 )
 from core.storage import ensure_bucket
 import shared_models
@@ -58,6 +60,22 @@ async def lifespan(app: FastAPI):
         logger.info("ims BS date schema backfill completed")
     except Exception as e:
         logger.error(f"Failed to backfill ims BS date schema: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Backfilling ims_invoice_lines VAT schema...")
+        ensure_ims_invoice_line_vat_schema()
+        logger.info("ims_invoice_lines VAT schema backfill completed")
+    except Exception as e:
+        logger.error(f"Failed to backfill ims_invoice_lines VAT schema: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Backfilling ims_variants expiry schema...")
+        ensure_ims_variant_expiry_schema()
+        logger.info("ims_variants expiry schema backfill completed")
+    except Exception as e:
+        logger.error(f"Failed to backfill ims_variants expiry schema: {type(e).__name__}: {str(e)}")
         raise
 
     try:

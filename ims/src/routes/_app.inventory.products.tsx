@@ -168,6 +168,23 @@ function ProductsPage() {
     return "in-stock";
   };
 
+  const EXPIRY_WARN_DAYS = 14;
+  const daysUntil = (isoDate: string) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(isoDate);
+    target.setHours(0, 0, 0, 0);
+    return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  };
+  /** Soonest expiry across a product's variants that still have stock —
+   *  an already-sold-out expired variant isn't worth flagging. */
+  const soonestExpiry = (productId: string): { days: number; date: string } | null => {
+    const vs = app.variantsOf(productId).filter((v) => v.expiryDate && app.stockOf(v) > 0);
+    if (vs.length === 0) return null;
+    const soonest = vs.reduce((a, b) => (a.expiryDate! < b.expiryDate! ? a : b));
+    return { days: daysUntil(soonest.expiryDate!), date: soonest.expiryDate! };
+  };
+
   const rows = products.map(dtoToProduct);
 
   const exportCsv = () =>
@@ -374,7 +391,28 @@ function ProductsPage() {
                           )}
                         </td>
                         <td className="px-3 py-2.5">
-                          <StatusPill status={statusOf(p.id)} />
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <StatusPill status={statusOf(p.id)} />
+                            {(() => {
+                              const exp = soonestExpiry(p.id);
+                              if (!exp) return null;
+                              if (exp.days < 0) {
+                                return (
+                                  <span className="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                                    Expired
+                                  </span>
+                                );
+                              }
+                              if (exp.days <= EXPIRY_WARN_DAYS) {
+                                return (
+                                  <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+                                    Expires in {exp.days}d
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
+                          </div>
                         </td>
                         <td className="px-3 py-2.5 text-right">
                           <div className="flex justify-end gap-1">
@@ -445,29 +483,50 @@ function ProductsPage() {
                                   <th className="py-1 text-right font-medium">Cost</th>
                                   <th className="py-1 text-right font-medium">Selling</th>
                                   <th className="py-1 text-right font-medium">Stock</th>
+                                  <th className="py-1 text-left font-medium">Expiry</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {vs.map((v) => (
-                                  <tr key={v.id} className="border-t border-border/60">
-                                    <td className="py-1.5">{v.name}</td>
-                                    <td className="num py-1.5">{v.modelNo || "—"}</td>
-                                    <td className="num py-1.5">{v.barcode || "—"}</td>
-                                    <td className="py-1.5">{app.unitSymbol(v.unitId)}</td>
-                                    <td className="py-1.5 text-right">
-                                      <Money value={v.costPrice} />
-                                    </td>
-                                    <td className="py-1.5 text-right">
-                                      <Money value={v.sellingPrice} />
-                                    </td>
-                                    <td className="py-1.5 text-right">
-                                      <Qty
-                                        value={app.stockOf(v)}
-                                        unit={app.unitSymbol(v.unitId)}
-                                      />
-                                    </td>
-                                  </tr>
-                                ))}
+                                {vs.map((v) => {
+                                  const days = v.expiryDate ? daysUntil(v.expiryDate) : null;
+                                  return (
+                                    <tr key={v.id} className="border-t border-border/60">
+                                      <td className="py-1.5">{v.name}</td>
+                                      <td className="num py-1.5">{v.modelNo || "—"}</td>
+                                      <td className="num py-1.5">{v.barcode || "—"}</td>
+                                      <td className="py-1.5">{app.unitSymbol(v.unitId)}</td>
+                                      <td className="py-1.5 text-right">
+                                        <Money value={v.costPrice} />
+                                      </td>
+                                      <td className="py-1.5 text-right">
+                                        <Money value={v.sellingPrice} />
+                                      </td>
+                                      <td className="py-1.5 text-right">
+                                        <Qty
+                                          value={app.stockOf(v)}
+                                          unit={app.unitSymbol(v.unitId)}
+                                        />
+                                      </td>
+                                      <td className="num py-1.5">
+                                        {v.expiryDate ? (
+                                          <span
+                                            className={
+                                              days !== null && days < 0
+                                                ? "text-destructive"
+                                                : days !== null && days <= EXPIRY_WARN_DAYS
+                                                  ? "text-amber-600 dark:text-amber-400"
+                                                  : ""
+                                            }
+                                          >
+                                            {v.expiryDate}
+                                          </span>
+                                        ) : (
+                                          "—"
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </td>

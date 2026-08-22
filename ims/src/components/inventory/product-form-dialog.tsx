@@ -37,6 +37,7 @@ interface DraftVariant {
   costPrice: number;
   sellingPrice: number;
   lowStockAt: number;
+  expiryDate: string;
   /** Only meaningful for new products — ignored when editing. */
   initialStock: number;
 }
@@ -92,6 +93,7 @@ export function ProductFormDialog({
           costPrice: v.costPrice,
           sellingPrice: v.sellingPrice,
           lowStockAt: v.lowStockAt,
+          expiryDate: v.expiryDate ?? "",
           initialStock: 0,
         })),
       );
@@ -117,6 +119,7 @@ export function ProductFormDialog({
   const [baseBarcode, setBaseBarcode] = useState("");
   const [baseStock, setBaseStock] = useState(0);
   const [baseLowStockAt, setBaseLowStockAt] = useState(10);
+  const [baseExpiryDate, setBaseExpiryDate] = useState("");
 
   useEffect(() => {
     if (open && !product) {
@@ -127,6 +130,7 @@ export function ProductFormDialog({
       setBaseBarcode("");
       setBaseStock(0);
       setBaseLowStockAt(10);
+      setBaseExpiryDate("");
     } else if (open && product) {
       const first = app.variantsOf(product.id)[0];
       setBaseCost(first?.costPrice ?? 0);
@@ -135,6 +139,7 @@ export function ProductFormDialog({
       setBaseModelNo(first?.modelNo ?? "");
       setBaseBarcode(first?.barcode ?? "");
       setBaseLowStockAt(first?.lowStockAt ?? 10);
+      setBaseExpiryDate(first?.expiryDate ?? "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, product?.id]);
@@ -150,6 +155,7 @@ export function ProductFormDialog({
         costPrice: 0,
         sellingPrice: 0,
         lowStockAt: 10,
+        expiryDate: "",
         initialStock: 0,
       },
     ]);
@@ -162,13 +168,12 @@ export function ProductFormDialog({
     taxable ? sellingPrice + (sellingPrice * effectiveRate) / 100 : sellingPrice;
   const priceExclTax = (inclTax: number) =>
     taxable ? inclTax / (1 + effectiveRate / 100) : inclTax;
-  const gridCols = 7 + (taxable ? 1 : 0) + (!editing ? 1 : 0);
+  const gridCols = 9 + (!editing ? 1 : 0);
   const gridColsClass =
     {
-      7: "sm:grid-cols-7",
-      8: "sm:grid-cols-8",
       9: "sm:grid-cols-9",
-    }[gridCols] ?? "sm:grid-cols-9";
+      10: "sm:grid-cols-10",
+    }[gridCols] ?? "sm:grid-cols-10";
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -208,6 +213,7 @@ export function ProductFormDialog({
                 costPrice: baseCost,
                 sellingPrice: basePrice,
                 lowStockAt: baseLowStockAt,
+                expiryDate: baseExpiryDate,
                 initialStock: 0,
               },
             ];
@@ -222,6 +228,7 @@ export function ProductFormDialog({
           costPrice: Number(v.costPrice) || 0,
           sellingPrice: Number(v.sellingPrice) || 0,
           lowStockAt: Number(v.lowStockAt) || 0,
+          expiryDate: v.expiryDate || undefined,
         }));
         const res = await app.updateProduct(product.id, payload, rows);
         if (!res.ok) {
@@ -242,6 +249,7 @@ export function ProductFormDialog({
                   costPrice: baseCost,
                   sellingPrice: basePrice,
                   lowStockAt: baseLowStockAt,
+                  expiryDate: baseExpiryDate,
                   initialStock: baseStock,
                 },
               ]
@@ -255,6 +263,7 @@ export function ProductFormDialog({
           costPrice: Number(v.costPrice) || 0,
           sellingPrice: Number(v.sellingPrice) || 0,
           lowStockAt: Number(v.lowStockAt) || 0,
+          expiryDate: v.expiryDate || undefined,
           initialStock: Number(v.initialStock) || 0,
         }));
         const res = await app.addProduct(payload, vs, defaultBranch);
@@ -403,26 +412,41 @@ export function ProductFormDialog({
                   placeholder="0.00"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Selling price (excl. tax)</Label>
-                <Input
-                  type="number"
-                  value={basePrice}
-                  onChange={(e) => setBasePrice(Number(e.target.value))}
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 sm:col-span-2 lg:col-span-2">
                 <Label className="text-xs">
-                  Price incl. tax{taxable ? ` (${effectiveRate}%)` : ""}
+                  Selling price{taxable ? ` (VAT ${effectiveRate}%)` : ""}
                 </Label>
-                <Input
-                  type="number"
-                  value={priceInclTax(basePrice).toFixed(2)}
-                  onChange={(e) => setBasePrice(priceExclTax(Number(e.target.value)))}
-                  disabled={!taxable}
-                  placeholder="0.00"
-                />
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                      Exc. VAT
+                    </span>
+                    <Input
+                      type="number"
+                      className="pl-[4.5rem]"
+                      value={basePrice}
+                      onChange={(e) => setBasePrice(Number(e.target.value))}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                      Inc. VAT
+                    </span>
+                    <Input
+                      type="number"
+                      className="pl-[4.5rem]"
+                      value={priceInclTax(basePrice).toFixed(2)}
+                      onChange={(e) => setBasePrice(priceExclTax(Number(e.target.value)))}
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {taxable
+                    ? "Either box works — the other recalculates. Only the exclusive amount is stored; VAT is added at sale time."
+                    : "Non-VAT item — both amounts are the same."}
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Unit</Label>
@@ -467,6 +491,14 @@ export function ProductFormDialog({
                   </Button>
                 </div>
               </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Expiry date (optional)</Label>
+                <Input
+                  type="date"
+                  value={baseExpiryDate}
+                  onChange={(e) => setBaseExpiryDate(e.target.value)}
+                />
+              </div>
               {!editing && (
                 <div className="space-y-1.5">
                   <Label className="text-xs">Opening stock</Label>
@@ -502,8 +534,9 @@ export function ProductFormDialog({
                   <span>Barcode</span>
                   <span>Unit</span>
                   <span>Cost price</span>
-                  <span>Selling price (excl. tax)</span>
-                  {taxable && <span>Selling price (incl. tax)</span>}
+                  <span>Price (exc. VAT)</span>
+                  <span>Price (inc. VAT)</span>
+                  <span>Expiry (optional)</span>
                   {!editing && <span>Opening stock</span>}
                   <span className="sr-only">Actions</span>
                 </div>
@@ -565,16 +598,19 @@ export function ProductFormDialog({
                       value={v.sellingPrice}
                       onChange={(e) => patchVariant(i, { sellingPrice: Number(e.target.value) })}
                     />
-                    {taxable && (
-                      <Input
-                        type="number"
-                        placeholder="0.00"
-                        value={priceInclTax(v.sellingPrice).toFixed(2)}
-                        onChange={(e) =>
-                          patchVariant(i, { sellingPrice: priceExclTax(Number(e.target.value)) })
-                        }
-                      />
-                    )}
+                    <Input
+                      type="number"
+                      placeholder="0.00"
+                      value={priceInclTax(v.sellingPrice).toFixed(2)}
+                      onChange={(e) =>
+                        patchVariant(i, { sellingPrice: priceExclTax(Number(e.target.value)) })
+                      }
+                    />
+                    <Input
+                      type="date"
+                      value={v.expiryDate}
+                      onChange={(e) => patchVariant(i, { expiryDate: e.target.value })}
+                    />
                     {!editing && (
                       <Input
                         type="number"

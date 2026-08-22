@@ -22,6 +22,7 @@ export interface VariantDto {
   cost_price: number | string;
   selling_price: number | string;
   low_stock_at: number;
+  expiry_date: string | null;
   stock: VariantStockDto[];
 }
 
@@ -52,6 +53,7 @@ export interface VariantInput {
   cost_price: number;
   selling_price: number;
   low_stock_at: number;
+  expiry_date?: string | undefined;
   initial_stock?: number | undefined;
 }
 

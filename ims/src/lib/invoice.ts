@@ -1,5 +1,4 @@
 import type { CompanyProfile, Invoice, InvoiceLine } from "@/data/types";
-import { splitVatInclusive } from "@/lib/format";
 
 export interface InvoiceTotals {
   gross: number;
@@ -24,19 +23,24 @@ export function isTaxable(l: { taxable?: boolean | undefined }) {
   return l.taxable !== false;
 }
 
+// rate is VAT-EXCLUSIVE (see docs/arch.md) — the same convention as
+// Product.sellingPrice and Purchase's unit_cost. VAT is added on top of the
+// taxable lines' net amount, never backed out of it. A product priced at
+// Rs 100 exclusive sells for Rs 113 at 13% VAT, not Rs 100 total.
 export function computeTotals(
   lines: TotalsLine[],
   company: Pick<CompanyProfile, "vatRegistered" | "vatRate">,
 ): InvoiceTotals {
   const gross = lines.reduce((s, l) => s + l.rate * l.qty, 0);
   const discount = lines.reduce((s, l) => s + l.discount * l.qty, 0);
-  const total = gross - discount;
   if (!company.vatRegistered) {
+    const total = gross - discount;
     return { gross, discount, taxable: total, exempt: 0, vat: 0, total };
   }
-  const taxableNet = lines.filter(isTaxable).reduce((s, l) => s + lineGross(l), 0);
+  const taxable = lines.filter(isTaxable).reduce((s, l) => s + lineGross(l), 0);
   const exempt = lines.filter((l) => !isTaxable(l)).reduce((s, l) => s + lineGross(l), 0);
-  const { taxable, vat } = splitVatInclusive(taxableNet, company.vatRate);
+  const vat = (taxable * company.vatRate) / 100;
+  const total = taxable + vat + exempt;
   return { gross, discount, taxable, exempt, vat, total };
 }
 

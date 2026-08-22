@@ -128,6 +128,7 @@ const toVariant = (v: VariantDto): Variant => ({
   sellingPrice: num(v.selling_price),
   stock: Object.fromEntries(v.stock.map((s) => [s.branch_id, num(s.qty)])),
   lowStockAt: num(v.low_stock_at),
+  expiryDate: v.expiry_date ?? undefined,
 });
 const toProduct = (p: ProductDto): Product => ({
   id: p.id,
@@ -229,6 +230,8 @@ const toInvoice = (i: InvoiceDto): Invoice => ({
       rate: num(l.rate),
       discount: num(l.discount),
       taxable: l.taxable,
+      taxRate: num(l.tax_rate),
+      vatAmount: num(l.vat_amount),
     }),
   ),
   paymentMethod: i.payment_method as PaymentMethod,
@@ -704,6 +707,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           cost_price: v.costPrice,
           selling_price: v.sellingPrice,
           low_stock_at: v.lowStockAt,
+          expiry_date: v.expiryDate || undefined,
           initial_stock: v.initialStock,
         }));
         try {
@@ -744,6 +748,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           cost_price: v.costPrice,
           selling_price: v.sellingPrice,
           low_stock_at: v.lowStockAt,
+          expiry_date: v.expiryDate || undefined,
         }));
         try {
           const res = await productsApi.update(id, {

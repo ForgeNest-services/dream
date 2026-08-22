@@ -13,6 +13,8 @@ export interface InvoiceLineDto {
   rate: number | string;
   discount: number | string;
   taxable: boolean;
+  tax_rate: number | string;
+  vat_amount: number | string;
 }
 
 export interface InvoiceDto {

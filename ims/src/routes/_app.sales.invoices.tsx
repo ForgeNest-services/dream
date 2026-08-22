@@ -87,6 +87,8 @@ function dtoToInvoice(i: InvoiceDto): Invoice {
         rate: Number(l.rate),
         discount: Number(l.discount),
         taxable: l.taxable,
+        taxRate: Number(l.tax_rate),
+        vatAmount: Number(l.vat_amount),
       }),
     ),
     paymentMethod: i.payment_method as Invoice["paymentMethod"],

@@ -1,6 +1,6 @@
 from typing import Annotated, Literal, Union
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from features.ims.roles import IMSRole
 
@@ -129,6 +129,7 @@ class VariantData(BaseModel):
     cost_price: Decimal
     selling_price: Decimal
     low_stock_at: int
+    expiry_date: date | None = None
     stock: list[VariantStockEntry] = []
 
     @classmethod
@@ -151,6 +152,7 @@ class VariantInput(BaseModel):
     cost_price: Decimal = Decimal(0)
     selling_price: Decimal = Decimal(0)
     low_stock_at: int = 10
+    expiry_date: date | None = None
     # Only meaningful on create — ignored on update (see product_service.update).
     initial_stock: Decimal = Decimal(0)
 
@@ -443,6 +445,8 @@ class InvoiceLineData(BaseModel):
     rate: Decimal
     discount: Decimal
     taxable: bool
+    tax_rate: Decimal
+    vat_amount: Decimal
 
 
 class InvoiceData(BaseModel):
