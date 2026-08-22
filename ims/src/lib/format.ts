@@ -112,3 +112,25 @@ export function splitVatInclusive(gross: number, rate = 13) {
   const taxable = gross / (1 + rate / 100);
   return { taxable, vat: gross - taxable };
 }
+
+/** Round to 2 decimal places, correcting the float noise that plain
+ *  arithmetic (e.g. 450 + 450*13/100) leaves behind — 450.00000000000006
+ *  becomes 450, not a runaway decimal tail. Every price/VAT conversion
+ *  below returns through this so displayed values are always clean. */
+export function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/** VAT-exclusive price -> VAT-inclusive price. Shared by the Product form
+ *  and Purchase's item card so both use identical, rounded math instead of
+ *  each carrying their own copy that can drift out of sync. */
+export function priceWithVat(exclusive: number, rate: number, taxable = true): number {
+  if (!taxable) return round2(exclusive);
+  return round2(exclusive + (exclusive * rate) / 100);
+}
+
+/** VAT-inclusive price -> VAT-exclusive price (inverse of priceWithVat). */
+export function priceWithoutVat(inclusive: number, rate: number, taxable = true): number {
+  if (!taxable) return round2(inclusive);
+  return round2(inclusive / (1 + rate / 100));
+}

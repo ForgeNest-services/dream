@@ -1,6 +1,8 @@
 import { MediaPicker } from "@/components/inventory/media-picker";
 import { CategoryCombobox, BrandCombobox } from "@/components/inventory/category-combobox";
 import { Money } from "@/components/common/primitives";
+import { DecimalTextInput } from "@/components/inventory/numeric-input";
+import { priceWithVat, priceWithoutVat } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -88,8 +90,8 @@ export function PurchaseItemCard({
       ? (existingProduct?.taxRate ?? app.company.vatRate)
       : (item.taxRate ?? app.company.vatRate)
     : 0;
-  const costInclTax = (excl: number) => (taxable ? excl + (excl * taxRate) / 100 : excl);
-  const costExclTax = (incl: number) => (taxable ? incl / (1 + taxRate / 100) : incl);
+  const costInclTax = (excl: number) => priceWithVat(excl, taxRate, taxable);
+  const costExclTax = (incl: number) => priceWithoutVat(incl, taxRate, taxable);
 
   const setRow = (key: string, patch: Partial<DraftRow>) =>
     onChange({
@@ -342,13 +344,10 @@ export function PurchaseItemCard({
                   </td>
                   {taxable && (
                     <td className="py-1.5 pr-2">
-                      <Input
-                        type="number"
-                        value={costInclTax(r.unitCost).toFixed(2)}
-                        onChange={(e) =>
-                          setRow(r.key, { unitCost: costExclTax(Number(e.target.value) || 0) })
-                        }
-                        className="num h-8 w-24 text-right"
+                      <DecimalTextInput
+                        value={costInclTax(r.unitCost)}
+                        onChange={(v) => setRow(r.key, { unitCost: costExclTax(v) })}
+                        className="h-8 w-24 text-right"
                       />
                     </td>
                   )}

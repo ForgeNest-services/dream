@@ -122,6 +122,30 @@ class IMSProductRepository:
         return query.first() is not None
 
     @staticmethod
+    def barcode_exists(
+        db: Session, tenant_id: str, barcode: str, exclude_variant_id: str | None = None
+    ) -> bool:
+        # barcode has no DB-level unique constraint (it lives on IMSVariant,
+        # which has no tenant_id column of its own — a partial unique index
+        # can't span the join to IMSProduct), so uniqueness is enforced here
+        # at the app layer instead, same pattern as sku_exists above. Scoped
+        # per-tenant: two different businesses reusing the same manufacturer
+        # barcode is fine, only a collision within one tenant's own catalogue
+        # is a real problem.
+        query = (
+            db.query(IMSVariant)
+            .join(IMSProduct, IMSVariant.product_id == IMSProduct.id)
+            .filter(
+                IMSProduct.tenant_id == tenant_id,
+                IMSProduct.is_active == True,
+                IMSVariant.barcode == barcode,
+            )
+        )
+        if exclude_variant_id:
+            query = query.filter(IMSVariant.id != exclude_variant_id)
+        return query.first() is not None
+
+    @staticmethod
     def soft_delete(db: Session, product: IMSProduct) -> None:
         product.is_active = False
         db.commit()

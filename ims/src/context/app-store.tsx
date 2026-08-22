@@ -38,6 +38,7 @@ import {
 import { invoicesApi, type InvoiceDto, type CreateInvoicePayload } from "@/lib/invoices-api";
 import { branchSettingsApi } from "@/lib/branch-settings-api";
 import { ApiError } from "@/lib/api-client";
+import { generateBarcode } from "@/lib/barcode";
 import { toast } from "sonner";
 import {
   ROLE_MODULES,
@@ -720,8 +721,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           expiry_date: v.expiryDate || undefined,
           initial_stock: v.initialStock,
         }));
-        try {
-          const res = await productsApi.create({
+        const create = (vs: VariantInput[]) =>
+          productsApi.create({
             name: p.name,
             sku: p.sku,
             category_id: p.categoryId,
@@ -731,8 +732,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
             taxable: p.taxable !== false,
             tax_rate: p.taxRate,
             branch_id_for_stock: stockBranchId,
-            variants,
+            variants: vs,
           });
+        try {
+          let res;
+          try {
+            res = await create(variants);
+          } catch (e) {
+            // The client-side barcode generator (lib/barcode.ts) is a
+            // seeded hash, not a real uniqueness guarantee — collisions
+            // within one tenant are possible. Retry once with fresh
+            // barcodes on every variant that had one before surfacing an
+            // error, rather than making the user regenerate by hand.
+            if (e instanceof ApiError && e.code === "BARCODE_TAKEN") {
+              res = await create(
+                variants.map((v) => (v.barcode ? { ...v, barcode: generateBarcode() } : v)),
+              );
+            } else {
+              throw e;
+            }
+          }
           if (!res.success || !res.data) return { ok: false, error: "Failed to create product" };
           const created = res.data;
           setState((s) => ({
@@ -760,8 +779,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           low_stock_at: v.lowStockAt,
           expiry_date: v.expiryDate || undefined,
         }));
-        try {
-          const res = await productsApi.update(id, {
+        const update = (vs: VariantInput[]) =>
+          productsApi.update(id, {
             name: patch.name,
             sku: patch.sku,
             category_id: patch.categoryId,
@@ -770,8 +789,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
             description: patch.description,
             taxable: patch.taxable !== false,
             tax_rate: patch.taxRate,
-            variants,
+            variants: vs,
           });
+        try {
+          let res;
+          try {
+            res = await update(variants);
+          } catch (e) {
+            // Only regenerate barcodes on newly-added rows (no id) — an
+            // existing variant's barcode may already be printed on a
+            // physical label, so it shouldn't be silently changed out from
+            // under the user just because a new row happened to collide.
+            if (e instanceof ApiError && e.code === "BARCODE_TAKEN") {
+              res = await update(
+                variants.map((v) => (!v.id && v.barcode ? { ...v, barcode: generateBarcode() } : v)),
+              );
+            } else {
+              throw e;
+            }
+          }
           if (!res.success || !res.data) return { ok: false, error: "Failed to update product" };
           const updated = res.data;
           setState((s) => ({

@@ -67,6 +67,14 @@ class IMSProductService:
             return {"success": False, "error_code": "SKU_TAKEN"}
         if not variants:
             return {"success": False, "error_code": "VARIANTS_REQUIRED"}
+        seen_barcodes: set[str] = set()
+        for v in variants:
+            barcode = (v.get("barcode") or "").strip()
+            if not barcode:
+                continue
+            if barcode in seen_barcodes or IMSProductRepository.barcode_exists(db, tenant_id, barcode):
+                return {"success": False, "error_code": "BARCODE_TAKEN", "barcode": barcode}
+            seen_barcodes.add(barcode)
 
         try:
             product = IMSProductRepository.create(
@@ -154,6 +162,16 @@ class IMSProductService:
             return {"success": False, "error_code": "SKU_TAKEN"}
         if not variants:
             return {"success": False, "error_code": "VARIANTS_REQUIRED"}
+        seen_barcodes: set[str] = set()
+        for v in variants:
+            barcode = (v.get("barcode") or "").strip()
+            if not barcode:
+                continue
+            if barcode in seen_barcodes or IMSProductRepository.barcode_exists(
+                db, tenant_id, barcode, exclude_variant_id=v.get("id")
+            ):
+                return {"success": False, "error_code": "BARCODE_TAKEN", "barcode": barcode}
+            seen_barcodes.add(barcode)
 
         try:
             IMSProductRepository.update(

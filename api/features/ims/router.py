@@ -346,6 +346,7 @@ _PRODUCT_ERROR_MAP = {
     "CATEGORY_NOT_FOUND": ("CATEGORY_NOT_FOUND", "Category not found.", 404),
     "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
     "SKU_TAKEN": ("SKU_TAKEN", "This SKU is already in use.", 409),
+    "BARCODE_TAKEN": ("BARCODE_TAKEN", "This barcode is already used by another product.", 409),
     "VARIANTS_REQUIRED": ("VARIANTS_REQUIRED", "Add at least one variant.", 422),
     "VARIANT_HAS_HISTORY": (
         "VARIANT_HAS_HISTORY",

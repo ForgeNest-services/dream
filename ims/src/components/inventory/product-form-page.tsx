@@ -18,6 +18,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { generateBarcode } from "@/lib/barcode";
+import { priceWithVat, priceWithoutVat } from "@/lib/format";
 import { useApp } from "@/context/app-store";
 import type { Product } from "@/data/types";
 import { useNavigate } from "@tanstack/react-router";
@@ -148,10 +149,8 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
     setVariants((vs) => vs.map((v, idx) => (idx === i ? { ...v, ...patch } : v)));
 
   const effectiveRate = taxable ? (taxRate === "" ? app.company.vatRate : taxRate) : 0;
-  const priceInclTax = (sellingPrice: number) =>
-    taxable ? sellingPrice + (sellingPrice * effectiveRate) / 100 : sellingPrice;
-  const priceExclTax = (inclTax: number) =>
-    taxable ? inclTax / (1 + effectiveRate / 100) : inclTax;
+  const priceInclTax = (sellingPrice: number) => priceWithVat(sellingPrice, effectiveRate, taxable);
+  const priceExclTax = (inclTax: number) => priceWithoutVat(inclTax, effectiveRate, taxable);
 
   const [submitting, setSubmitting] = useState(false);
 

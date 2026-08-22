@@ -48,9 +48,18 @@ export function DecimalTextInput({
   useEffect(() => {
     // Resync when the value changes from outside (e.g. the linked Exc./Inc.
     // VAT field, or loading a different variant) — but not while the parsed
-    // text already matches, so we don't fight the user's in-progress typing
-    // (e.g. a trailing "." that Number() would otherwise erase).
-    if (Number(text) !== value) setText(Number.isFinite(value) ? String(value) : "");
+    // text already matches (to a cent), so we don't fight the user's
+    // in-progress typing. Comparing at 2dp — not exact float equality —
+    // matters because a value that round-trips through this field's own
+    // onChange (typed here -> parsed -> converted -> converted back for
+    // display) can drift by a floating-point epsilon that's smaller than a
+    // cent; exact comparison would treat that epsilon as "changed from
+    // outside" and stomp the text mid-keystroke.
+    const roundedText = Math.round(Number(text) * 100) / 100;
+    const roundedValue = Math.round(value * 100) / 100;
+    if (roundedText !== roundedValue) {
+      setText(Number.isFinite(value) ? String(roundedValue) : "");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
