@@ -1172,11 +1172,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       createInvoice: async (inv, options) => {
         const isQuotation = inv.kind === "quotation";
-        // Per-sale VAT-bill toggle (POS) overrides the company-wide
-        // setting for this one sale only — lets staff print a plain
-        // no-breakdown bill for a walk-in customer even on a VAT-registered
-        // business, without touching the company's actual VAT registration.
-        const vatRegistered = options?.vatOverride ?? state.company.vatRegistered;
+        // vat_registered is always the company's REAL setting — VAT is
+        // genuinely added on top of the exclusive rate whenever the
+        // business is VAT-registered, so the customer pays the same total
+        // either way. The POS "VAT bill" toggle only controls
+        // show_vat_breakdown: whether this bill is itemized (Taxable + VAT
+        // lines, "tax" invoice) or printed as a plain total ("abbreviated").
         const payload: CreateInvoicePayload = {
           date: inv.date,
           branch_id: inv.branchId,
@@ -1191,10 +1192,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             discount: l.discount,
             taxable: l.taxable,
           })),
-          vat_registered: vatRegistered,
+          vat_registered: state.company.vatRegistered,
           vat_rate: state.company.vatRate,
           invoice_prefix: state.company.invoicePrefix,
           is_quotation: isQuotation,
+          show_vat_breakdown: options?.vatOverride,
         };
 
         try {

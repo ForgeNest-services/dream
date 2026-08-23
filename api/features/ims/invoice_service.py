@@ -269,6 +269,7 @@ class IMSInvoiceService:
         invoice_prefix: str,
         payment_method: str,
         paid_amount: Decimal,
+        show_vat_breakdown: bool | None = None,
     ) -> dict:
         """Turns a quotation into a real invoice: re-numbers it, and applies
         the stock deduction + ledger posting that a quotation deliberately
@@ -282,13 +283,18 @@ class IMSInvoiceService:
         if invoice.kind != "quotation":
             return {"success": False, "error_code": "NOT_A_QUOTATION"}
 
+        # See IMSInvoiceService.create's matching comment — vat_registered
+        # drives the real math, show_vat_breakdown only picks "tax" vs
+        # "abbreviated" for display/printing.
+        show_breakdown = vat_registered if show_vat_breakdown is None else show_vat_breakdown
+
         fy_result = IMSFiscalYearService.get_active(db, tenant_id)
         start_year = fy_result["fiscal_year"].start_year if fy_result["success"] else datetime.now().year
 
         try:
             seq = IMSInvoiceRepository.count_for_tenant(db, tenant_id) + 1
             number = f"{invoice_prefix}-{start_year}-{1000 + seq}"
-            kind = "tax" if vat_registered else "abbreviated"
+            kind = "tax" if show_breakdown else "abbreviated"
 
             lines_as_dicts = [
                 {

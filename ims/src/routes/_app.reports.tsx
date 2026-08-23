@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/select";
 import { useApp } from "@/context/app-store";
 import { downloadCsv, printPdf } from "@/lib/csv";
-import { computeTotals } from "@/lib/invoice";
+import { computeStoredTotals } from "@/lib/invoice";
 import { createFileRoute } from "@tanstack/react-router";
 import { Download, Printer } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -85,7 +85,7 @@ function ReportsPage() {
         return {
           columns: ["Invoice", "Date", "Customer", "Items", "Taxable", "VAT", "Total", "Status"],
           rows: invoices.map((i) => {
-            const t = computeTotals(i.lines, app.company);
+            const t = computeStoredTotals(i.lines);
             return {
               Invoice: i.number,
               Date: i.date,
@@ -181,7 +181,7 @@ function ReportsPage() {
         return {
           columns: ["Invoice", "Date", "Buyer", "Buyer PAN", "Taxable", "VAT", "Total"],
           rows: invoices.map((i) => {
-            const t = computeTotals(i.lines, app.company);
+            const t = computeStoredTotals(i.lines);
             const c = app.parties.find((p) => p.id === i.customerId);
             return {
               Invoice: i.number,

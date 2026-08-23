@@ -513,6 +513,12 @@ class CreateInvoiceRequest(BaseModel):
     # A quotation is a price offer only — no stock deduction, no ledger
     # post. Those happen for real on IMSInvoiceService.convert.
     is_quotation: bool = False
+    # Display-only: does this bill show its Taxable/VAT breakdown ("tax"
+    # invoice) or not ("abbreviated")? Independent of vat_registered, which
+    # always drives the real total — see IMSInvoiceService.create's comment.
+    # None (the default) falls back to vat_registered, matching every
+    # caller from before this field existed.
+    show_vat_breakdown: bool | None = None
 
 
 class ConvertQuotationRequest(BaseModel):
@@ -521,6 +527,7 @@ class ConvertQuotationRequest(BaseModel):
     vat_registered: bool = False
     vat_rate: Decimal = Decimal(13)
     invoice_prefix: str = "INV"
+    show_vat_breakdown: bool | None = None
 
 
 class BranchSettingsData(BaseModel):

@@ -1099,6 +1099,7 @@ def create_invoice(
         vat_rate=data.vat_rate,
         invoice_prefix=data.invoice_prefix,
         is_quotation=data.is_quotation,
+        show_vat_breakdown=data.show_vat_breakdown,
     )
     if not result["success"]:
         return _invoice_error(result["error_code"])
@@ -1128,6 +1129,7 @@ def convert_quotation(
         invoice_prefix=data.invoice_prefix,
         payment_method=data.payment_method,
         paid_amount=data.paid_amount,
+        show_vat_breakdown=data.show_vat_breakdown,
     )
     if not result["success"]:
         return _invoice_error(result["error_code"])
