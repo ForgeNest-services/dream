@@ -1191,10 +1191,32 @@ def update_branch_settings(
         branch_id=branch_id,
         vat_enabled=data.vat_enabled,
         vat_rate=data.vat_rate,
+        qr_image_url=data.qr_image_url,
+        clear_qr=data.clear_qr,
     )
     if not result["success"]:
         return _branch_settings_error(result["error_code"])
     return success_response(
         data=BranchSettingsData.model_validate(result["settings"]).model_dump(mode="json"),
         message="Settings updated",
+    )
+
+
+@router.delete("/branches/{branch_id}/settings/qr")
+def clear_branch_qr(
+    branch_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """Dedicated endpoint for the "Remove QR" button. Same as PATCH with
+    clear_qr=true but a plain DELETE reads more clearly in the UI code."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can change settings")
+    _assert_branch_scope(staff, branch_id)
+    result = IMSBranchSettingsService.clear_qr(db, staff["tenant_id"], branch_id)
+    if not result["success"]:
+        return _branch_settings_error(result["error_code"])
+    return success_response(
+        data=BranchSettingsData.model_validate(result["settings"]).model_dump(mode="json"),
+        message="QR removed",
     )

@@ -37,6 +37,7 @@ import {
 } from "@/lib/purchases-api";
 import { invoicesApi, type InvoiceDto, type CreateInvoicePayload } from "@/lib/invoices-api";
 import { branchSettingsApi } from "@/lib/branch-settings-api";
+import { uploadsApi } from "@/lib/uploads-api";
 import { ApiError } from "@/lib/api-client";
 import { generateBarcode } from "@/lib/barcode";
 import { toast } from "sonner";
@@ -398,6 +399,11 @@ interface AppContextValue extends AppState {
     vatEnabled?: boolean;
     vatRate?: number;
   }) => Promise<{ ok: boolean; error?: string }>;
+  /** Uploads a payment QR image (via the generic one-shot /uploads
+   *  endpoint, not the Media Center) and saves it on the current branch's
+   *  settings. */
+  uploadQrImage: (file: File) => Promise<{ ok: boolean; error?: string }>;
+  clearQrImage: () => Promise<{ ok: boolean; error?: string }>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -561,7 +567,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const settings = res.data;
         setState((s) => ({
           ...s,
-          company: { ...s.company, vatRegistered: settings.vat_enabled, vatRate: num(settings.vat_rate) },
+          company: {
+            ...s.company,
+            vatRegistered: settings.vat_enabled,
+            vatRate: num(settings.vat_rate),
+            qrImageUrl: settings.qr_image_url ?? undefined,
+          },
         }));
       } catch {
         // Non-fatal — VAT UI just falls back to whatever company state already had.
@@ -1301,6 +1312,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ok: false,
             error: e instanceof ApiError ? e.message : "Failed to update VAT settings",
           };
+        }
+      },
+
+      uploadQrImage: async (file) => {
+        if (!effectiveBranchId) return { ok: false, error: "No branch selected" };
+        try {
+          const uploaded = await uploadsApi.uploadPaymentQr(effectiveBranchId, file);
+          if (!uploaded.success || !uploaded.data) {
+            return { ok: false, error: "Upload failed" };
+          }
+          const res = await branchSettingsApi.update(effectiveBranchId, {
+            qr_image_url: uploaded.data.url,
+          });
+          if (!res.success || !res.data) return { ok: false, error: "Failed to save QR image" };
+          const settings = res.data;
+          setState((s) => ({
+            ...s,
+            company: { ...s.company, qrImageUrl: settings.qr_image_url ?? undefined },
+          }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to upload QR image" };
+        }
+      },
+
+      clearQrImage: async () => {
+        if (!effectiveBranchId) return { ok: false, error: "No branch selected" };
+        try {
+          const res = await branchSettingsApi.clearQr(effectiveBranchId);
+          if (!res.success || !res.data) return { ok: false, error: "Failed to remove QR image" };
+          setState((s) => ({ ...s, company: { ...s.company, qrImageUrl: undefined } }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to remove QR image" };
         }
       },
     };

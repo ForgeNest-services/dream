@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/common/primitives";
-import { DirectImageUpload } from "@/components/common/direct-image-upload";
+import { PaymentQrUploader } from "@/components/common/payment-qr-uploader";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -280,19 +280,11 @@ function SettingsPage() {
               later.
             </p>
             <div className="mt-3">
-              <DirectImageUpload
-                label="Upload QR"
-                folder="Payment QR"
-                imageUrl={form.qrImageUrl}
-                onChange={(url) => {
-                  setForm({ ...form, qrImageUrl: url });
-                  app.updateCompany({ qrImageUrl: url });
-                }}
-              />
+              <PaymentQrUploader />
             </div>
-            {form.qrImageUrl ? (
+            {app.company.qrImageUrl ? (
               <img
-                src={form.qrImageUrl}
+                src={app.company.qrImageUrl}
                 alt="Current static payment QR code"
                 className="mt-3 h-40 w-40 rounded border object-contain"
               />

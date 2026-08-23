@@ -538,6 +538,7 @@ class BranchSettingsData(BaseModel):
     branch_id: str
     vat_enabled: bool
     vat_rate: Decimal
+    qr_image_url: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -545,3 +546,5 @@ class BranchSettingsData(BaseModel):
 class UpdateBranchSettingsRequest(BaseModel):
     vat_enabled: bool | None = None
     vat_rate: Decimal | None = None
+    qr_image_url: str | None = None
+    clear_qr: bool = False

@@ -34,8 +34,10 @@ async function request<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<ApiEnvelope<T>> {
+  const isFormData = init.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    // Let the browser set its own multipart boundary for FormData bodies.
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...((init.headers as Record<string, string>) ?? {}),
   };
 
@@ -67,4 +69,6 @@ export const apiClient = {
   patch: <T>(path: string, body: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  upload: <T>(path: string, formData: FormData) =>
+    request<T>(path, { method: "POST", body: formData }),
 };

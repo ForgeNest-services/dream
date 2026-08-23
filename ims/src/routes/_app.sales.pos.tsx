@@ -1,8 +1,8 @@
 import { DatePicker } from "@/components/common/date-picker";
 import { EmptyState, Money, PageHeader } from "@/components/common/primitives";
+import { PaymentQrUploader } from "@/components/common/payment-qr-uploader";
 import { MediaThumb } from "@/components/inventory/media-picker";
 import { DecimalTextInput, NumericInput } from "@/components/inventory/numeric-input";
-import { DirectImageUpload } from "@/components/common/direct-image-upload";
 import { CustomerDialog } from "@/components/parties/party-dialogs";
 import { PartyCombobox } from "@/components/parties/party-combobox";
 import { Button } from "@/components/ui/button";
@@ -561,12 +561,7 @@ function PosPage() {
                   {app.company.qrImageUrl ? "Replace" : "Upload"} the shop payment QR without
                   leaving the counter.
                 </p>
-                <DirectImageUpload
-                  label={app.company.qrImageUrl ? "Replace QR" : "Upload QR"}
-                  folder="Payment QR"
-                  imageUrl={app.company.qrImageUrl}
-                  onChange={(url) => app.updateCompany({ qrImageUrl: url })}
-                />
+                <PaymentQrUploader />
               </div>
             ) : null}
             <p className="num text-lg font-semibold">

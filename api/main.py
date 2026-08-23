@@ -17,6 +17,7 @@ from core.seed import (
     ensure_ims_invoice_line_vat_schema,
     ensure_ims_variant_expiry_schema,
     ensure_ims_fiscal_year_link_schema,
+    ensure_ims_branch_settings_qr_schema,
 )
 from core.storage import ensure_bucket
 import shared_models
@@ -85,6 +86,14 @@ async def lifespan(app: FastAPI):
         logger.info("ims fiscal year link schema backfill completed")
     except Exception as e:
         logger.error(f"Failed to backfill ims fiscal year link schema: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Backfilling ims_branch_settings QR schema...")
+        ensure_ims_branch_settings_qr_schema()
+        logger.info("ims_branch_settings QR schema backfill completed")
+    except Exception as e:
+        logger.error(f"Failed to backfill ims_branch_settings QR schema: {type(e).__name__}: {str(e)}")
         raise
 
     try:
