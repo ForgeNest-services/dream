@@ -41,6 +41,8 @@ from .ims_invoice import IMSInvoice
 from .ims_invoice_line import IMSInvoiceLine
 from .ims_branch_settings import IMSBranchSettings
 from .app import App
+from .subscription import AppSubscription, SubscriptionPayment
+from .subscription_plan import SubscriptionPlan
 
 __all__ = [
     "Tenant",
@@ -86,4 +88,7 @@ __all__ = [
     "IMSInvoiceLine",
     "IMSBranchSettings",
     "App",
+    "AppSubscription",
+    "SubscriptionPayment",
+    "SubscriptionPlan",
 ]

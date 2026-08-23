@@ -22,7 +22,7 @@ const navigationItems = [
   { label: 'Branches', href: '/dashboard/branches', icon: MdOutlineBusiness, roles: ['owner', 'manager'] },
   { label: 'Team Members', href: '/dashboard/team', icon: MdPeople, roles: ['owner'] },
   { label: 'Settings', href: '/dashboard/settings', icon: MdSettings, roles: ['owner'] },
-  { label: 'Admin Panel', href: '/admin', icon: MdShield, roles: ['superadmin'] },
+  { label: 'Admin Panel', href: '/dashboard/admin', icon: MdShield, roles: ['superadmin'] },
 ];
 
 export function Sidebar() {

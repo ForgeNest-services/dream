@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useApps } from '@/hooks/useApps';
-import { App } from '@/types/apps';
+import { useSubscriptions } from '@/hooks/useSubscriptions';
+import { App, AppSubscription } from '@/types/apps';
 import { colors, spacing, radius } from '@/lib/design-tokens';
 import { Spinner } from '@/components/shared/Spinner';
 import {
@@ -40,7 +41,55 @@ function paletteFor(code: string) {
   return APP_PALETTE[hash % APP_PALETTE.length];
 }
 
-function AppTile({ app }: { app: App }) {
+function daysUntil(iso: string | null): number | null {
+  if (!iso) return null;
+  return Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+}
+
+function SubBadge({ sub }: { sub: AppSubscription | null }) {
+  if (!sub) return null;
+
+  if (sub.status === 'trialing') {
+    const days = daysUntil(sub.trial_ends_at);
+    if (days === null || days <= 0) {
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: '600', color: '#B45309', backgroundColor: '#FEF3C7', border: '1px solid #FDE68A', padding: '2px 7px', borderRadius: radius.full }}>
+          <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#D97706', flexShrink: 0 }} />
+          Trial expired
+        </span>
+      );
+    }
+    const urgent = days <= 7;
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: '600', color: urgent ? '#B45309' : colors.primary[700], backgroundColor: urgent ? '#FEF3C7' : colors.primary[50], border: `1px solid ${urgent ? '#FDE68A' : colors.primary[200]}`, padding: '2px 7px', borderRadius: radius.full }}>
+        <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: urgent ? '#D97706' : colors.primary[500], flexShrink: 0 }} />
+        Trial · {days}d
+      </span>
+    );
+  }
+
+  if (sub.status === 'active') {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: '600', color: '#15803D', backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', padding: '2px 7px', borderRadius: radius.full }}>
+        <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#22C55E', flexShrink: 0 }} />
+        Active
+      </span>
+    );
+  }
+
+  if (sub.status === 'expired') {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: '600', color: '#B91C1C', backgroundColor: '#FEF2F2', border: '1px solid #FECACA', padding: '2px 7px', borderRadius: radius.full }}>
+        <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#EF4444', flexShrink: 0 }} />
+        Expired
+      </span>
+    );
+  }
+
+  return null;
+}
+
+function AppTile({ app, sub }: { app: App; sub: AppSubscription | null }) {
   const Icon = (app.icon && ICON_MAP[app.icon]) || MdOutlineApps;
   const palette = paletteFor(app.code);
 
@@ -93,22 +142,24 @@ function AppTile({ app }: { app: App }) {
             <Icon size={26} />
           )}
         </div>
-        <span
-          style={{
-            fontSize: '10px',
-            fontWeight: '700',
-            color: colors.neutral[500],
-            backgroundColor: colors.neutral[50],
-            border: `1px solid ${colors.neutral[200]}`,
-            padding: '3px 8px',
-            borderRadius: radius.full,
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-            flexShrink: 0,
-          }}
-        >
-          {app.code.replace(/_/g, ' ')}
-        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px', flexShrink: 0 }}>
+          <span
+            style={{
+              fontSize: '10px',
+              fontWeight: '700',
+              color: colors.neutral[500],
+              backgroundColor: colors.neutral[50],
+              border: `1px solid ${colors.neutral[200]}`,
+              padding: '3px 8px',
+              borderRadius: radius.full,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}
+          >
+            {app.code.replace(/_/g, ' ')}
+          </span>
+          <SubBadge sub={sub} />
+        </div>
       </div>
 
       <div style={{ flex: 1 }}>
@@ -196,6 +247,7 @@ function AppTile({ app }: { app: App }) {
 
 export function AppsGrid() {
   const { apps, isLoading, error } = useApps();
+  const { forApp } = useSubscriptions();
 
   if (isLoading) {
     return (
@@ -246,7 +298,7 @@ export function AppsGrid() {
       }}
     >
       {apps.map((app) => (
-        <AppTile key={app.id} app={app} />
+        <AppTile key={app.id} app={app} sub={forApp(app.code)} />
       ))}
     </div>
   );

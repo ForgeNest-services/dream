@@ -123,6 +123,15 @@ class AuthService:
             db.commit()
             logger.info(f"User linked to tenant: {user.id} -> {tenant.id}")
 
+            # Auto-provision 30-day trials for every active app in the catalog.
+            # Runs after commit so the tenant row exists before FK inserts.
+            try:
+                from features.subscriptions.service import SubscriptionService
+                SubscriptionService.provision_trials(db, tenant.id)
+            except Exception as trial_err:
+                logger.error(f"Failed to provision trials for tenant {tenant.id}: {trial_err}")
+                # Non-fatal — business is registered, trials can be fixed manually.
+
             tokens = AuthService._issue_tokens_for_user(user)
 
             return {

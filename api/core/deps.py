@@ -135,6 +135,32 @@ def require_ims_staff(role: str | None = None):
     return _make_staff_dep(decode_staff_token)(role)
 
 
+def require_module_access(app_code: str):
+    """Dependency factory that gates an endpoint behind an active subscription
+    (trial or paid). Attach to any owner-level router to enforce billing.
+
+    Usage:
+        @router.get("/...", dependencies=[Depends(require_module_access("srota_pms"))])
+
+    Currently intentionally NOT attached to any router — add when ready to
+    enforce billing. The gate is built; flipping it on is a one-liner.
+    """
+    def _dep(current: dict = Depends(require_tenant_user), db: Session = Depends(get_db)):
+        from features.subscriptions.service import SubscriptionService
+        tenant_id = current["user"].tenant_id
+        if not SubscriptionService.is_accessible(db, tenant_id, app_code):
+            raise HTTPException(
+                402,
+                {
+                    "error_code": "SUBSCRIPTION_REQUIRED",
+                    "message": f"An active subscription or trial is required to access {app_code}.",
+                },
+            )
+        return current
+
+    return _dep
+
+
 def require_tenant_scope(
     token: str = Depends(get_token_from_header),
     db: Session = Depends(get_db),
