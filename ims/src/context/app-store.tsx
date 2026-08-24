@@ -299,6 +299,13 @@ interface AppState extends SeedData {
   currentUser: User | null;
   /** owner-only: preview the app as another role */
   viewAsRole: User["role"] | null;
+  /** Flips true once the real per-tenant catalogue fetch (branches,
+   *  products, etc.) has completed at least once. `state.branches` holds
+   *  mock seed data until then — code that must never act on a fake mock
+   *  branch id (e.g. the per-branch settings fetch) should gate on this
+   *  rather than on `branches.length > 0`, since the mock seed is never
+   *  empty either. */
+  branchesReady: boolean;
 }
 
 interface AppContextValue extends AppState {
@@ -421,6 +428,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     fiscalYearId: "",
     currentUser: null,
     viewAsRole: null,
+    branchesReady: false,
   }));
 
   useEffect(() => {
@@ -528,6 +536,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // branches load, then resolves to the first one.
           branchId: s.branchId === "all" ? (loadedBranches[0]?.id ?? "all") : s.branchId,
           branches: loadedBranches,
+          branchesReady: true,
           categories: (categoriesRes.data ?? []).map(toCategory),
           brands: (brandsRes.data ?? []).map(toBrand),
           units: (unitsRes.data ?? []).map(toUnit),
@@ -559,7 +568,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const effectiveBranchId =
     state.branchId === "all" ? (state.branches[0]?.id ?? "") : state.branchId;
   useEffect(() => {
-    if (!state.currentUser || !effectiveBranchId) return;
+    if (!state.currentUser || !state.branchesReady || !effectiveBranchId) return;
     let cancelled = false;
     (async () => {
       try {
@@ -582,7 +591,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [state.currentUser?.id, effectiveBranchId]);
+  }, [state.currentUser?.id, state.branchesReady, effectiveBranchId]);
 
   const value = useMemo<AppContextValue>(() => {
     const fiscalYear =
