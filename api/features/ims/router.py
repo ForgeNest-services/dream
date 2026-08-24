@@ -1,3 +1,4 @@
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response
 from sqlalchemy.orm import Session
 from core.database import get_db
@@ -63,6 +64,7 @@ from features.ims.unit_repository import IMSUnitRepository
 from features.ims.invoice_repository import IMSInvoiceRepository
 from features.ims.purchase_repository import IMSPurchaseRepository
 from features.ims.reports_export import build_xlsx, build_pdf
+from features.auth.repository import TenantRepository
 
 
 router = APIRouter(prefix="/ims", tags=["ims"])
@@ -1036,6 +1038,7 @@ _INVOICE_ERROR_MAP = {
     "NO_ITEMS": ("NO_ITEMS", "Add at least one item to the cart.", 422),
     "CREATION_FAILED": ("CREATION_FAILED", "Failed to record sale.", 500),
     "INVOICE_NOT_FOUND": ("INVOICE_NOT_FOUND", "Quotation not found.", 404),
+    "DOCUMENT_NOT_FOUND": ("DOCUMENT_NOT_FOUND", "Invoice or quotation not found.", 404),
     "NOT_A_QUOTATION": ("NOT_A_QUOTATION", "This document is not a quotation.", 422),
     "CONVERSION_FAILED": ("CONVERSION_FAILED", "Failed to convert quotation.", 500),
     "INSUFFICIENT_STOCK": ("INSUFFICIENT_STOCK", "Not enough stock for one or more items.", 409),
@@ -1089,6 +1092,18 @@ def list_invoices(
         data=[InvoiceData.model_validate(i).model_dump(mode="json") for i in result["invoices"]],
         meta=build_meta(result["total"], paging["page"], paging["per_page"]),
     )
+
+
+@router.get("/invoices/{invoice_id}")
+def get_invoice(
+    invoice_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    result = IMSInvoiceService.get(db, staff["tenant_id"], invoice_id)
+    if not result["success"]:
+        return _invoice_error(result)
+    return success_response(data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"))
 
 
 @router.post("/invoices")
@@ -1381,18 +1396,46 @@ def report_party_statement(
 _EXPORT_LIMIT = 100_000  # effectively unbounded — a real safety ceiling, not a UX limit
 
 
-def _export_response(fmt: str, title: str, columns: list[str], rows: list[list]):
+def _business_header_lines(tenant) -> list[str]:
+    """Business name/PAN/address/contact block every export prints at the
+    top — same identity info the print-invoice page shows, so an exported
+    sheet is self-identifying without the app UI around it."""
+    lines = [tenant.name]
+    details = []
+    if tenant.pan:
+        details.append(f"PAN: {tenant.pan}")
+    if tenant.business_address:
+        details.append(tenant.business_address)
+    contact = [c for c in (tenant.business_phone, tenant.business_email) if c]
+    if contact:
+        details.append(" · ".join(contact))
+    lines.extend(details)
+    return lines
+
+
+def _export_response(
+    fmt: str,
+    title: str,
+    columns: list[str],
+    rows: list[list],
+    business_lines: list[str] | None = None,
+    wide: bool = False,
+):
     if fmt not in ("xlsx", "pdf"):
         return error_response("INVALID_FORMAT", "format must be 'xlsx' or 'pdf'.", 422)
     if fmt == "xlsx":
-        content = build_xlsx(title, columns, rows)
+        content = build_xlsx(title, columns, rows, business_lines)
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ext = "xlsx"
     else:
-        content = build_pdf(title, columns, rows)
+        content = build_pdf(title, columns, rows, business_lines, wide)
         media_type = "application/pdf"
         ext = "pdf"
-    filename = f"{title.lower().replace(' ', '-')}.{ext}"
+    # Content-Disposition's filename param is Latin-1-only — titles built
+    # from user data (e.g. a party name) can contain characters like em
+    # dashes that aren't. ASCII-fold rather than reject the whole export.
+    safe_title = title.lower().replace(" ", "-").encode("ascii", "ignore").decode("ascii") or "export"
+    filename = f"{safe_title}.{ext}"
     return Response(
         content=content,
         media_type=media_type,
@@ -1425,7 +1468,8 @@ def export_sales_report(
         ]
         for i in items
     ]
-    return _export_response(format, "Sales Report", columns, rows)
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, "Sales Report", columns, rows, _business_header_lines(tenant))
 
 
 @router.get("/reports/vat-register/export")
@@ -1452,7 +1496,8 @@ def export_vat_register(
         ]
         for i in items
     ]
-    return _export_response(format, "VAT Sales Register", columns, rows)
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, "VAT Sales Register", columns, rows, _business_header_lines(tenant))
 
 
 @router.get("/reports/purchases/export")
@@ -1478,7 +1523,8 @@ def export_purchase_report(
         ]
         for p in items
     ]
-    return _export_response(format, "Purchase Report", columns, rows)
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, "Purchase Report", columns, rows, _business_header_lines(tenant))
 
 
 @router.get("/reports/stock-summary/export")
@@ -1507,7 +1553,8 @@ def export_stock_summary(
         for r in result["rows"]
     ]
     title = "Low Stock Report" if low_stock_only else "Stock Summary"
-    return _export_response(format, title, columns, rows)
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, title, columns, rows, _business_header_lines(tenant), wide=True)
 
 
 @router.get("/reports/margin/export")
@@ -1529,7 +1576,8 @@ def export_margin_report(
         profit = r["revenue"] - r["cost"]
         margin_pct = round((profit / r["revenue"] * 100), 2) if r["revenue"] else 0
         rows.append([r["product"].name, r["variant"].name, r["qty_sold"], r["revenue"], r["cost"], profit, margin_pct])
-    return _export_response(format, "Profit Margin Report", columns, rows)
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, "Profit Margin Report", columns, rows, _business_header_lines(tenant))
 
 
 @router.get("/reports/party-statement/export")
@@ -1553,7 +1601,44 @@ def export_party_statement(
         for r in result["rows"]
     ]
     title = "Customer Statement" if kind == "customer" else "Supplier Statement"
-    return _export_response(format, title, columns, rows)
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, title, columns, rows, _business_header_lines(tenant))
+
+
+@router.get("/parties/{party_id}/ledger/export")
+def export_party_ledger(
+    party_id: str,
+    format: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """Full ledger for ONE party with a running balance — distinct from
+    /reports/party-statement/export, which is one row per party (totals
+    only). Always the complete history, never just what's on screen."""
+    party = IMSPartyRepository.get_by_id(db, staff["tenant_id"], party_id)
+    if not party:
+        return error_response("PARTY_NOT_FOUND", "Party not found.", 404)
+    entries = IMSLedgerRepository.list_for_party(db, staff["tenant_id"], party_id)
+    is_supplier = party.kind == "supplier"
+
+    columns = ["Date", "Description", "Reference", "Debit", "Credit", "Balance"]
+    rows = []
+    balance = Decimal(0)
+    for e in entries:
+        balance += (e.credit - e.debit) if is_supplier else (e.debit - e.credit)
+        rows.append([
+            e.date.strftime("%Y-%m-%d"), e.description, e.reference or "—",
+            e.debit, e.credit, balance,
+        ])
+
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    business_lines = _business_header_lines(tenant)
+    business_lines.append(
+        f"{'Supplier' if is_supplier else 'Customer'} statement — {party.name}"
+        + (f" (PAN: {party.pan})" if party.pan else "")
+    )
+    title = f"{party.name} - Ledger"
+    return _export_response(format, title, columns, rows, business_lines)
 
 
 # ---------------------------------------------------------------------------

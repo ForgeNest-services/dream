@@ -1,4 +1,14 @@
 import { DateText, EmptyState, PageHeader } from "@/components/common/primitives";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -8,18 +18,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useApp } from "@/context/app-store";
+import type { MediaItem } from "@/data/types";
 import { createFileRoute } from "@tanstack/react-router";
-import { Search, Upload } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { Search, Trash2, Upload } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/inventory/media")({
@@ -28,13 +31,12 @@ export const Route = createFileRoute("/_app/inventory/media")({
       { title: "Media Center — SROTA IMS" },
       {
         name: "description",
-        content:
-          "One shared image library for the whole catalogue. Products reference media items instead of uploading directly.",
+        content: "One shared image library for the whole catalogue. Products reference media items instead of uploading directly.",
       },
       { property: "og:title", content: "Media Center — SROTA IMS" },
       {
         property: "og:description",
-        content: "Shared product image library with folders, search and usage counts.",
+        content: "Shared product image library with search and usage counts.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -46,23 +48,14 @@ export const Route = createFileRoute("/_app/inventory/media")({
 function MediaPage() {
   const app = useApp();
   const [q, setQ] = useState("");
-  const [folder, setFolder] = useState("all");
   const [open, setOpen] = useState(false);
-  const [newFolder, setNewFolder] = useState("General");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [deleteFor, setDeleteFor] = useState<MediaItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const folders = useMemo(
-    () => Array.from(new Set(app.media.map((m) => m.folder))),
-    [app.media],
-  );
-
-  const items = app.media.filter(
-    (m) =>
-      (folder === "all" || m.folder === folder) &&
-      `${m.name} ${m.folder}`.toLowerCase().includes(q.trim().toLowerCase()),
-  );
+  const items = app.media.filter((m) => m.name.toLowerCase().includes(q.trim().toLowerCase()));
 
   const usage = (id: string) => app.products.filter((p) => p.mediaId === id).length;
 
@@ -78,50 +71,38 @@ function MediaPage() {
         }
       />
 
-      <div className="mb-3 flex flex-wrap gap-2">
-        <div className="relative min-w-56 flex-1">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search images…"
-            className="pl-8"
-          />
-        </div>
-        <Select value={folder} onValueChange={setFolder}>
-          <SelectTrigger className="w-48">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All folders</SelectItem>
-            {folders.map((f) => (
-              <SelectItem key={f} value={f}>
-                {f}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="relative mb-3 max-w-sm">
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search images…" className="pl-8" />
       </div>
 
       {items.length === 0 ? (
         <EmptyState title="No images here" description="Upload an image to get started." />
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-          {items.map((m) => (
-            <figure key={m.id} className="overflow-hidden rounded-lg border bg-card">
-              <img src={m.url} alt={m.name} loading="lazy" className="h-32 w-full object-cover" />
-              <figcaption className="space-y-0.5 p-2">
-                <p className="truncate text-xs font-medium">{m.name}</p>
-                <p className="num text-[11px] text-muted-foreground">
-                  {m.folder} · {m.sizeKb} KB
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  Used by {usage(m.id)} product{usage(m.id) === 1 ? "" : "s"} ·{" "}
-                  <DateText value={m.uploadedAt} />
-                </p>
-              </figcaption>
-            </figure>
-          ))}
+          {items.map((m) => {
+            const usedBy = usage(m.id);
+            return (
+              <figure key={m.id} className="group relative overflow-hidden rounded-lg border bg-card">
+                <img src={m.url} alt={m.name} loading="lazy" className="h-32 w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setDeleteFor(m)}
+                  className="absolute right-1.5 top-1.5 rounded-md bg-background/90 p-1.5 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-destructive group-hover:opacity-100"
+                  aria-label={`Delete ${m.name}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+                <figcaption className="space-y-0.5 p-2">
+                  <p className="truncate text-xs font-medium">{m.name}</p>
+                  <p className="num text-[11px] text-muted-foreground">{m.sizeKb} KB</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Used by {usedBy} product{usedBy === 1 ? "" : "s"} · <DateText value={m.uploadedAt} />
+                  </p>
+                </figcaption>
+              </figure>
+            );
+          })}
         </div>
       )}
 
@@ -152,10 +133,6 @@ function MediaPage() {
               <Upload className="mb-2 h-5 w-5" />
               {selectedFile ? selectedFile.name : "Click to choose an image"}
             </button>
-            <div className="space-y-1.5">
-              <Label>Folder</Label>
-              <Input value={newFolder} onChange={(e) => setNewFolder(e.target.value)} />
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
@@ -170,7 +147,7 @@ function MediaPage() {
                 }
                 setUploading(true);
                 try {
-                  const res = await app.addMedia(selectedFile, newFolder.trim() || "General");
+                  const res = await app.addMedia(selectedFile, "Uploads");
                   if (!res.ok) {
                     toast.error(res.error ?? "Upload failed");
                     return;
@@ -188,6 +165,42 @@ function MediaPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={deleteFor !== null} onOpenChange={(o) => !o && setDeleteFor(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{deleteFor?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the image from the Media Center. It can't be used if you're
+              still using it on a product — remove it from that product's image field first.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!deleteFor) return;
+                setDeleting(true);
+                try {
+                  const res = await app.deleteMedia(deleteFor.id);
+                  if (!res.ok) {
+                    toast.error(res.error ?? "Failed to delete image");
+                    return;
+                  }
+                  toast.success("Image deleted");
+                  setDeleteFor(null);
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

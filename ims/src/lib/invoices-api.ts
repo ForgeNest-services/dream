@@ -103,6 +103,9 @@ export const invoicesApi = {
     qs.set("per_page", String(params.per_page ?? 25));
     return apiClient.get<InvoiceDto[]>(`/ims/invoices?${qs.toString()}`);
   },
+  get(invoiceId: string) {
+    return apiClient.get<InvoiceDto>(`/ims/invoices/${invoiceId}`);
+  },
   create(payload: CreateInvoicePayload) {
     return apiClient.post<InvoiceDto>("/ims/invoices", payload);
   },

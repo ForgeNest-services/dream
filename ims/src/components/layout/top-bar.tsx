@@ -115,7 +115,7 @@ export function TopBar({ onOpenCommand }: { onOpenCommand: () => void }) {
             <Button
               variant="ghost"
               size="sm"
-              className="shrink-0 gap-1.5 px-2 text-ink-foreground hover:bg-sidebar-accent"
+              className="shrink-0 gap-1.5 px-2 text-ink-foreground hover:bg-sidebar-accent hover:text-ink-foreground"
             >
               <Building2 className="h-4 w-4 shrink-0" />
               <span className="hidden max-w-28 truncate 2xl:inline">{branchLabel}</span>
@@ -142,7 +142,7 @@ export function TopBar({ onOpenCommand }: { onOpenCommand: () => void }) {
             <Button
               variant="ghost"
               size="sm"
-              className="shrink-0 gap-1.5 px-2 text-ink-foreground hover:bg-sidebar-accent"
+              className="shrink-0 gap-1.5 px-2 text-ink-foreground hover:bg-sidebar-accent hover:text-ink-foreground"
               title="Fiscal year"
             >
               <CalendarRange className="h-4 w-4 shrink-0" />
@@ -170,7 +170,7 @@ export function TopBar({ onOpenCommand }: { onOpenCommand: () => void }) {
           <Button
             variant="ghost"
             size="icon"
-            className="text-ink-foreground hover:bg-sidebar-accent"
+            className="text-ink-foreground hover:bg-sidebar-accent hover:text-ink-foreground"
             onClick={() => setDark((d) => !d)}
             aria-label="Toggle theme"
           >
@@ -181,7 +181,7 @@ export function TopBar({ onOpenCommand }: { onOpenCommand: () => void }) {
             <Button
               variant="outline"
               size="sm"
-              className="gap-1.5 border-sidebar-border bg-transparent text-ink-foreground hover:bg-sidebar-accent"
+              className="gap-1.5 border-sidebar-border bg-transparent text-ink-foreground hover:bg-sidebar-accent hover:text-ink-foreground"
               onClick={handleInstall}
             >
               <Download className="h-4 w-4" /> Install
@@ -195,7 +195,7 @@ export function TopBar({ onOpenCommand }: { onOpenCommand: () => void }) {
             <Button
               variant="ghost"
               size="icon"
-              className="shrink-0 text-ink-foreground hover:bg-sidebar-accent xl:hidden"
+              className="shrink-0 text-ink-foreground hover:bg-sidebar-accent hover:text-ink-foreground xl:hidden"
               aria-label="More options"
             >
               <MoreVertical className="h-4 w-4" />
@@ -220,7 +220,7 @@ export function TopBar({ onOpenCommand }: { onOpenCommand: () => void }) {
             <Button
               variant="ghost"
               size="sm"
-              className="shrink-0 gap-2 px-1.5 text-ink-foreground hover:bg-sidebar-accent"
+              className="shrink-0 gap-2 px-1.5 text-ink-foreground hover:bg-sidebar-accent hover:text-ink-foreground"
             >
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
                 {app.currentUser?.name.slice(0, 2).toUpperCase()}

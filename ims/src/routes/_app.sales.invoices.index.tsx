@@ -31,7 +31,7 @@ interface InvoicesSearch {
   perPage: number;
 }
 
-export const Route = createFileRoute("/_app/sales/invoices")({
+export const Route = createFileRoute("/_app/sales/invoices/")({
   head: () => ({
     meta: [
       { title: "Invoices — SROTA IMS" },
@@ -236,7 +236,13 @@ function InvoicesPage() {
                 return (
                   <tr key={r.inv.id} className="border-b last:border-0 hover:bg-accent/40">
                     <td className="num px-3 py-2.5">
-                      {r.inv.number}
+                      <Link
+                        to="/sales/invoices/$invoiceId"
+                        params={{ invoiceId: r.inv.id }}
+                        className="hover:underline"
+                      >
+                        {r.inv.number}
+                      </Link>
                       <span className="ml-1.5 text-xs capitalize text-muted-foreground">
                         {r.inv.kind}
                       </span>

@@ -350,6 +350,7 @@ interface AppContextValue extends AppState {
   deleteCategory: (id: string) => Promise<{ ok: boolean; error?: string }>;
   addBrand: (name: string) => Promise<{ ok: boolean; brand?: Brand; error?: string }>;
   addMedia: (file: File, folder: string) => Promise<{ ok: boolean; media?: MediaItem; error?: string }>;
+  deleteMedia: (mediaId: string) => Promise<{ ok: boolean; error?: string }>;
   adjustStock: (input: {
     variantId: string;
     branchId: string;
@@ -922,6 +923,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return { ok: true, media: created };
         } catch (e) {
           return { ok: false, error: e instanceof Error ? e.message : "Upload failed" };
+        }
+      },
+      deleteMedia: async (mediaId) => {
+        try {
+          const res = await mediaApi.delete(mediaId);
+          if (!res.success) return { ok: false, error: "Failed to delete image" };
+          setState((s) => ({ ...s, media: s.media.filter((m) => m.id !== mediaId) }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to delete image" };
         }
       },
 

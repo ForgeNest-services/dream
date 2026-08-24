@@ -18,6 +18,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { DatePicker } from "@/components/common/date-picker";
 import { DateText, Money } from "@/components/common/primitives";
+import { ExportButtons } from "@/components/common/export-buttons";
 import { useApp } from "@/context/app-store";
 import type { Party } from "@/data/types";
 import { useEffect, useMemo, useState } from "react";
@@ -347,8 +348,11 @@ export function LedgerDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
-        <DialogHeader>
+        <DialogHeader className="flex-row items-center justify-between gap-2 space-y-0 pr-8">
           <DialogTitle>{party.name} — party ledger</DialogTitle>
+          <div className="flex items-center gap-1.5">
+            <ExportButtons path={`/ims/parties/${party.id}/ledger/export`} params={{}} />
+          </div>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-auto rounded-lg border">
           <table className="w-full text-sm">

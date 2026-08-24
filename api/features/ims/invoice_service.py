@@ -99,6 +99,13 @@ def _check_stock_availability(
 
 class IMSInvoiceService:
     @staticmethod
+    def get(db: Session, tenant_id: str, invoice_id: str) -> dict:
+        invoice = IMSInvoiceRepository.get_by_id(db, tenant_id, invoice_id)
+        if not invoice:
+            return {"success": False, "error_code": "DOCUMENT_NOT_FOUND"}
+        return {"success": True, "invoice": invoice}
+
+    @staticmethod
     def list_for_tenant(
         db: Session,
         tenant_id: str,
