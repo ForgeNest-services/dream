@@ -79,13 +79,14 @@ def build_pdf(
     prints on A4 paper, just landscape orientation, never a non-A4 size."""
     buf = BytesIO()
     pagesize = landscape(A4) if wide else A4
+    margin = 10 * mm
     doc = SimpleDocTemplate(
         buf,
         pagesize=pagesize,
-        topMargin=15 * mm,
-        bottomMargin=15 * mm,
-        leftMargin=15 * mm,
-        rightMargin=15 * mm,
+        topMargin=margin,
+        bottomMargin=margin,
+        leftMargin=margin,
+        rightMargin=margin,
     )
     styles = getSampleStyleSheet()
     business_style = ParagraphStyle(
@@ -108,16 +109,38 @@ def build_pdf(
     table_data = [columns] + [
         [str(v) if not isinstance(v, Decimal) else f"{v:,.2f}" for v in row] for row in rows
     ]
-    table = Table(table_data, repeatRows=1)
+
+    # Column widths default to content-width in reportlab, which routinely
+    # leaves the table narrower than the page — the exact "empty margin on
+    # the right" the printed output showed. Instead, weight each column by
+    # its longest cell (header or data) and scale those weights to fill the
+    # full printable width, so the table always spans edge-to-edge.
+    available_width = pagesize[0] - 2 * margin
+    weights = [
+        max([len(str(h))] + [len(str(row[i])) for row in table_data[1:]])
+        for i, h in enumerate(columns)
+    ]
+    total_weight = sum(weights) or 1
+    col_widths = [max(15 * mm, available_width * w / total_weight) for w in weights]
+    # Rescale down if the minimum-width floor pushed the total over budget.
+    scale = available_width / sum(col_widths)
+    if scale < 1:
+        col_widths = [w * scale for w in col_widths]
+
+    table = Table(table_data, colWidths=col_widths, repeatRows=1)
     numeric_cols = {i for i, c in enumerate(columns) if _is_numeric_column(c)}
     style = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("FONTSIZE", (0, 0), (-1, -1), 9.5),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
     ]
     for col_idx in numeric_cols:
         style.append(("ALIGN", (col_idx, 0), (col_idx, -1), "RIGHT"))

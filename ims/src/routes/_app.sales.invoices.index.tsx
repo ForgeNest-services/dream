@@ -18,7 +18,7 @@ import type { Invoice, InvoiceLine } from "@/data/types";
 import type { InvoiceDto } from "@/lib/invoices-api";
 import { downloadCsv } from "@/lib/csv";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Download, Printer, Search } from "lucide-react";
+import { Download, Eye, Printer, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
 interface InvoicesSearch {
@@ -267,11 +267,18 @@ function InvoicesPage() {
                       <StatusPill status={r.inv.status} />
                     </td>
                     <td className="px-2 py-2.5 text-right">
-                      <Button asChild variant="ghost" size="sm">
-                        <Link to="/print/$invoiceId" params={{ invoiceId: r.inv.id }}>
-                          <Printer className="h-4 w-4" />
-                        </Link>
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button asChild variant="ghost" size="sm">
+                          <Link to="/sales/invoices/$invoiceId" params={{ invoiceId: r.inv.id }}>
+                            <Eye className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                        <Button asChild variant="ghost" size="sm">
+                          <Link to="/print/$invoiceId" params={{ invoiceId: r.inv.id }}>
+                            <Printer className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 );
