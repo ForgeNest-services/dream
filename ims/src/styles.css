@@ -217,10 +217,10 @@
   }
 }
 
-/* Barcode label sheet — on screen a normal responsive grid; in print,
-   switches to an exact 3x8 A4 label-sheet grid (see barcode-labels-dialog's
-   LABEL_WIDTH_MM/LABEL_HEIGHT_MM comment) so labels land on the pre-cut
-   stickers instead of wherever the browser's default flow puts them. */
+/* Barcode label sheet (print.labels.tsx) — on screen a normal responsive
+   grid; in print, switches to an exact 3x8 A4 label-sheet grid so labels
+   land on the pre-cut stickers instead of wherever the browser's default
+   flow puts them. */
 .barcode-print-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

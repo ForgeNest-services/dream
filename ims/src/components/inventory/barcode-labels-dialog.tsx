@@ -12,16 +12,13 @@ import { Label } from "@/components/ui/label";
 import { useApp } from "@/context/app-store";
 import { formatMoney } from "@/lib/format";
 import { Printer } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-// Sized for a standard 3x8 A4 adhesive label sheet (24 labels/sheet, no
-// gaps between cells): 3 * 70mm = 210mm (full A4 width, 0 side margin),
-// 8 * 33mm = 264mm, leaving 33mm of vertical slack split as 10mm top/bottom
-// margins (284mm < 297mm A4 height, comfortably one page for a full sheet).
-const LABEL_WIDTH_MM = 70;
-const LABEL_HEIGHT_MM = 33;
-const LABELS_PER_PAGE = 24;
-
+// Printing happens on a dedicated /print/labels route, not from inside this
+// dialog — Radix Dialog content is `position: fixed`, which clips/breaks
+// print pagination (only whatever fits one screen "page" prints, the rest
+// is silently cut off) and its built-in close (X) button can't be hidden
+// from here. This dialog is just a preview + copies picker.
 export function BarcodeLabelsDialog({
   productId,
   open,
@@ -36,38 +33,21 @@ export function BarcodeLabelsDialog({
   const product = app.products.find((p) => p.id === productId);
   const variants = productId ? app.variantsOf(productId) : [];
 
-  const labels = variants.flatMap((v) =>
-    Array.from({ length: Math.max(1, Math.min(24, copies)) }, (_, i) => ({
-      key: `${v.id}-${i}`,
-      name: `${product?.name ?? ""} — ${v.name}`,
-      price: v.sellingPrice,
-      code: v.barcode || v.modelNo || v.id,
-    })),
-  );
-
-  // @page is document-level and can't be scoped by a class — inject/remove
-  // a print-only stylesheet while this dialog is open, same technique
-  // print.$invoiceId.tsx uses for its A4/thermal toggle.
-  useEffect(() => {
-    if (!open) return;
-    const style = document.createElement("style");
-    style.textContent = `@media print { @page { size: A4 portrait; margin: 10mm 0; } }`;
-    document.head.appendChild(style);
-    return () => {
-      document.head.removeChild(style);
-    };
-  }, [open]);
-
-  const sheets = Math.ceil(labels.length / LABELS_PER_PAGE) || 1;
+  const previewLabels = variants.map((v) => ({
+    key: v.id,
+    name: `${product?.name ?? ""} — ${v.name}`,
+    price: v.sellingPrice,
+    code: v.barcode || v.modelNo || v.id,
+  }));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
-        <DialogHeader className="no-print">
+        <DialogHeader>
           <DialogTitle>Barcode labels — {product?.name}</DialogTitle>
         </DialogHeader>
 
-        <div className="no-print flex items-end gap-3">
+        <div className="flex items-end gap-3">
           <div>
             <Label className="text-xs">Copies per variant</Label>
             <Input
@@ -80,32 +60,42 @@ export function BarcodeLabelsDialog({
             />
           </div>
           <p className="pb-2 text-xs text-muted-foreground">
-            {variants.length} variant(s) · {labels.length} labels · {sheets} sheet
-            {sheets === 1 ? "" : "s"} (3×8 A4 label sheet, 24/sheet)
+            {variants.length} variant(s) · {variants.length * Math.max(1, Math.min(24, copies))} labels
+            total (3×8 A4 label sheet, 24/sheet)
           </p>
         </div>
 
-        <div className="max-h-[55vh] overflow-y-auto rounded-md border bg-white p-3 print:max-h-none print:overflow-visible print:border-0 print:p-0">
-          <div id="barcode-sheet" className="barcode-print-grid">
-            {labels.map((l) => (
-              <div key={l.key} className="barcode-print-cell">
-                <p className="line-clamp-2 text-[9px] font-medium leading-tight text-black">
-                  {l.name}
-                </p>
-                <Barcode value={l.code} height={34} moduleWidth={1.1} />
-                <p className="num text-[10px] font-semibold text-black">
-                  {formatMoney(l.price, app.currency)}
-                </p>
-              </div>
-            ))}
-          </div>
+        <div className="grid max-h-[45vh] grid-cols-2 gap-2 overflow-y-auto rounded-md border bg-white p-3 sm:grid-cols-3">
+          {previewLabels.map((l) => (
+            <div
+              key={l.key}
+              className="flex flex-col items-center gap-1 rounded border border-dashed border-neutral-300 p-2 text-center"
+            >
+              <p className="line-clamp-2 text-[10px] font-medium text-black">{l.name}</p>
+              <Barcode value={l.code} height={38} moduleWidth={1.2} />
+              <p className="num text-[11px] font-semibold text-black">
+                {formatMoney(l.price, app.currency)}
+              </p>
+            </div>
+          ))}
         </div>
+        {previewLabels.length === 0 && (
+          <p className="py-4 text-center text-sm text-muted-foreground">No variants to label.</p>
+        )}
 
-        <DialogFooter className="no-print">
+        <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
           </Button>
-          <Button onClick={() => window.print()}>
+          <Button
+            disabled={!productId || previewLabels.length === 0}
+            onClick={() => {
+              if (!productId) return;
+              const url = `/print/labels?productId=${encodeURIComponent(productId)}&copies=${Math.max(1, Math.min(24, copies))}`;
+              window.open(url, "_blank");
+              onOpenChange(false);
+            }}
+          >
             <Printer className="mr-1.5 h-4 w-4" /> Print labels
           </Button>
         </DialogFooter>

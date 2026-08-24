@@ -65,6 +65,7 @@ from features.ims.invoice_repository import IMSInvoiceRepository
 from features.ims.purchase_repository import IMSPurchaseRepository
 from features.ims.reports_export import build_xlsx, build_pdf
 from features.auth.repository import TenantRepository
+from utils.bikram_sambat import to_bs_iso
 
 
 router = APIRouter(prefix="/ims", tags=["ims"])
@@ -1621,13 +1622,13 @@ def export_party_ledger(
     entries = IMSLedgerRepository.list_for_party(db, staff["tenant_id"], party_id)
     is_supplier = party.kind == "supplier"
 
-    columns = ["Date", "Description", "Reference", "Debit", "Credit", "Balance"]
+    columns = ["Date (BS)", "Description", "Reference", "Debit", "Credit", "Balance"]
     rows = []
     balance = Decimal(0)
     for e in entries:
         balance += (e.credit - e.debit) if is_supplier else (e.debit - e.credit)
         rows.append([
-            e.date.strftime("%Y-%m-%d"), e.description, e.reference or "—",
+            to_bs_iso(e.date) or e.date.strftime("%Y-%m-%d"), e.description, e.reference or "—",
             e.debit, e.credit, balance,
         ])
 
