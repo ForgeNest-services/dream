@@ -580,3 +580,54 @@ class PartyStatementRow(BaseModel):
     period_debit: Decimal
     period_credit: Decimal
     balance: Decimal
+
+
+class SalesTrendPoint(BaseModel):
+    date_bs: str
+    total: Decimal
+
+
+class SalesByCategoryRow(BaseModel):
+    category_id: str | None
+    category_name: str
+    total: Decimal
+
+
+class TopSellerRow(BaseModel):
+    variant_id: str
+    product_name: str
+    variant_name: str
+    qty_sold: Decimal
+    revenue: Decimal
+
+
+class LowStockAlertRow(BaseModel):
+    variant_id: str
+    product_name: str
+    variant_name: str
+    stock_qty: Decimal
+    low_stock_at: int
+
+
+class RecentMovementRow(BaseModel):
+    id: str
+    date: datetime
+    product_name: str
+    variant_name: str
+    type: str
+    qty: Decimal
+    balance_after: Decimal
+
+
+class DashboardData(BaseModel):
+    sales_total: Decimal
+    sales_count: int
+    receivable: Decimal
+    payable: Decimal
+    stock_value: Decimal
+    low_stock_count: int
+    sales_trend: list[SalesTrendPoint]
+    sales_by_category: list[SalesByCategoryRow]
+    top_sellers: list[TopSellerRow]
+    low_stock_alerts: list[LowStockAlertRow]
+    recent_movements: list[RecentMovementRow]

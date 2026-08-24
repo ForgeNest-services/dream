@@ -41,6 +41,7 @@ from features.ims.schemas import (
     StockSummaryRow,
     MarginRow,
     PartyStatementRow,
+    DashboardData,
 )
 from features.ims.service import IMSCredentialService, IMSAuthService
 from features.ims.category_service import IMSCategoryService
@@ -56,6 +57,7 @@ from features.ims.purchase_service import IMSPurchaseService
 from features.ims.invoice_service import IMSInvoiceService
 from features.ims.branch_settings_service import IMSBranchSettingsService
 from features.ims.reports_service import IMSReportsService
+from features.ims.dashboard_service import IMSDashboardService
 from features.ims.category_repository import IMSCategoryRepository
 from features.ims.unit_repository import IMSUnitRepository
 from features.ims.invoice_repository import IMSInvoiceRepository
@@ -1547,3 +1549,22 @@ def export_party_statement(
     ]
     title = "Customer Statement" if kind == "customer" else "Supplier Statement"
     return _export_response(format, title, columns, rows)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard — one endpoint, everything filtered by the same branch_id +
+# bs_from/bs_to so a single date-range change updates every section at once.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/dashboard")
+def get_dashboard(
+    branch_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    result = IMSDashboardService.get(db, staff["tenant_id"], branch_id, bs_from, bs_to)
+    data = DashboardData(**{k: v for k, v in result.items() if k != "success"})
+    return success_response(data=data.model_dump(mode="json"))
