@@ -8,6 +8,7 @@ from features.ims.party_repository import IMSPartyRepository
 from features.ims.fiscal_year_service import IMSFiscalYearService
 from features.ims.fiscal_year_repository import IMSFiscalYearRepository
 from features.ims.nepali_date import fiscal_year_start_for_bs_date
+from features.ims.branch_settings_service import IMSBranchSettingsService
 from features.branches.repository import BranchRepository
 from features.ims import purchase_txn_helpers as txn
 from utils.bikram_sambat import to_bs_iso
@@ -48,7 +49,6 @@ class IMSPurchaseService:
         payment_method: str,
         post_to_ledger: bool,
         items: list[dict],
-        default_vat_rate: Decimal,
     ) -> dict:
         if not BranchRepository.get_by_id(db, tenant_id, branch_id):
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
@@ -56,6 +56,15 @@ class IMSPurchaseService:
             return {"success": False, "error_code": "PARTY_NOT_FOUND"}
         if not items:
             return {"success": False, "error_code": "NO_ITEMS"}
+
+        # Never trusted from the client — same reasoning as
+        # IMSInvoiceService.create. Falls back to the branch's own
+        # registered VAT rate for any line/product without its own explicit
+        # tax_rate override.
+        settings_result = IMSBranchSettingsService.get_or_create(db, tenant_id, branch_id)
+        if not settings_result["success"]:
+            return settings_result
+        default_vat_rate = settings_result["settings"].vat_rate
 
         fy_result = IMSFiscalYearService.get_active(db, tenant_id)
         start_year = fy_result["fiscal_year"].start_year if fy_result["success"] else datetime.now().year

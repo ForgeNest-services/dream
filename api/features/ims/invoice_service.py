@@ -7,6 +7,7 @@ from features.ims.party_repository import IMSPartyRepository
 from features.ims.fiscal_year_service import IMSFiscalYearService
 from features.ims.fiscal_year_repository import IMSFiscalYearRepository
 from features.ims.nepali_date import fiscal_year_start_for_bs_date
+from features.ims.branch_settings_service import IMSBranchSettingsService
 from features.branches.repository import BranchRepository
 from features.ims import purchase_txn_helpers as txn
 from utils.bikram_sambat import to_bs_iso
@@ -91,8 +92,6 @@ class IMSInvoiceService:
         paid_amount: Decimal,
         note: str | None,
         lines: list[dict],
-        vat_registered: bool,
-        vat_rate: Decimal,
         invoice_prefix: str,
         is_quotation: bool = False,
         show_vat_breakdown: bool | None = None,
@@ -103,6 +102,18 @@ class IMSInvoiceService:
             return {"success": False, "error_code": "CUSTOMER_NOT_FOUND"}
         if not lines:
             return {"success": False, "error_code": "NO_ITEMS"}
+
+        # vat_registered/vat_rate are NEVER trusted from the client — a
+        # buggy or malicious caller could otherwise claim VAT isn't
+        # registered (skipping tax on a real VAT-registered sale) or supply
+        # a fake rate. Looked up server-side from the branch's own settings,
+        # the same record GET /branches/{id}/settings reads from.
+        settings_result = IMSBranchSettingsService.get_or_create(db, tenant_id, branch_id)
+        if not settings_result["success"]:
+            return settings_result
+        branch_settings = settings_result["settings"]
+        vat_registered = branch_settings.vat_enabled
+        vat_rate = branch_settings.vat_rate
 
         # vat_registered always drives the REAL math below (VAT is genuinely
         # added on top of the exclusive rate whenever the business is
@@ -264,8 +275,6 @@ class IMSInvoiceService:
         tenant_id: str,
         user_id: str,
         invoice_id: str,
-        vat_registered: bool,
-        vat_rate: Decimal,
         invoice_prefix: str,
         payment_method: str,
         paid_amount: Decimal,
@@ -282,6 +291,17 @@ class IMSInvoiceService:
             return {"success": False, "error_code": "INVOICE_NOT_FOUND"}
         if invoice.kind != "quotation":
             return {"success": False, "error_code": "NOT_A_QUOTATION"}
+
+        # vat_registered/vat_rate are looked up server-side, same as
+        # IMSInvoiceService.create — never trusted from the client. Uses the
+        # quotation's own branch, which VAT applies at conversion time (the
+        # moment the sale actually happens), not whenever the quote was made.
+        settings_result = IMSBranchSettingsService.get_or_create(db, tenant_id, invoice.branch_id)
+        if not settings_result["success"]:
+            return settings_result
+        branch_settings = settings_result["settings"]
+        vat_registered = branch_settings.vat_enabled
+        vat_rate = branch_settings.vat_rate
 
         # See IMSInvoiceService.create's matching comment — vat_registered
         # drives the real math, show_vat_breakdown only picks "tax" vs

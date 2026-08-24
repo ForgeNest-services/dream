@@ -989,7 +989,6 @@ def create_purchase(
         payment_method=data.payment_method,
         post_to_ledger=data.post_to_ledger,
         items=[item.model_dump() for item in data.items],
-        default_vat_rate=data.default_vat_rate,
     )
     if not result["success"]:
         return _purchase_error(result["error_code"])
@@ -1095,8 +1094,6 @@ def create_invoice(
         paid_amount=data.paid_amount,
         note=data.note,
         lines=[line.model_dump() for line in data.lines],
-        vat_registered=data.vat_registered,
-        vat_rate=data.vat_rate,
         invoice_prefix=data.invoice_prefix,
         is_quotation=data.is_quotation,
         show_vat_breakdown=data.show_vat_breakdown,
@@ -1124,8 +1121,6 @@ def convert_quotation(
         tenant_id=staff["tenant_id"],
         user_id=staff.get("cred_id") or "",
         invoice_id=invoice_id,
-        vat_registered=data.vat_registered,
-        vat_rate=data.vat_rate,
         invoice_prefix=data.invoice_prefix,
         payment_method=data.payment_method,
         paid_amount=data.paid_amount,

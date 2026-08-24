@@ -440,10 +440,8 @@ class CreatePurchaseRequest(BaseModel):
     payment_method: str = "cash"
     post_to_ledger: bool = False
     items: list[Annotated[Union[PurchaseNewItem, PurchaseExistingItem], Field(discriminator="kind")]]
-    # Frontend's company.vatRate fallback for taxable lines with no explicit
-    # rate — CompanyProfile isn't a backend table yet, so this rides along
-    # on the request instead of being looked up server-side.
-    default_vat_rate: Decimal = Decimal(13)
+    # default_vat_rate is NOT accepted here — looked up server-side from the
+    # branch's own IMSBranchSettings (see IMSPurchaseService.create).
 
 
 class InvoiceLineData(BaseModel):
@@ -505,10 +503,9 @@ class CreateInvoiceRequest(BaseModel):
     paid_amount: Decimal = Decimal(0)
     note: str | None = None
     lines: list[InvoiceLineInput]
-    # CompanyProfile isn't a backend table yet — same pattern as
-    # CreatePurchaseRequest.default_vat_rate.
-    vat_registered: bool = False
-    vat_rate: Decimal = Decimal(13)
+    # vat_registered/vat_rate are NOT accepted here — looked up server-side
+    # from the branch's own IMSBranchSettings (see IMSInvoiceService.create)
+    # so a client can never lie about VAT registration or the rate.
     invoice_prefix: str = "INV"
     # A quotation is a price offer only — no stock deduction, no ledger
     # post. Those happen for real on IMSInvoiceService.convert.
@@ -524,8 +521,6 @@ class CreateInvoiceRequest(BaseModel):
 class ConvertQuotationRequest(BaseModel):
     payment_method: str = "cash"
     paid_amount: Decimal = Decimal(0)
-    vat_registered: bool = False
-    vat_rate: Decimal = Decimal(13)
     invoice_prefix: str = "INV"
     show_vat_breakdown: bool | None = None
 

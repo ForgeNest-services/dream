@@ -1032,6 +1032,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
               },
         );
 
+        // default_vat_rate is resolved server-side from the branch's own
+        // settings — never sent from here (see IMSPurchaseService.create).
         const payload: CreatePurchasePayload = {
           date: input.date,
           branch_id: input.branchId,
@@ -1043,7 +1045,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           payment_method: input.paymentMethod,
           post_to_ledger: input.postToLedger,
           items,
-          default_vat_rate: state.company.vatRate,
         };
 
         try {
@@ -1183,12 +1184,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       createInvoice: async (inv, options) => {
         const isQuotation = inv.kind === "quotation";
-        // vat_registered is always the company's REAL setting — VAT is
-        // genuinely added on top of the exclusive rate whenever the
-        // business is VAT-registered, so the customer pays the same total
-        // either way. The POS "VAT bill" toggle only controls
-        // show_vat_breakdown: whether this bill is itemized (Taxable + VAT
-        // lines, "tax" invoice) or printed as a plain total ("abbreviated").
+        // vat_registered/vat_rate are resolved server-side from the
+        // branch's own settings — never sent from here (see
+        // IMSInvoiceService.create). The POS "VAT bill" toggle only
+        // controls show_vat_breakdown: whether this bill is itemized
+        // (Taxable + VAT lines, "tax" invoice) or printed as a plain total
+        // ("abbreviated") — the customer pays the same total either way.
         const payload: CreateInvoicePayload = {
           date: inv.date,
           branch_id: inv.branchId,
@@ -1203,8 +1204,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             discount: l.discount,
             taxable: l.taxable,
           })),
-          vat_registered: state.company.vatRegistered,
-          vat_rate: state.company.vatRate,
           invoice_prefix: state.company.invoicePrefix,
           is_quotation: isQuotation,
           show_vat_breakdown: options?.vatOverride,
@@ -1252,8 +1251,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const res = await invoicesApi.convert(id, {
             payment_method: payment.paymentMethod,
             paid_amount: payment.paidAmount,
-            vat_registered: state.company.vatRegistered,
-            vat_rate: state.company.vatRate,
             invoice_prefix: state.company.invoicePrefix,
           });
           if (!res.success || !res.data) return { ok: false, error: "Failed to convert quotation" };

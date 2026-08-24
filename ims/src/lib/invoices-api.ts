@@ -58,21 +58,19 @@ export interface CreateInvoicePayload {
   paid_amount: number;
   note?: string | undefined;
   lines: InvoiceLinePayload[];
-  vat_registered: boolean;
-  vat_rate: number;
   invoice_prefix: string;
   is_quotation?: boolean | undefined;
   /** Display-only — whether this bill itemizes Taxable/VAT ("tax" kind) or
-   *  not ("abbreviated"). Independent of vat_registered, which always
-   *  drives the real total. Omit to fall back to vat_registered. */
+   *  not ("abbreviated"). vat_registered/vat_rate are never sent from the
+   *  client — the backend looks them up from the branch's own settings, so
+   *  this only controls whether the (always-correct) total is itemized.
+   *  Omit to fall back to the branch's real VAT registration. */
   show_vat_breakdown?: boolean | undefined;
 }
 
 export interface ConvertQuotationPayload {
   payment_method: string;
   paid_amount: number;
-  vat_registered: boolean;
-  vat_rate: number;
   invoice_prefix: string;
   show_vat_breakdown?: boolean | undefined;
 }
