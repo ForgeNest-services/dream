@@ -543,3 +543,40 @@ class UpdateBranchSettingsRequest(BaseModel):
     vat_rate: Decimal | None = None
     qr_image_url: str | None = None
     clear_qr: bool = False
+
+
+class StockSummaryRow(BaseModel):
+    variant_id: str
+    product_id: str
+    product_name: str
+    variant_name: str
+    category_path: str
+    unit_symbol: str
+    stock_qty: Decimal
+    low_stock_at: int
+    cost_price: Decimal
+    selling_price: Decimal
+    cost_value: Decimal
+    retail_value: Decimal
+
+
+class MarginRow(BaseModel):
+    variant_id: str
+    product_id: str
+    product_name: str
+    variant_name: str
+    qty_sold: Decimal
+    revenue: Decimal
+    cost: Decimal
+    profit: Decimal
+    margin_pct: Decimal
+
+
+class PartyStatementRow(BaseModel):
+    party_id: str
+    name: str
+    pan: str | None
+    phone: str | None
+    period_debit: Decimal
+    period_credit: Decimal
+    balance: Decimal
