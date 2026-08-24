@@ -59,6 +59,44 @@ def _compute_totals(lines: list[dict], vat_registered: bool, vat_rate: Decimal) 
     }
 
 
+def _check_stock_availability(
+    db: Session, tenant_id: str, branch_id: str, lines: list[dict]
+) -> dict | None:
+    """Pre-pass over every line before any row is written — a sale must
+    never take a variant's stock negative (see CLAUDE.md-equivalent
+    decision: hard block, not a warning). Multiple lines for the same
+    variant in one cart are summed together since they share one stock row.
+    Returns an error dict if any line would oversell, else None."""
+    requested: dict[str, Decimal] = {}
+    for line in lines:
+        requested[line["variant_id"]] = requested.get(line["variant_id"], Decimal(0)) + line["qty"]
+
+    for variant_id, qty in requested.items():
+        variant = IMSProductRepository.get_variant(db, tenant_id, variant_id)
+        if not variant:
+            return {"success": False, "error_code": "VARIANT_NOT_FOUND"}
+        stock_row = next((r for r in variant.stock_rows if r.branch_id == branch_id), None)
+        available = stock_row.qty if stock_row else Decimal(0)
+        if qty > available:
+            return {
+                "success": False,
+                "error_code": "INSUFFICIENT_STOCK",
+                "message": (
+                    f"Only {available} {variant.name} in stock, cannot sell {qty}."
+                    if variant.name and variant.name != "Default"
+                    else f"Only {available} in stock, cannot sell {qty}."
+                ),
+                "details": {
+                    "variant_id": variant_id,
+                    "product_name": variant.product.name if variant.product else None,
+                    "variant_name": variant.name,
+                    "available_qty": float(available),
+                    "requested_qty": float(qty),
+                },
+            }
+    return None
+
+
 class IMSInvoiceService:
     @staticmethod
     def list_for_tenant(
@@ -124,6 +162,16 @@ class IMSInvoiceService:
         # vat_registered so callers that don't pass it (any non-POS caller)
         # keep the original one-flag behavior.
         show_breakdown = vat_registered if show_vat_breakdown is None else show_vat_breakdown
+
+        # Stock is only actually deducted for a real sale (a quotation is a
+        # price offer, no stock movement — see the loop below), so only real
+        # sales need this check; quoting an out-of-stock item is fine.
+        # Checked BEFORE any row is written, so a failing sale never leaves
+        # a partial invoice/lines behind needing a rollback.
+        if not is_quotation:
+            stock_error = _check_stock_availability(db, tenant_id, branch_id, lines)
+            if stock_error:
+                return stock_error
 
         fy_result = IMSFiscalYearService.get_active(db, tenant_id)
         start_year = fy_result["fiscal_year"].start_year if fy_result["success"] else datetime.now().year
@@ -310,6 +358,16 @@ class IMSInvoiceService:
 
         fy_result = IMSFiscalYearService.get_active(db, tenant_id)
         start_year = fy_result["fiscal_year"].start_year if fy_result["success"] else datetime.now().year
+
+        # Same hard-block rule as create() — stock is only ever checked here
+        # (not reserved at quote time), so re-validated fresh at conversion
+        # since stock may have moved since the quote was made.
+        lines_as_dicts_precheck = [
+            {"variant_id": line.variant_id, "qty": line.qty} for line in invoice.lines
+        ]
+        stock_error = _check_stock_availability(db, tenant_id, invoice.branch_id, lines_as_dicts_precheck)
+        if stock_error:
+            return stock_error
 
         try:
             seq = IMSInvoiceRepository.count_for_tenant(db, tenant_id) + 1

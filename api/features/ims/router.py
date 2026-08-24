@@ -1038,12 +1038,17 @@ _INVOICE_ERROR_MAP = {
     "INVOICE_NOT_FOUND": ("INVOICE_NOT_FOUND", "Quotation not found.", 404),
     "NOT_A_QUOTATION": ("NOT_A_QUOTATION", "This document is not a quotation.", 422),
     "CONVERSION_FAILED": ("CONVERSION_FAILED", "Failed to convert quotation.", 500),
+    "INSUFFICIENT_STOCK": ("INSUFFICIENT_STOCK", "Not enough stock for one or more items.", 409),
 }
 
 
-def _invoice_error(code: str):
+def _invoice_error(result: dict):
+    code = result["error_code"]
     mapped = _INVOICE_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to process request.", 500))
-    return error_response(*mapped)
+    error_code, default_message, status_code = mapped
+    return error_response(
+        error_code, result.get("message", default_message), status_code, result.get("details")
+    )
 
 
 @router.get("/invoices")
@@ -1110,7 +1115,7 @@ def create_invoice(
         show_vat_breakdown=data.show_vat_breakdown,
     )
     if not result["success"]:
-        return _invoice_error(result["error_code"])
+        return _invoice_error(result)
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation saved" if data.is_quotation else "Sale recorded",
@@ -1138,7 +1143,7 @@ def convert_quotation(
         show_vat_breakdown=data.show_vat_breakdown,
     )
     if not result["success"]:
-        return _invoice_error(result["error_code"])
+        return _invoice_error(result)
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation converted to invoice",
