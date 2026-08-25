@@ -161,6 +161,18 @@ export const authApi = {
     }
   },
 
+  chooseApp: async (appCode: string): Promise<ApiResponse<{ tenant: Tenant }>> => {
+    try {
+      const response = await axiosClient.post<ApiResponse<{ tenant: Tenant }>>(
+        '/auth/choose-free-app',
+        { app_code: appCode }
+      );
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'chooseApp');
+    }
+  },
+
   refreshToken: async (refreshToken: string): Promise<ApiResponse> => {
     try {
       const response = await axiosClient.post<ApiResponse>('/auth/refresh', {

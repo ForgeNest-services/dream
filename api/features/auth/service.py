@@ -123,15 +123,6 @@ class AuthService:
             db.commit()
             logger.info(f"User linked to tenant: {user.id} -> {tenant.id}")
 
-            # Auto-provision 30-day trials for every active app in the catalog.
-            # Runs after commit so the tenant row exists before FK inserts.
-            try:
-                from features.subscriptions.service import SubscriptionService
-                SubscriptionService.provision_trials(db, tenant.id)
-            except Exception as trial_err:
-                logger.error(f"Failed to provision trials for tenant {tenant.id}: {trial_err}")
-                # Non-fatal — business is registered, trials can be fixed manually.
-
             tokens = AuthService._issue_tokens_for_user(user)
 
             return {
@@ -394,6 +385,30 @@ class AuthService:
             "otp_sent": True,
             "otp_code": otp,
         }
+
+    @staticmethod
+    def choose_free_app(db: Session, tenant_id: str, app_code: str) -> dict:
+        tenant = TenantRepository.get_by_id(db, tenant_id)
+        if not tenant:
+            return {"success": False, "error_code": "TENANT_NOT_FOUND"}
+
+        if tenant.free_app_code:
+            return {"success": False, "error_code": "FREE_APP_ALREADY_CHOSEN"}
+
+        from shared_models import App
+        app = db.query(App).filter(App.code == app_code, App.is_active == True).first()
+        if not app:
+            return {"success": False, "error_code": "APP_NOT_FOUND"}
+
+        tenant = TenantRepository.set_free_app_code(db, tenant, app_code)
+
+        try:
+            from features.subscriptions.service import SubscriptionService
+            SubscriptionService.provision_single_trial(db, tenant_id, app_code)
+        except Exception as e:
+            logger.error(f"Failed to provision trial for tenant {tenant_id}: {e}")
+
+        return {"success": True, "tenant": TenantData.model_validate(tenant)}
 
     @staticmethod
     def create_team_member(

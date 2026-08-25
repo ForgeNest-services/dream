@@ -18,6 +18,12 @@ def _is_active(sub: AppSubscription) -> bool:
 
 class SubscriptionService:
     @staticmethod
+    def provision_single_trial(db: Session, tenant_id: str, app_code: str) -> None:
+        """Called when a tenant chooses their one free app — starts the 30-day trial."""
+        SubscriptionRepository.create_trial(db, tenant_id, app_code, TRIAL_DAYS)
+        logger.info(f"Provisioned trial for tenant {tenant_id}, app {app_code}")
+
+    @staticmethod
     def provision_trials(db: Session, tenant_id: str) -> None:
         """Called after business registration — auto-creates 30-day trials for
         every active app in the catalog. Idempotent: skips apps that already

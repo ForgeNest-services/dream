@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useApps } from '@/hooks/useApps';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
+import { useAuth } from '@/hooks/useAuth';
 import { App, AppSubscription } from '@/types/apps';
 import { colors, spacing, radius } from '@/lib/design-tokens';
 import { Spinner } from '@/components/shared/Spinner';
@@ -15,8 +16,12 @@ import {
   MdOutlineApps,
   MdOutlineArrowOutward,
   MdOutlineSettings,
+  MdLockOutline,
 } from 'react-icons/md';
 import { IconType } from 'react-icons';
+
+const WHATSAPP_URL =
+  'https://wa.me/9779800000000?text=Hi%2C%20I%27d%20like%20to%20upgrade%20my%20Dream%20subscription.';
 
 const ICON_MAP: Record<string, IconType> = {
   Hotel: MdOutlineHotel,
@@ -26,8 +31,6 @@ const ICON_MAP: Record<string, IconType> = {
   Pool: MdOutlinePool,
 };
 
-// Each app gets a stable identity color, cycled deterministically from its
-// code — reads as "distinct products," not one uniform navy-tinted set.
 const APP_PALETTE = [
   { bg: '#E8EDF2', fg: colors.primary[800] },
   { bg: colors.accent[50], fg: colors.accent[700] },
@@ -44,6 +47,15 @@ function paletteFor(code: string) {
 function daysUntil(iso: string | null): number | null {
   if (!iso) return null;
   return Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+}
+
+function isAccessible(sub: AppSubscription | null): boolean {
+  if (!sub) return false;
+  if (sub.status === 'trialing') {
+    const days = daysUntil(sub.trial_ends_at);
+    return days !== null && days > 0;
+  }
+  return sub.status === 'active';
 }
 
 function SubBadge({ sub }: { sub: AppSubscription | null }) {
@@ -89,15 +101,16 @@ function SubBadge({ sub }: { sub: AppSubscription | null }) {
   return null;
 }
 
-function AppTile({ app, sub }: { app: App; sub: AppSubscription | null }) {
+function MyAppTile({ app, sub }: { app: App; sub: AppSubscription | null }) {
   const Icon = (app.icon && ICON_MAP[app.icon]) || MdOutlineApps;
   const palette = paletteFor(app.code);
+  const accessible = isAccessible(sub);
 
   return (
     <div
       style={{
         backgroundColor: colors.neutral[0],
-        border: `1px solid ${colors.neutral[200]}`,
+        border: `1px solid ${colors.primary[200]}`,
         borderRadius: radius.lg,
         padding: spacing.lg,
         display: 'flex',
@@ -111,7 +124,7 @@ function AppTile({ app, sub }: { app: App; sub: AppSubscription | null }) {
         e.currentTarget.style.transform = 'translateY(-2px)';
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = colors.neutral[200];
+        e.currentTarget.style.borderColor = colors.primary[200];
         e.currentTarget.style.boxShadow = 'none';
         e.currentTarget.style.transform = 'translateY(0)';
       }}
@@ -133,11 +146,7 @@ function AppTile({ app, sub }: { app: App; sub: AppSubscription | null }) {
         >
           {app.icon_url ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={app.icon_url}
-              alt={`${app.name} logo`}
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            />
+            <img src={app.icon_url} alt={`${app.name} logo`} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           ) : (
             <Icon size={26} />
           )}
@@ -147,16 +156,16 @@ function AppTile({ app, sub }: { app: App; sub: AppSubscription | null }) {
             style={{
               fontSize: '10px',
               fontWeight: '700',
-              color: colors.neutral[500],
-              backgroundColor: colors.neutral[50],
-              border: `1px solid ${colors.neutral[200]}`,
+              color: colors.primary[700],
+              backgroundColor: colors.primary[50],
+              border: `1px solid ${colors.primary[200]}`,
               padding: '3px 8px',
               borderRadius: radius.full,
               textTransform: 'uppercase',
               letterSpacing: '0.5px',
             }}
           >
-            {app.code.replace(/_/g, ' ')}
+            My App
           </span>
           <SubBadge sub={sub} />
         </div>
@@ -214,33 +223,176 @@ function AppTile({ app, sub }: { app: App; sub: AppSubscription | null }) {
           <MdOutlineSettings size={15} />
           Manage
         </Link>
-        <a
-          href={app.url}
-          target="_blank"
-          rel="noopener noreferrer"
+        {accessible ? (
+          <a
+            href={app.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              flex: 1,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: spacing.xs,
+              padding: `${spacing.sm} ${spacing.md}`,
+              borderRadius: radius.full,
+              border: `1px solid ${colors.primary[800]}`,
+              backgroundColor: colors.primary[800],
+              color: colors.neutral[0],
+              fontSize: '13px',
+              fontWeight: '600',
+              textDecoration: 'none',
+              transition: 'background-color 0.15s',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = colors.primary[700])}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = colors.primary[800])}
+          >
+            Open
+            <MdOutlineArrowOutward size={15} />
+          </a>
+        ) : (
+          <a
+            href={WHATSAPP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              flex: 1,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: spacing.xs,
+              padding: `${spacing.sm} ${spacing.md}`,
+              borderRadius: radius.full,
+              border: '1px solid #16A34A',
+              backgroundColor: '#16A34A',
+              color: '#fff',
+              fontSize: '13px',
+              fontWeight: '600',
+              textDecoration: 'none',
+              transition: 'background-color 0.15s',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#15803D')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#16A34A')}
+          >
+            Upgrade
+            <MdOutlineArrowOutward size={15} />
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LockedAppTile({ app }: { app: App }) {
+  const Icon = (app.icon && ICON_MAP[app.icon]) || MdOutlineApps;
+
+  return (
+    <div
+      style={{
+        backgroundColor: colors.neutral[50],
+        border: `1px solid ${colors.neutral[200]}`,
+        borderRadius: radius.lg,
+        padding: spacing.lg,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: spacing.lg,
+        opacity: 0.72,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md }}>
+        <div
           style={{
-            flex: 1,
-            display: 'inline-flex',
+            width: '52px',
+            height: '52px',
+            borderRadius: radius.md,
+            backgroundColor: colors.neutral[200],
+            color: colors.neutral[500],
+            display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: spacing.xs,
-            padding: `${spacing.sm} ${spacing.md}`,
-            borderRadius: radius.full,
-            border: `1px solid ${colors.primary[800]}`,
-            backgroundColor: colors.primary[800],
-            color: colors.neutral[0],
-            fontSize: '13px',
-            fontWeight: '600',
-            textDecoration: 'none',
-            transition: 'background-color 0.15s',
+            flexShrink: 0,
+            overflow: 'hidden',
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = colors.primary[700])}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = colors.primary[800])}
         >
-          Open
-          <MdOutlineArrowOutward size={15} />
-        </a>
+          {app.icon_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={app.icon_url} alt={`${app.name} logo`} style={{ width: '100%', height: '100%', objectFit: 'contain', filter: 'grayscale(1)' }} />
+          ) : (
+            <Icon size={26} />
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <MdLockOutline size={13} color={colors.neutral[400]} />
+          <span
+            style={{
+              fontSize: '10px',
+              fontWeight: '700',
+              color: colors.neutral[500],
+              backgroundColor: colors.neutral[100],
+              border: `1px solid ${colors.neutral[200]}`,
+              padding: '3px 8px',
+              borderRadius: radius.full,
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}
+          >
+            Locked
+          </span>
+        </div>
       </div>
+
+      <div style={{ flex: 1 }}>
+        <h3
+          style={{
+            fontSize: '17px',
+            fontWeight: '700',
+            color: colors.neutral[600],
+            margin: 0,
+            fontFamily: 'var(--font-playfair)',
+          }}
+        >
+          {app.name}
+        </h3>
+        {app.description && (
+          <p
+            style={{
+              fontSize: '13px',
+              color: colors.neutral[500],
+              lineHeight: '1.55',
+              margin: 0,
+              marginTop: spacing.xs,
+            }}
+          >
+            {app.description}
+          </p>
+        )}
+      </div>
+
+      <a
+        href={WHATSAPP_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: spacing.xs,
+          padding: `${spacing.sm} ${spacing.md}`,
+          borderRadius: radius.full,
+          border: '1px solid #BBF7D0',
+          backgroundColor: colors.neutral[0],
+          color: '#16A34A',
+          fontSize: '13px',
+          fontWeight: '600',
+          textDecoration: 'none',
+          transition: 'background-color 0.15s',
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#F0FDF4')}
+        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = colors.neutral[0])}
+      >
+        Upgrade via WhatsApp
+        <MdOutlineArrowOutward size={15} />
+      </a>
     </div>
   );
 }
@@ -248,6 +400,7 @@ function AppTile({ app, sub }: { app: App; sub: AppSubscription | null }) {
 export function AppsGrid() {
   const { apps, isLoading, error } = useApps();
   const { forApp } = useSubscriptions();
+  const { tenant } = useAuth();
 
   if (isLoading) {
     return (
@@ -276,30 +429,41 @@ export function AppsGrid() {
 
   if (apps.length === 0) {
     return (
-      <div
-        style={{
-          padding: spacing['2xl'],
-          textAlign: 'center',
-          color: colors.neutral[500],
-          fontSize: '14px',
-        }}
-      >
+      <div style={{ padding: spacing['2xl'], textAlign: 'center', color: colors.neutral[500], fontSize: '14px' }}>
         No apps available yet.
       </div>
     );
   }
 
+  const freeAppCode = tenant?.free_app_code;
+  const myApp = freeAppCode ? apps.find((a) => a.code === freeAppCode) ?? null : null;
+  const otherApps = freeAppCode ? apps.filter((a) => a.code !== freeAppCode) : apps;
+
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-        gap: spacing.lg,
-      }}
-    >
-      {apps.map((app) => (
-        <AppTile key={app.id} app={app} sub={forApp(app.code)} />
-      ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: spacing['2xl'] }}>
+      {myApp && (
+        <div>
+          <p style={{ fontSize: '12px', fontWeight: '700', color: colors.primary[600], textTransform: 'uppercase', letterSpacing: '0.8px', margin: 0, marginBottom: spacing.lg }}>
+            Your active app
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: spacing.lg }}>
+            <MyAppTile app={myApp} sub={forApp(myApp.code)} />
+          </div>
+        </div>
+      )}
+
+      {otherApps.length > 0 && (
+        <div>
+          <p style={{ fontSize: '12px', fontWeight: '700', color: colors.neutral[400], textTransform: 'uppercase', letterSpacing: '0.8px', margin: 0, marginBottom: spacing.lg }}>
+            {myApp ? 'Other apps — contact us to unlock' : 'Available apps'}
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: spacing.lg }}>
+            {otherApps.map((app) => (
+              <LockedAppTile key={app.id} app={app} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
