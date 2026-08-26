@@ -14,10 +14,12 @@ import {
 import { IconType } from 'react-icons';
 import { useAppDetail } from '@/hooks/useApps';
 import { useBranches } from '@/hooks/useBranches';
+import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { APP_CODE_TO_ROLES } from '@/types/apps';
 import { colors, spacing } from '@/lib/design-tokens';
 import { Spinner } from '@/components/shared/Spinner';
 import { CredentialsSection } from '@/components/dashboard/CredentialsSection';
+import { SubscriptionSection } from '@/components/dashboard/SubscriptionSection';
 
 const ICON_MAP: Record<string, IconType> = {
   Hotel: MdOutlineHotel,
@@ -30,6 +32,7 @@ const ICON_MAP: Record<string, IconType> = {
 export function AppDetailContent({ slug }: { slug: string }) {
   const { app, isLoading, error } = useAppDetail(slug);
   const { branches, isLoading: branchesLoading } = useBranches();
+  const { forApp, submitPayment, fetchPlansForApp } = useSubscriptions();
 
   if (isLoading) {
     return (
@@ -76,6 +79,7 @@ export function AppDetailContent({ slug }: { slug: string }) {
   const Icon = (app.icon && ICON_MAP[app.icon]) || MdOutlineApps;
   const rolesForApp = APP_CODE_TO_ROLES[app.code];
   const credentialsSupported = Boolean(rolesForApp);
+  const sub = forApp(app.code);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing['2xl'] }}>
@@ -190,6 +194,28 @@ export function AppDetailContent({ slug }: { slug: string }) {
           <MdOutlineArrowOutward size={16} />
         </a>
       </div>
+
+      {/* Subscription section */}
+      <section>
+        <h2
+          style={{
+            fontSize: '13px',
+            fontWeight: '600',
+            color: colors.neutral[500],
+            textTransform: 'uppercase',
+            letterSpacing: '0.8px',
+            marginBottom: spacing.md,
+          }}
+        >
+          Subscription
+        </h2>
+        <SubscriptionSection
+          appCode={app.code}
+          sub={sub}
+          onSubmitPayment={submitPayment}
+          fetchPlans={fetchPlansForApp}
+        />
+      </section>
 
       {/* Credentials section */}
       <section>

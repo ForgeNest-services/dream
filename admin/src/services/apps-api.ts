@@ -11,6 +11,10 @@ import {
   CreateBranchPayload,
   UpdateBranchPayload,
   APP_CODE_TO_API_PREFIX,
+  SubscriptionPlan,
+  UpdatePlanPayload,
+  AdminSubscription,
+  AdminPayment,
 } from '@/types/apps';
 
 const normalizeError = (error: any, context?: string): ApiError => {
@@ -155,6 +159,117 @@ export const appsApi = {
       return response.data;
     } catch (error) {
       throw normalizeError(error, 'deleteBranch');
+    }
+  },
+
+  listMySubscriptions: async (): Promise<ApiResponse<import('@/types/apps').AppSubscription[]>> => {
+    try {
+      const response = await axiosClient.get('/subscriptions/my');
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'listMySubscriptions');
+    }
+  },
+
+  listMyPayments: async (): Promise<ApiResponse<import('@/types/apps').SubscriptionPayment[]>> => {
+    try {
+      const response = await axiosClient.get('/subscriptions/my/payments');
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'listMyPayments');
+    }
+  },
+
+  submitPayment: async (
+    payload: import('@/types/apps').SubmitPaymentPayload,
+  ): Promise<ApiResponse<import('@/types/apps').SubscriptionPayment>> => {
+    try {
+      const response = await axiosClient.post('/subscriptions/my/payments', payload);
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'submitPayment');
+    }
+  },
+
+  listPlans: async (appCode?: string): Promise<ApiResponse<SubscriptionPlan[]>> => {
+    try {
+      const params = appCode ? { app_code: appCode } : {};
+      const response = await axiosClient.get<ApiResponse<SubscriptionPlan[]>>('/subscriptions/plans', { params });
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'listPlans');
+    }
+  },
+
+  // ── Superadmin ──────────────────────────────────────────────────────────
+
+  adminListPlans: async (): Promise<ApiResponse<SubscriptionPlan[]>> => {
+    try {
+      const response = await axiosClient.get<ApiResponse<SubscriptionPlan[]>>('/subscriptions/admin/plans');
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'adminListPlans');
+    }
+  },
+
+  adminUpdatePlan: async (planId: string, payload: UpdatePlanPayload): Promise<ApiResponse<SubscriptionPlan>> => {
+    try {
+      const response = await axiosClient.patch<ApiResponse<SubscriptionPlan>>(
+        `/subscriptions/admin/plans/${planId}`,
+        payload,
+      );
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'adminUpdatePlan');
+    }
+  },
+
+  adminListAllSubscriptions: async (): Promise<ApiResponse<AdminSubscription[]>> => {
+    try {
+      const response = await axiosClient.get<ApiResponse<AdminSubscription[]>>('/subscriptions/admin/all');
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'adminListAllSubscriptions');
+    }
+  },
+
+  adminListAllPayments: async (): Promise<ApiResponse<AdminPayment[]>> => {
+    try {
+      const response = await axiosClient.get<ApiResponse<AdminPayment[]>>('/subscriptions/admin/all-payments');
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'adminListAllPayments');
+    }
+  },
+
+  adminConfirmPayment: async (paymentId: string, notes?: string): Promise<ApiResponse<unknown>> => {
+    try {
+      const response = await axiosClient.post(`/subscriptions/admin/payments/${paymentId}/confirm`, { notes: notes ?? null });
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'adminConfirmPayment');
+    }
+  },
+
+  adminRejectPayment: async (paymentId: string, notes?: string): Promise<ApiResponse<unknown>> => {
+    try {
+      const response = await axiosClient.post(`/subscriptions/admin/payments/${paymentId}/reject`, { notes: notes ?? null });
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'adminRejectPayment');
+    }
+  },
+
+  adminExtendTrial: async (tenantId: string, appCode: string, extraDays: number): Promise<ApiResponse<unknown>> => {
+    try {
+      const response = await axiosClient.post('/subscriptions/admin/extend-trial', {
+        tenant_id: tenantId,
+        app_code: appCode,
+        extra_days: extraDays,
+      });
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'adminExtendTrial');
     }
   },
 };

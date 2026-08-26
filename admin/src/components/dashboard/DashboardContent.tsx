@@ -4,7 +4,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useApps } from '@/hooks/useApps';
 import { colors, spacing, radius } from '@/lib/design-tokens';
 import { AppsGrid } from '@/components/dashboard/AppsGrid';
-import { BusinessSetupDialog } from '@/components/dashboard/BusinessSetupDialog';
 import { HospitalityMark } from '@/components/shared/HospitalityMark';
 
 function greeting(): string {
@@ -20,12 +19,10 @@ export function DashboardContent() {
 
   const firstName =
     user && 'full_name' in user && user.full_name ? user.full_name.split(' ')[0] : user?.email?.split('@')[0];
-  const needsBusinessSetup = !isSuperAdmin && !tenant;
   const showEmptyState = !isSuperAdmin && tenant && !appsLoading && apps.length === 0;
 
   return (
-    <>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: spacing['2xl'] }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: spacing['2xl'] }}>
         <div>
           <p
             style={{
@@ -62,7 +59,7 @@ export function DashboardContent() {
               ? 'Admin control panel'
               : tenant
                 ? `Here's what's running at ${tenant.name} today.`
-                : 'One more step to unlock your apps.'}
+                : ''}
           </p>
         </div>
 
@@ -106,9 +103,6 @@ export function DashboardContent() {
             </p>
           </div>
         )}
-      </div>
-
-      {needsBusinessSetup && <BusinessSetupDialog />}
-    </>
+    </div>
   );
 }

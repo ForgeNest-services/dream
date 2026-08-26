@@ -34,7 +34,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function BusinessRegisterForm() {
+export function BusinessRegisterForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const {
     register,
     control,
@@ -49,10 +49,11 @@ export function BusinessRegisterForm() {
   const hasPan = Boolean(pan && pan.trim().length > 0);
 
   const onSubmit = async (data: BusinessRegisterRequest) => {
-    await submitRegister({
+    const ok = await submitRegister({
       ...data,
       is_vat_registered: hasPan ? data.is_vat_registered : false,
     });
+    if (ok) onSuccess?.();
   };
 
   const registrationSummary = !hasPan
@@ -209,7 +210,7 @@ export function BusinessRegisterForm() {
       />
 
       <Button type="submit" isLoading={isLoading} size="lg">
-        {isLoading ? 'Saving…' : 'Continue to Dashboard'}
+        {isLoading ? 'Saving…' : 'Continue →'}
       </Button>
     </form>
   );

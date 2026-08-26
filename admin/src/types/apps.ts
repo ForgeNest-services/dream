@@ -100,8 +100,100 @@ export const APP_CODE_TO_API_PREFIX: Record<string, string> = {
   srota_ims: '/ims',
 };
 
+export interface AppSubscription {
+  id: string;
+  tenant_id: string;
+  app_code: string;
+  status: 'trialing' | 'active' | 'expired' | 'cancelled';
+  plan: 'monthly' | 'yearly' | 'bundle' | null;
+  trial_ends_at: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  price_npr: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubscriptionPayment {
+  id: string;
+  tenant_id: string;
+  app_code: string;
+  amount_npr: string;
+  plan: string;
+  period_months: number;
+  payment_method: string | null;
+  status: 'pending' | 'confirmed' | 'rejected';
+  notes: string | null;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubmitPaymentPayload {
+  app_code: string;
+  plan: 'monthly' | 'yearly';
+  payment_method?: string | null;
+  notes?: string | null;
+}
+
+export const PLAN_PRICES: Record<string, { label: string; price: number }> = {
+  monthly: { label: 'Monthly', price: 2999 },
+  yearly: { label: 'Yearly', price: 11999 },
+};
+
 export const APP_CODE_TO_ROLES: Record<string, ReadonlyArray<{ code: string; label: string }>> = {
   srota_pms: HOTEL_PMS_ROLES,
   srota_rms: RESTRO_ROLES,
   srota_ims: IMS_ROLES,
 };
+
+export interface SubscriptionPlan {
+  id: string;
+  app_code: string;
+  plan: string;
+  price_npr: string;
+  label: string;
+  is_active: boolean;
+  updated_at: string;
+}
+
+export interface UpdatePlanPayload {
+  price_npr?: number;
+  label?: string;
+  is_active?: boolean;
+}
+
+export interface AdminSubscription {
+  id: string;
+  tenant_id: string;
+  tenant_name: string;
+  tenant_email: string | null;
+  app_code: string;
+  status: string;
+  plan: string | null;
+  trial_ends_at: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  price_npr: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminPayment {
+  id: string;
+  tenant_id: string;
+  tenant_name: string;
+  app_code: string;
+  amount_npr: string;
+  plan: string;
+  period_months: number;
+  payment_method: string | null;
+  status: string;
+  notes: string | null;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}

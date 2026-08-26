@@ -387,6 +387,30 @@ class AuthService:
         }
 
     @staticmethod
+    def choose_free_app(db: Session, tenant_id: str, app_code: str) -> dict:
+        tenant = TenantRepository.get_by_id(db, tenant_id)
+        if not tenant:
+            return {"success": False, "error_code": "TENANT_NOT_FOUND"}
+
+        if tenant.free_app_code:
+            return {"success": False, "error_code": "FREE_APP_ALREADY_CHOSEN"}
+
+        from shared_models import App
+        app = db.query(App).filter(App.code == app_code, App.is_active == True).first()
+        if not app:
+            return {"success": False, "error_code": "APP_NOT_FOUND"}
+
+        tenant = TenantRepository.set_free_app_code(db, tenant, app_code)
+
+        try:
+            from features.subscriptions.service import SubscriptionService
+            SubscriptionService.provision_single_trial(db, tenant_id, app_code)
+        except Exception as e:
+            logger.error(f"Failed to provision trial for tenant {tenant_id}: {e}")
+
+        return {"success": True, "tenant": TenantData.model_validate(tenant)}
+
+    @staticmethod
     def create_team_member(
         db: Session, tenant_id: str, caller_id: str, caller_role: str, email: str, full_name: str, role: str
     ) -> dict:

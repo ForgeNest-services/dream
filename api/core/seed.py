@@ -420,6 +420,43 @@ def seed_apps():
         db.close()
 
 
+_DEFAULT_PLANS = [
+    {"app_code": "srota_pms", "plan": "monthly", "price_npr": 2999, "label": "PMS Monthly"},
+    {"app_code": "srota_pms", "plan": "yearly",  "price_npr": 11999, "label": "PMS Yearly"},
+    {"app_code": "srota_rms", "plan": "monthly", "price_npr": 1299,  "label": "RMS Monthly"},
+    {"app_code": "srota_rms", "plan": "yearly",  "price_npr": 6999,  "label": "RMS Yearly"},
+    {"app_code": "srota_ims", "plan": "monthly", "price_npr": 1299,  "label": "IMS Monthly"},
+    {"app_code": "srota_ims", "plan": "yearly",  "price_npr": 6999,  "label": "IMS Yearly"},
+    {"app_code": "bundle",    "plan": "monthly", "price_npr": 4999,  "label": "Bundle Monthly (All Apps)"},
+    {"app_code": "bundle",    "plan": "yearly",  "price_npr": 19999, "label": "Bundle Yearly (All Apps)"},
+]
+
+
+def seed_subscription_plans():
+    from shared_models import SubscriptionPlan
+    db = SessionLocal()
+    try:
+        for entry in _DEFAULT_PLANS:
+            exists = (
+                db.query(SubscriptionPlan)
+                .filter(
+                    SubscriptionPlan.app_code == entry["app_code"],
+                    SubscriptionPlan.plan == entry["plan"],
+                )
+                .first()
+            )
+            if not exists:
+                db.add(SubscriptionPlan(**entry))
+        db.commit()
+        logger.info("Subscription plans seeded")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to seed subscription plans: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
 def seed_app_icons():
     """Uploads each app's icon PNG from api/assets/ to MinIO at a stable key
     (platform/app-icons/{code}.png) and stores the resulting URL on the app

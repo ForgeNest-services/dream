@@ -18,6 +18,7 @@ export interface Tenant {
   business_address?: string | null;
   business_phone?: string | null;
   business_email?: string | null;
+  free_app_code?: string | null;
 }
 
 export interface TokenData {
