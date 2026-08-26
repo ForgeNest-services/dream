@@ -34,7 +34,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   if (!isHydrated) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div
+        style={{
+          display: 'flex',
+          minHeight: '100vh',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: '#f8fafc',
+        }}
+      >
         <Spinner size="lg" />
       </div>
     );

@@ -220,6 +220,9 @@ export interface OwnerUser {
   user_id: string;
   full_name: string;
   email: string;
+  /** Only ever set by the Google OAuth signup flow — presence doubles as
+   *  the "signed up with Google" signal (see backend OwnerUserData docstring). */
+  picture_url: string | null;
   is_verified: boolean;
   is_active: boolean;
   created_at: string;

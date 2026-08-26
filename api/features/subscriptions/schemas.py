@@ -39,10 +39,15 @@ class OwnerTenantData(BaseModel):
 
 class OwnerUserData(BaseModel):
     """One row on the superadmin Users page — an owner account, their
-    business (if set up), and every app subscription that business has."""
+    business (if set up), and every app subscription that business has.
+    picture_url is only ever set by the Google OAuth flow (see
+    AuthService.google_callback/google_complete) — a manual email/password
+    signup never gets one, so its presence doubles as a reliable "signed up
+    with Google" signal without a dedicated auth_provider column."""
     user_id: str
     full_name: str
     email: str
+    picture_url: str | None
     is_verified: bool
     is_active: bool
     created_at: datetime

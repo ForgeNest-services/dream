@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
+import { FcGoogle } from 'react-icons/fc';
 import { appsApi } from '@/services/apps-api';
 import type { SubscriptionPlan, AdminSubscription, PaymentGroup, OwnerUser, AppSubscription } from '@/types/apps';
 import { colors, spacing, radius } from '@/lib/design-tokens';
@@ -767,13 +768,39 @@ function UserRow({ ownerUser, onChanged }: { ownerUser: OwnerUser; onChanged: ()
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, minWidth: 0 }}>
-          <div style={{
-            width: '38px', height: '38px', borderRadius: '50%', flexShrink: 0,
-            backgroundColor: colors.primary[50], color: colors.primary[800],
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '14px', fontWeight: 700,
-          }}>
-            {ownerUser.full_name.slice(0, 1).toUpperCase()}
+          <div style={{ position: 'relative', width: '38px', height: '38px', flexShrink: 0 }}>
+            {ownerUser.picture_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={ownerUser.picture_url}
+                alt={ownerUser.full_name}
+                width={38}
+                height={38}
+                style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover', display: 'block' }}
+              />
+            ) : (
+              <div style={{
+                width: '38px', height: '38px', borderRadius: '50%',
+                backgroundColor: colors.primary[50], color: colors.primary[800],
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '14px', fontWeight: 700,
+              }}>
+                {ownerUser.full_name.slice(0, 1).toUpperCase()}
+              </div>
+            )}
+            {ownerUser.picture_url && (
+              <div
+                title="Signed up with Google"
+                style={{
+                  position: 'absolute', bottom: '-2px', right: '-2px',
+                  width: '16px', height: '16px', borderRadius: '50%',
+                  backgroundColor: colors.neutral[0], border: `1px solid ${colors.neutral[200]}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <FcGoogle size={11} />
+              </div>
+            )}
           </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: '14px', fontWeight: 700, color: colors.neutral[900] }}>{ownerUser.full_name}</div>

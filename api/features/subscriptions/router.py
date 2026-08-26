@@ -306,6 +306,7 @@ def list_all_owners(
                 user_id=row["user"].id,
                 full_name=row["user"].full_name,
                 email=row["user"].email,
+                picture_url=row["user"].picture_url,
                 is_verified=row["user"].is_verified,
                 is_active=row["user"].is_active,
                 created_at=row["user"].created_at,
