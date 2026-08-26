@@ -15,6 +15,7 @@ from features.auth.schemas import (
     ResendOTPRequest,
     BusinessRegisterRequest,
     UpdateTaxInfoRequest,
+    RefreshTokenRequest,
 )
 from features.auth.service import AuthService
 from features.auth.repository import UserRepository
@@ -266,6 +267,18 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         },
         message="Login successful",
     )
+
+
+@router.post("/refresh")
+def refresh(data: RefreshTokenRequest, db: Session = Depends(get_db)):
+    result = AuthService.refresh_tokens(db, data.refresh_token)
+    if not result["success"]:
+        return error_response(
+            "INVALID_REFRESH_TOKEN",
+            "Session expired. Please log in again.",
+            401,
+        )
+    return success_response(data=result["tokens"], message="Token refreshed")
 
 
 @router.get("/me")

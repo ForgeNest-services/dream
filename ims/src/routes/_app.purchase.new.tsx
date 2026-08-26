@@ -106,9 +106,15 @@ function NewPurchasePage() {
     let taxableAmt = 0;
     let nonTaxableAmt = 0;
     let vat = 0;
+    // Non-VAT tenants (PAN-only, or VAT-eligible but currently toggled off
+    // in Settings) never compute VAT here — mirrors the same gate
+    // PurchaseItemCard already applies per-row, so the summary box below
+    // can't disagree with what each row actually shows.
     for (const item of items) {
       const product = item.kind === "existing" ? app.products.find((p) => p.id === item.productId) : undefined;
-      const taxable = item.kind === "existing" ? (product?.taxable !== false) : item.taxable;
+      const taxable =
+        app.company.vatRegistered &&
+        (item.kind === "existing" ? product?.taxable !== false : item.taxable);
       const rate = taxable
         ? (item.kind === "existing" ? (product?.taxRate ?? app.company.vatRate) : (item.taxRate ?? app.company.vatRate))
         : 0;
@@ -123,7 +129,7 @@ function NewPurchasePage() {
       }
     }
     return { taxableAmt, nonTaxableAmt, vat, net: taxableAmt + nonTaxableAmt + vat };
-  }, [items, app.products, app.company.vatRate]);
+  }, [items, app.products, app.company.vatRate, app.company.vatRegistered]);
 
   const patchItem = (key: string, next: DraftItem) =>
     setItems((prev) => prev.map((i) => (i.key === key ? next : i)));
@@ -420,32 +426,41 @@ function NewPurchasePage() {
               <Plus className="mr-1.5 h-4 w-4" /> Add new product
             </Button>
           </div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 rounded-lg border bg-card px-4 py-3 text-sm sm:grid-cols-4">
-            <div className="flex justify-between gap-2 sm:flex-col sm:gap-0.5">
-              <dt className="text-muted-foreground">Taxable</dt>
-              <dd className="num font-medium">
-                <Money value={taxTotals.taxableAmt} />
-              </dd>
+          {app.company.vatRegistered ? (
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 rounded-lg border bg-card px-4 py-3 text-sm sm:grid-cols-4">
+              <div className="flex justify-between gap-2 sm:flex-col sm:gap-0.5">
+                <dt className="text-muted-foreground">Taxable</dt>
+                <dd className="num font-medium">
+                  <Money value={taxTotals.taxableAmt} />
+                </dd>
+              </div>
+              <div className="flex justify-between gap-2 sm:flex-col sm:gap-0.5">
+                <dt className="text-muted-foreground">Non-taxable</dt>
+                <dd className="num font-medium">
+                  <Money value={taxTotals.nonTaxableAmt} />
+                </dd>
+              </div>
+              <div className="flex justify-between gap-2 sm:flex-col sm:gap-0.5">
+                <dt className="text-muted-foreground">VAT</dt>
+                <dd className="num font-medium">
+                  <Money value={taxTotals.vat} />
+                </dd>
+              </div>
+              <div className="flex justify-between gap-2 border-t pt-1.5 sm:flex-col sm:gap-0.5 sm:border-t-0 sm:pt-0">
+                <dt className="text-muted-foreground">Net</dt>
+                <dd className="num font-semibold">
+                  <Money value={taxTotals.net} />
+                </dd>
+              </div>
             </div>
-            <div className="flex justify-between gap-2 sm:flex-col sm:gap-0.5">
-              <dt className="text-muted-foreground">Non-taxable</dt>
-              <dd className="num font-medium">
-                <Money value={taxTotals.nonTaxableAmt} />
-              </dd>
-            </div>
-            <div className="flex justify-between gap-2 sm:flex-col sm:gap-0.5">
-              <dt className="text-muted-foreground">VAT</dt>
-              <dd className="num font-medium">
-                <Money value={taxTotals.vat} />
-              </dd>
-            </div>
-            <div className="flex justify-between gap-2 border-t pt-1.5 sm:flex-col sm:gap-0.5 sm:border-t-0 sm:pt-0">
-              <dt className="text-muted-foreground">Net</dt>
+          ) : (
+            <div className="flex items-center justify-between rounded-lg border bg-card px-4 py-3 text-sm">
+              <dt className="text-muted-foreground">Total</dt>
               <dd className="num font-semibold">
                 <Money value={taxTotals.net} />
               </dd>
             </div>
-          </div>
+          )}
         </section>
       </div>
 

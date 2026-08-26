@@ -71,9 +71,11 @@ export interface BusinessFormFields {
 }
 
 export function BusinessRegisterForm({
+  onSubmitStart,
   onSuccess,
   onFieldsChange,
 }: {
+  onSubmitStart?: () => void;
   onSuccess?: () => void;
   onFieldsChange?: (fields: BusinessFormFields) => void;
 } = {}) {
@@ -107,6 +109,11 @@ export function BusinessRegisterForm({
   }, [businessName, businessAddress, pan, isVatRegistered, businessEmail, businessPhone]);
 
   const onSubmit = async (data: BusinessRegisterRequest) => {
+    // Must fire before the API call — submitRegister sets the tenant in the
+    // global auth store partway through, and a caller watching that store
+    // (see onboarding/page.tsx) needs this flag flipped synchronously
+    // before that happens, not after onSuccess() eventually fires.
+    onSubmitStart?.();
     const ok = await submitRegister({
       ...data,
       is_vat_registered: hasPan ? data.is_vat_registered : false,

@@ -132,8 +132,8 @@ function AttentionRow({ appName, appSlug, sub }: { appName: string; appSlug: str
 export function DashboardContent() {
   const { user, isSuperAdmin, tenant } = useAuth();
   const { apps, isLoading: appsLoading } = useApps();
-  const { branches, isLoading: branchesLoading } = useBranches();
-  const { subscriptions, loading: subsLoading } = useSubscriptions();
+  const { branches, isLoading: branchesLoading } = useBranches(!isSuperAdmin);
+  const { subscriptions, loading: subsLoading } = useSubscriptions(!isSuperAdmin);
 
   const firstName =
     user && 'full_name' in user && user.full_name ? user.full_name.split(' ')[0] : user?.email?.split('@')[0];

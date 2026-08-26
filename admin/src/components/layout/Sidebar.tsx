@@ -77,7 +77,7 @@ export function Sidebar() {
               width={789}
               height={290}
               priority
-              style={{ height: '40px', width: 'auto' }}
+              style={{ height: '48px', width: 'auto' }}
             />
           )}
           {isDesktop && (

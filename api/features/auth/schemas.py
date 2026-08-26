@@ -84,6 +84,10 @@ class TokenData(BaseModel):
     token_type: str = "bearer"
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
 class GoogleCallbackRequest(BaseModel):
     id_token: str
 

@@ -111,7 +111,8 @@ function PosPage() {
   // discount. totals.gross is the exclusive rate sum, which is the right
   // input for VAT math but the wrong number to show as a headline figure.
   const inclusiveSubtotal = lines.reduce(
-    (s, l) => s + priceWithVat(l.rate, app.company.vatRate, l.taxable !== false) * l.qty,
+    (s, l) =>
+      s + priceWithVat(l.rate, app.company.vatRate, app.company.vatRegistered && l.taxable !== false) * l.qty,
     0,
   );
   const paid = cash + qr;
@@ -256,7 +257,11 @@ function PosPage() {
                         </span>
                       </span>
                       <Money
-                        value={priceWithVat(v.sellingPrice, app.company.vatRate, p?.taxable !== false)}
+                        value={priceWithVat(
+                          v.sellingPrice,
+                          app.company.vatRate,
+                          app.company.vatRegistered && p?.taxable !== false,
+                        )}
                         className="text-sm"
                       />
                     </button>
@@ -319,14 +324,22 @@ function PosPage() {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <DecimalTextInput
-                        value={priceWithVat(l.rate, app.company.vatRate, l.taxable !== false)}
+                        value={priceWithVat(
+                          l.rate,
+                          app.company.vatRate,
+                          app.company.vatRegistered && l.taxable !== false,
+                        )}
                         onChange={(v) =>
                           patch(l.id, {
-                            rate: priceWithoutVat(v, app.company.vatRate, l.taxable !== false),
+                            rate: priceWithoutVat(
+                              v,
+                              app.company.vatRate,
+                              app.company.vatRegistered && l.taxable !== false,
+                            ),
                           })
                         }
                         className="h-7 w-24 text-right"
-                        title="Shelf price (incl. VAT)"
+                        title={app.company.vatRegistered ? "Shelf price (incl. VAT)" : "Selling price"}
                       />
                     </td>
                     <td className="px-3 py-2 text-right">
@@ -339,7 +352,13 @@ function PosPage() {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <Money
-                        value={priceWithVat(l.rate - l.discount, app.company.vatRate, l.taxable !== false) * l.qty}
+                        value={
+                          priceWithVat(
+                            l.rate - l.discount,
+                            app.company.vatRate,
+                            app.company.vatRegistered && l.taxable !== false,
+                          ) * l.qty
+                        }
                       />
                     </td>
                     <td className="px-2">

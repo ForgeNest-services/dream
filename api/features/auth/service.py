@@ -5,6 +5,7 @@ from core.security import (
     verify_password,
     create_access_token,
     create_refresh_token,
+    decode_token,
     verify_google_token,
 )
 from core.roles import UserRole
@@ -250,6 +251,31 @@ class AuthService:
             access_token=access_token,
             refresh_token=refresh_token,
         ).model_dump()
+
+    @staticmethod
+    def refresh_tokens(db: Session, refresh_token: str) -> dict:
+        """Exchanges a still-valid refresh token for a new access+refresh
+        pair. Mirrors the exact payload shape each login path already issues
+        (see _issue_tokens_for_user / _issue_tokens_for_superadmin) — re-runs
+        the same account-lookup + active checks a fresh login would, so a
+        deactivated/deleted account can't keep refreshing forever."""
+        payload = decode_token(refresh_token)
+        if not payload:
+            return {"success": False, "error_code": "INVALID_REFRESH_TOKEN"}
+
+        if payload.get("is_superadmin"):
+            admin = PlatformAdminRepository.get_by_id(db, payload.get("admin_id"))
+            if not admin:
+                return {"success": False, "error_code": "INVALID_REFRESH_TOKEN"}
+            return {"success": True, "tokens": AuthService._issue_tokens_for_superadmin(admin)}
+
+        user_id = payload.get("user_id")
+        if not user_id:
+            return {"success": False, "error_code": "INVALID_REFRESH_TOKEN"}
+        user = UserRepository.get_by_id(db, user_id)
+        if not user or not user.is_active:
+            return {"success": False, "error_code": "INVALID_REFRESH_TOKEN"}
+        return {"success": True, "tokens": AuthService._issue_tokens_for_user(user)}
 
     @staticmethod
     def google_callback(db: Session, id_token_str: str) -> dict:

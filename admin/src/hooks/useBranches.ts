@@ -7,9 +7,9 @@ import { Branch, CreateBranchPayload, UpdateBranchPayload } from '@/types/apps';
 import { ApiError } from '@/types/auth';
 
 // Branches are tenant-level (shared across all apps) — no appCode needed.
-export function useBranches() {
+export function useBranches(enabled: boolean = true) {
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(enabled);
   const [isMutating, setIsMutating] = useState(false);
 
   const fetch = useCallback(async () => {
@@ -26,8 +26,12 @@ export function useBranches() {
   }, []);
 
   useEffect(() => {
-    fetch();
-  }, [fetch]);
+    // Superadmins have no tenant_id, so GET /branches (require_tenant_scope)
+    // 401s for them — with no working /auth/refresh endpoint on the backend,
+    // any 401 wipes valid tokens and force-redirects to login. Never call
+    // this for a superadmin session (see DashboardContent's isSuperAdmin gate).
+    if (enabled) fetch();
+  }, [enabled, fetch]);
 
   const create = async (payload: CreateBranchPayload): Promise<boolean> => {
     setIsMutating(true);

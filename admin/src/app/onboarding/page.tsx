@@ -1,14 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Fraunces } from 'next/font/google';
 import Image from 'next/image';
-import Lottie from 'lottie-react';
+import { Lottie } from 'lottie-react';
 import { useAuth } from '@/hooks/useAuth';
 import { BusinessRegisterForm, type BusinessFormFields } from '@/components/auth/forms/BusinessRegisterForm';
 import { colors, spacing } from '@/lib/design-tokens';
-import launchAnimation from '../../../public/animations/businessman_lies_up_with_rocket.json';
 
 const fraunces = Fraunces({
   subsets: ['latin'],
@@ -174,7 +173,7 @@ function LaunchOverlay({ businessName, onFinished }: { businessName: string; onF
       }}
     >
       <div style={{ width: 'min(360px, 70vw)' }}>
-        <Lottie animationData={launchAnimation} loop={false} />
+        <Lottie src="/animations/businessman_lies_up_with_rocket.json" autoplay loop={false} />
       </div>
       <p
         style={{
@@ -201,17 +200,25 @@ export default function OnboardingPage() {
   const { isAuthenticated, tenant } = useAuth();
   const [fields, setFields] = useState<BusinessFormFields>(EMPTY_FIELDS);
   const [launching, setLaunching] = useState(false);
+  // A ref, not state: BusinessRegisterForm's onSubmit calls setTenant()
+  // (Zustand) *before* it awaits and calls onSuccess() -> setLaunching(true).
+  // setTenant() alone triggers a re-render of this component, and that
+  // render's effect can see tenant != null while `launching` state hasn't
+  // committed yet (state updates aren't synchronous) — the effect would
+  // redirect to /dashboard before the launch overlay ever gets a chance to
+  // mount. A ref set synchronously the instant submission starts closes
+  // that gap; the effect below checks it directly, no render round-trip.
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
       router.replace('/');
       return;
     }
-    if (tenant && !launching) {
+    if (tenant && !launching && !submittingRef.current) {
       router.replace('/dashboard');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, tenant, router]);
+  }, [isAuthenticated, tenant, launching, router]);
 
   if (!isAuthenticated) return null;
 
@@ -343,7 +350,13 @@ export default function OnboardingPage() {
               boxShadow: '0 1px 2px rgba(10,41,71,0.04)',
             }}
           >
-            <BusinessRegisterForm onSuccess={() => setLaunching(true)} onFieldsChange={setFields} />
+            <BusinessRegisterForm
+              onSubmitStart={() => {
+                submittingRef.current = true;
+              }}
+              onSuccess={() => setLaunching(true)}
+              onFieldsChange={setFields}
+            />
           </div>
         </div>
       </div>

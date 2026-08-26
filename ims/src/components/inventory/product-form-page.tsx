@@ -62,7 +62,7 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
   const [description, setDescription] = useState("");
   const [hasVariants, setHasVariants] = useState(false);
   const [variants, setVariants] = useState<DraftVariant[]>([]);
-  const [taxable, setTaxable] = useState(true);
+  const [taxable, setTaxable] = useState(app.company.vatRegistered);
   const [taxRate, setTaxRate] = useState<number | "">("");
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [brandDialogOpen, setBrandDialogOpen] = useState(false);
@@ -76,7 +76,7 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
       setBrandId(product.brandId ?? "none");
       setMediaId(product.mediaId);
       setDescription(product.description ?? "");
-      setTaxable(product.taxable !== false);
+      setTaxable(app.company.vatRegistered && product.taxable !== false);
       setTaxRate(product.taxRate ?? app.company.vatRate);
       setHasVariants(
         existingVariants.length > 1 || (existingVariants[0]?.name ?? "Default") !== "Default",
@@ -350,33 +350,35 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
           </div>
         </div>
 
-        <div className="rounded-lg border bg-muted/30 p-4">
-          <div className="flex items-center gap-3">
-            <Switch checked={taxable} onCheckedChange={setTaxable} />
-            <div>
-              <p className="text-sm">Taxable</p>
-              <p className="text-xs text-muted-foreground">
-                {taxable
-                  ? "VAT is added on top of the selling price below"
-                  : "VAT exempt — no tax is added to the selling price"}
-              </p>
+        {app.company.vatRegistered && (
+          <div className="rounded-lg border bg-muted/30 p-4">
+            <div className="flex items-center gap-3">
+              <Switch checked={taxable} onCheckedChange={setTaxable} />
+              <div>
+                <p className="text-sm">Taxable</p>
+                <p className="text-xs text-muted-foreground">
+                  {taxable
+                    ? "VAT is added on top of the selling price below"
+                    : "VAT exempt — no tax is added to the selling price"}
+                </p>
+              </div>
             </div>
+            {taxable && (
+              <div className="mt-3 max-w-56 space-y-1.5">
+                <Label className="text-xs">Tax rate (%)</Label>
+                <NumericInput
+                  value={taxRate}
+                  onChange={(e) => setTaxRate(e.target.value === "" ? "" : Number(e.target.value))}
+                  placeholder={`${app.company.vatRate}`}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Defaults to the company's {app.company.vatRate}% rate — change only for items with a
+                  different rate.
+                </p>
+              </div>
+            )}
           </div>
-          {taxable && (
-            <div className="mt-3 max-w-56 space-y-1.5">
-              <Label className="text-xs">Tax rate (%)</Label>
-              <NumericInput
-                value={taxRate}
-                onChange={(e) => setTaxRate(e.target.value === "" ? "" : Number(e.target.value))}
-                placeholder={`${app.company.vatRate}`}
-              />
-              <p className="text-xs text-muted-foreground">
-                Defaults to the company's {app.company.vatRate}% rate — change only for items with a
-                different rate.
-              </p>
-            </div>
-          )}
-        </div>
+        )}
 
         <div className="flex items-center gap-3 rounded-lg border p-4">
           <Switch checked={hasVariants} onCheckedChange={setHasVariants} />
@@ -444,38 +446,54 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
                 <Label className="text-xs">
                   Selling price{taxable ? ` — VAT ${effectiveRate}%` : ""}
                 </Label>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="relative">
-                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
-                      Exc. VAT
-                    </span>
+                {taxable ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="relative">
+                        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                          Exc. VAT
+                        </span>
+                        <NumericInput
+                          className="pl-[4.5rem]"
+                          value={basePrice}
+                          onChange={(e) => setBasePrice(Number(e.target.value))}
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <div className="relative">
+                        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                          Inc. VAT
+                        </span>
+                        <DecimalTextInput
+                          className="pl-[4.5rem]"
+                          value={priceInclTax(basePrice)}
+                          onChange={(v) => setBasePrice(priceExclTax(v))}
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        Either box works — the other recalculates. Only the exclusive amount is
+                        stored; VAT is added at sale time.
+                      </p>
+                      {basePrice > 0 && <MarginBadge cost={baseCost} price={basePrice} />}
+                    </div>
+                  </>
+                ) : (
+                  <>
                     <NumericInput
-                      className="pl-[4.5rem]"
                       value={basePrice}
                       onChange={(e) => setBasePrice(Number(e.target.value))}
                       placeholder="0.00"
                     />
-                  </div>
-                  <div className="relative">
-                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
-                      Inc. VAT
-                    </span>
-                    <DecimalTextInput
-                      className="pl-[4.5rem]"
-                      value={priceInclTax(basePrice)}
-                      onChange={(v) => setBasePrice(priceExclTax(v))}
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs text-muted-foreground">
-                    {taxable
-                      ? "Either box works — the other recalculates. Only the exclusive amount is stored; VAT is added at sale time."
-                      : "Non-VAT item — both amounts are the same."}
-                  </p>
-                  {basePrice > 0 && <MarginBadge cost={baseCost} price={basePrice} />}
-                </div>
+                    {basePrice > 0 && (
+                      <div className="flex justify-end">
+                        <MarginBadge cost={baseCost} price={basePrice} />
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -607,32 +625,40 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
                         <Label className="text-xs">
                           Selling price{taxable ? ` — VAT ${effectiveRate}%` : ""}
                         </Label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="relative">
-                            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
-                              Exc. VAT
-                            </span>
-                            <NumericInput
-                              className="pl-[4.5rem]"
-                              placeholder="0.00"
-                              value={v.sellingPrice}
-                              onChange={(e) =>
-                                patchVariant(i, { sellingPrice: Number(e.target.value) })
-                              }
-                            />
+                        {taxable ? (
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="relative">
+                              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                                Exc. VAT
+                              </span>
+                              <NumericInput
+                                className="pl-[4.5rem]"
+                                placeholder="0.00"
+                                value={v.sellingPrice}
+                                onChange={(e) =>
+                                  patchVariant(i, { sellingPrice: Number(e.target.value) })
+                                }
+                              />
+                            </div>
+                            <div className="relative">
+                              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                                Inc. VAT
+                              </span>
+                              <DecimalTextInput
+                                className="pl-[4.5rem]"
+                                placeholder="0.00"
+                                value={priceInclTax(v.sellingPrice)}
+                                onChange={(val) => patchVariant(i, { sellingPrice: priceExclTax(val) })}
+                              />
+                            </div>
                           </div>
-                          <div className="relative">
-                            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
-                              Inc. VAT
-                            </span>
-                            <DecimalTextInput
-                              className="pl-[4.5rem]"
-                              placeholder="0.00"
-                              value={priceInclTax(v.sellingPrice)}
-                              onChange={(val) => patchVariant(i, { sellingPrice: priceExclTax(val) })}
-                            />
-                          </div>
-                        </div>
+                        ) : (
+                          <NumericInput
+                            placeholder="0.00"
+                            value={v.sellingPrice}
+                            onChange={(e) => patchVariant(i, { sellingPrice: Number(e.target.value) })}
+                          />
+                        )}
                         {v.sellingPrice > 0 && (
                           <div className="flex justify-end">
                             <MarginBadge cost={v.costPrice} price={v.sellingPrice} />
