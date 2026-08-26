@@ -227,9 +227,10 @@ export const appsApi = {
 
   // ── Superadmin ──────────────────────────────────────────────────────────
 
-  adminListPlans: async (): Promise<ApiResponse<SubscriptionPlan[]>> => {
+  adminListPlans: async (appCode?: string): Promise<ApiResponse<SubscriptionPlan[]>> => {
     try {
-      const response = await axiosClient.get<ApiResponse<SubscriptionPlan[]>>('/subscriptions/admin/plans');
+      const params = appCode ? { app_code: appCode } : {};
+      const response = await axiosClient.get<ApiResponse<SubscriptionPlan[]>>('/subscriptions/admin/plans', { params });
       return response.data;
     } catch (error) {
       throw normalizeError(error, 'adminListPlans');
@@ -290,6 +291,15 @@ export const appsApi = {
       return response.data;
     } catch (error) {
       throw normalizeError(error, 'adminRejectPaymentGroup');
+    }
+  },
+
+  adminGetBundleDiscount: async (): Promise<ApiResponse<{ percent: string }>> => {
+    try {
+      const response = await axiosClient.get<ApiResponse<{ percent: string }>>('/subscriptions/admin/bundle-discount');
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'adminGetBundleDiscount');
     }
   },
 

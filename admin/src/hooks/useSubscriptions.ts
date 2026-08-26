@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { appsApi } from '@/services/apps-api';
-import type { AppSubscription, SubscriptionPayment, SubmitPaymentPayload, SubscriptionPlan, PriceQuote } from '@/types/apps';
+import type { AppSubscription, SubscriptionPayment, SubmitPaymentPayload, PriceQuote } from '@/types/apps';
 
 export function useSubscriptions() {
   const [subscriptions, setSubscriptions] = useState<AppSubscription[]>([]);
@@ -47,15 +47,6 @@ export function useSubscriptions() {
     }
   };
 
-  const fetchPlansForApp = async (appCode: string): Promise<SubscriptionPlan[]> => {
-    try {
-      const res = await appsApi.listPlans(appCode);
-      return res.success && res.data ? res.data : [];
-    } catch {
-      return [];
-    }
-  };
-
   const quotePrice = async (appCodes: string[], plan: 'monthly' | 'yearly'): Promise<PriceQuote | null> => {
     try {
       const res = await appsApi.quotePrice(appCodes, plan);
@@ -71,7 +62,6 @@ export function useSubscriptions() {
     loading,
     forApp,
     submitPayment,
-    fetchPlansForApp,
     quotePrice,
     refresh: fetchAll,
   };

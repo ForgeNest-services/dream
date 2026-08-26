@@ -246,7 +246,7 @@ function BundleDiscountEditor() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    appsApi.getBundleDiscount().then((res) => {
+    appsApi.adminGetBundleDiscount().then((res) => {
       if (res.success && res.data) setPercent(res.data.percent);
       setLoading(false);
     });
@@ -688,7 +688,7 @@ function ChangePlanForm({
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    appsApi.listPlans(appCode).then((res) => {
+    appsApi.adminListPlans(appCode).then((res) => {
       const match = res.data?.find((p) => p.plan === plan);
       if (match) setPrice(match.price_npr);
     });

@@ -188,6 +188,15 @@ def admin_update_plan(
     return success_response(data=PlanData.model_validate(result["plan"]).model_dump(mode="json"))
 
 
+@router.get("/admin/bundle-discount")
+def admin_get_bundle_discount(
+    _admin: dict = Depends(_require_superadmin),
+    db: Session = Depends(get_db),
+):
+    percent = SubscriptionService.get_bundle_discount_percent(db)
+    return success_response(data=BundleDiscountData(percent=percent).model_dump(mode="json"))
+
+
 @router.patch("/admin/bundle-discount")
 def admin_update_bundle_discount(
     data: UpdateBundleDiscountRequest,
