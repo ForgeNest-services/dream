@@ -3,6 +3,7 @@ export interface App {
   code: string;
   slug: string;
   name: string;
+  tagline?: string | null;
   description?: string | null;
   // Legacy react-icons name (e.g. "Hotel", "Restaurant"). Kept as a fallback
   // when icon_url isn't set.

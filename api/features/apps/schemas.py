@@ -8,6 +8,7 @@ class AppData(BaseModel):
     code: str
     slug: str
     name: str
+    tagline: str | None = None
     description: str | None = None
     icon: str | None = None
     icon_url: str | None = None

@@ -394,6 +394,28 @@ def ensure_ims_branch_settings_qr_schema() -> None:
         db.close()
 
 
+def ensure_tenants_free_app_schema() -> None:
+    """Back-fill the free_app_code column onto tenants (see Tenant model —
+    the tenant's one chosen free-trial app, set once during onboarding).
+    Base.create_all never ALTERs existing tables, and this column was added
+    by the pricing/subscriptions feature after tenants already existed in
+    production, so every pre-existing tenant row needs this backfill before
+    any query touching Tenant (login, /auth/me, ...) stops 500ing."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.tenants "
+            "ADD COLUMN IF NOT EXISTS free_app_code VARCHAR(50)"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill tenants free_app_code schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
 def seed_apps():
     db = SessionLocal()
     try:
