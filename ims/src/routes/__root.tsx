@@ -7,11 +7,29 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { AppProvider } from "@/context/app-store";
 import { Toaster } from "@/components/ui/sonner";
+
+// Chrome only fires `beforeinstallprompt` (what powers the topbar's Install
+// button — see hooks/use-install-prompt.ts) once an active service worker
+// with a fetch handler is registered; the manifest <link> alone isn't
+// enough. vite-plugin-pwa was tried here first but doesn't support
+// TanStack Start's multi-environment build (its generateSW step never runs
+// under Vite's environment API, confirmed via upstream GitHub issues on
+// vite-pwa/vite-plugin-pwa) — public/sw.js is a plain static file instead,
+// copied through untouched to dist/client and served directly by nginx
+// (see nginx.conf), registered by hand so it only runs client-side.
+function useServiceWorkerRegistration() {
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      // Non-fatal — app works fine without offline/install support.
+    });
+  }, []);
+}
 
 function NotFoundComponent() {
   return (
@@ -115,6 +133,7 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  useServiceWorkerRegistration();
 
   return (
     <QueryClientProvider client={queryClient}>

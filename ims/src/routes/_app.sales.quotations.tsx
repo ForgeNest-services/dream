@@ -25,7 +25,7 @@ import { useInvoices } from "@/hooks/useInvoices";
 import type { Invoice, InvoiceLine, PaymentMethod } from "@/data/types";
 import type { InvoiceDto } from "@/lib/invoices-api";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRightLeft, Printer, Search } from "lucide-react";
+import { ArrowRightLeft, Eye, Printer, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -187,6 +187,11 @@ function QuotationsPage() {
                     <div className="flex justify-end gap-1">
                       <Button variant="outline" size="sm" onClick={() => setConvertFor(r.inv)}>
                         <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" /> Convert
+                      </Button>
+                      <Button asChild variant="ghost" size="sm">
+                        <Link to="/sales/invoices/$invoiceId" params={{ invoiceId: r.inv.id }}>
+                          <Eye className="h-4 w-4" />
+                        </Link>
                       </Button>
                       <Button asChild variant="ghost" size="sm">
                         <Link to="/print/$invoiceId" params={{ invoiceId: r.inv.id }}>

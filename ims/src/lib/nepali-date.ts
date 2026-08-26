@@ -106,6 +106,13 @@ export function formatBs(date: Date, style: "short" | "long" = "short"): string 
   return `${bs.year}-${String(bs.month).padStart(2, "0")}-${String(bs.day).padStart(2, "0")}`;
 }
 
+/** BS "YYYY-MM-01" for the current BS month — the dashboard's default
+ *  date-range start (matches its "This month" preset). */
+export function startOfMonthBs(): string {
+  const bs = adToBs(new Date());
+  return `${bs.year}-${String(bs.month).padStart(2, "0")}-01`;
+}
+
 export function formatAd(date: Date, style: "short" | "long" = "short"): string {
   if (style === "long") {
     return date.toLocaleDateString("en-GB", {

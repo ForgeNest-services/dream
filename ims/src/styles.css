@@ -217,6 +217,51 @@
   }
 }
 
+/* Barcode label sheet (print.labels.tsx) — on screen a normal responsive
+   grid; in print, switches to an exact 3x8 A4 label-sheet grid so labels
+   land on the pre-cut stickers instead of wherever the browser's default
+   flow puts them. */
+.barcode-print-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (min-width: 640px) {
+  .barcode-print-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.barcode-print-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 1px dashed #d4d4d4;
+  border-radius: 4px;
+  padding: 8px;
+  text-align: center;
+}
+
+@media print {
+  .barcode-print-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 70mm);
+    grid-auto-rows: 33mm;
+    gap: 0;
+    justify-content: center;
+  }
+  .barcode-print-cell {
+    border: none;
+    border-radius: 0;
+    padding: 2mm;
+    break-inside: avoid;
+  }
+  .barcode-print-cell:nth-child(24n) {
+    break-after: page;
+  }
+}
+
 /* Zeroes the margin Chrome reserves for its built-in header/footer (date,
    page title, URL, page number) — the only way a page can influence that
    without the user disabling "Headers and footers" in the print dialog

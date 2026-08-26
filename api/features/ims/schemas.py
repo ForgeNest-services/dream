@@ -440,10 +440,8 @@ class CreatePurchaseRequest(BaseModel):
     payment_method: str = "cash"
     post_to_ledger: bool = False
     items: list[Annotated[Union[PurchaseNewItem, PurchaseExistingItem], Field(discriminator="kind")]]
-    # Frontend's company.vatRate fallback for taxable lines with no explicit
-    # rate — CompanyProfile isn't a backend table yet, so this rides along
-    # on the request instead of being looked up server-side.
-    default_vat_rate: Decimal = Decimal(13)
+    # default_vat_rate is NOT accepted here — looked up server-side from the
+    # branch's own IMSBranchSettings (see IMSPurchaseService.create).
 
 
 class InvoiceLineData(BaseModel):
@@ -505,22 +503,26 @@ class CreateInvoiceRequest(BaseModel):
     paid_amount: Decimal = Decimal(0)
     note: str | None = None
     lines: list[InvoiceLineInput]
-    # CompanyProfile isn't a backend table yet — same pattern as
-    # CreatePurchaseRequest.default_vat_rate.
-    vat_registered: bool = False
-    vat_rate: Decimal = Decimal(13)
+    # vat_registered/vat_rate are NOT accepted here — looked up server-side
+    # from the branch's own IMSBranchSettings (see IMSInvoiceService.create)
+    # so a client can never lie about VAT registration or the rate.
     invoice_prefix: str = "INV"
     # A quotation is a price offer only — no stock deduction, no ledger
     # post. Those happen for real on IMSInvoiceService.convert.
     is_quotation: bool = False
+    # Display-only: does this bill show its Taxable/VAT breakdown ("tax"
+    # invoice) or not ("abbreviated")? Independent of vat_registered, which
+    # always drives the real total — see IMSInvoiceService.create's comment.
+    # None (the default) falls back to vat_registered, matching every
+    # caller from before this field existed.
+    show_vat_breakdown: bool | None = None
 
 
 class ConvertQuotationRequest(BaseModel):
     payment_method: str = "cash"
     paid_amount: Decimal = Decimal(0)
-    vat_registered: bool = False
-    vat_rate: Decimal = Decimal(13)
     invoice_prefix: str = "INV"
+    show_vat_breakdown: bool | None = None
 
 
 class BranchSettingsData(BaseModel):
@@ -531,6 +533,7 @@ class BranchSettingsData(BaseModel):
     branch_id: str
     vat_enabled: bool
     vat_rate: Decimal
+    qr_image_url: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -538,3 +541,93 @@ class BranchSettingsData(BaseModel):
 class UpdateBranchSettingsRequest(BaseModel):
     vat_enabled: bool | None = None
     vat_rate: Decimal | None = None
+    qr_image_url: str | None = None
+    clear_qr: bool = False
+
+
+class StockSummaryRow(BaseModel):
+    variant_id: str
+    product_id: str
+    product_name: str
+    variant_name: str
+    category_path: str
+    unit_symbol: str
+    stock_qty: Decimal
+    low_stock_at: int
+    cost_price: Decimal
+    selling_price: Decimal
+    cost_value: Decimal
+    retail_value: Decimal
+
+
+class MarginRow(BaseModel):
+    variant_id: str
+    product_id: str
+    product_name: str
+    variant_name: str
+    qty_sold: Decimal
+    revenue: Decimal
+    cost: Decimal
+    profit: Decimal
+    margin_pct: Decimal
+
+
+class PartyStatementRow(BaseModel):
+    party_id: str
+    name: str
+    pan: str | None
+    phone: str | None
+    period_debit: Decimal
+    period_credit: Decimal
+    balance: Decimal
+
+
+class SalesTrendPoint(BaseModel):
+    date_bs: str
+    total: Decimal
+
+
+class SalesByCategoryRow(BaseModel):
+    category_id: str | None
+    category_name: str
+    total: Decimal
+
+
+class TopSellerRow(BaseModel):
+    variant_id: str
+    product_name: str
+    variant_name: str
+    qty_sold: Decimal
+    revenue: Decimal
+
+
+class LowStockAlertRow(BaseModel):
+    variant_id: str
+    product_name: str
+    variant_name: str
+    stock_qty: Decimal
+    low_stock_at: int
+
+
+class RecentMovementRow(BaseModel):
+    id: str
+    date: datetime
+    product_name: str
+    variant_name: str
+    type: str
+    qty: Decimal
+    balance_after: Decimal
+
+
+class DashboardData(BaseModel):
+    sales_total: Decimal
+    sales_count: int
+    receivable: Decimal
+    payable: Decimal
+    stock_value: Decimal
+    low_stock_count: int
+    sales_trend: list[SalesTrendPoint]
+    sales_by_category: list[SalesByCategoryRow]
+    top_sellers: list[TopSellerRow]
+    low_stock_alerts: list[LowStockAlertRow]
+    recent_movements: list[RecentMovementRow]

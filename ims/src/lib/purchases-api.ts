@@ -86,7 +86,6 @@ export interface CreatePurchasePayload {
   payment_method: string;
   post_to_ledger: boolean;
   items: PurchaseItemPayload[];
-  default_vat_rate: number;
 }
 
 export const purchasesApi = {

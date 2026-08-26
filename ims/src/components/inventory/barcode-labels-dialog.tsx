@@ -14,6 +14,11 @@ import { formatMoney } from "@/lib/format";
 import { Printer } from "lucide-react";
 import { useState } from "react";
 
+// Printing happens on a dedicated /print/labels route, not from inside this
+// dialog — Radix Dialog content is `position: fixed`, which clips/breaks
+// print pagination (only whatever fits one screen "page" prints, the rest
+// is silently cut off) and its built-in close (X) button can't be hidden
+// from here. This dialog is just a preview + copies picker.
 export function BarcodeLabelsDialog({
   productId,
   open,
@@ -28,14 +33,12 @@ export function BarcodeLabelsDialog({
   const product = app.products.find((p) => p.id === productId);
   const variants = productId ? app.variantsOf(productId) : [];
 
-  const labels = variants.flatMap((v) =>
-    Array.from({ length: Math.max(1, Math.min(24, copies)) }, (_, i) => ({
-      key: `${v.id}-${i}`,
-      name: `${product?.name ?? ""} — ${v.name}`,
-      price: v.sellingPrice,
-      code: v.barcode || v.modelNo || v.id,
-    })),
-  );
+  const previewLabels = variants.map((v) => ({
+    key: v.id,
+    name: `${product?.name ?? ""} — ${v.name}`,
+    price: v.sellingPrice,
+    code: v.barcode || v.modelNo || v.id,
+  }));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -44,7 +47,7 @@ export function BarcodeLabelsDialog({
           <DialogTitle>Barcode labels — {product?.name}</DialogTitle>
         </DialogHeader>
 
-        <div className="no-print flex items-end gap-3">
+        <div className="flex items-end gap-3">
           <div>
             <Label className="text-xs">Copies per variant</Label>
             <Input
@@ -57,15 +60,13 @@ export function BarcodeLabelsDialog({
             />
           </div>
           <p className="pb-2 text-xs text-muted-foreground">
-            {variants.length} variant(s) · {labels.length} labels
+            {variants.length} variant(s) · {variants.length * Math.max(1, Math.min(24, copies))} labels
+            total (3×8 A4 label sheet, 24/sheet)
           </p>
         </div>
 
-        <div
-          id="barcode-sheet"
-          className="grid max-h-[50vh] grid-cols-2 gap-2 overflow-y-auto rounded-md border bg-white p-3 sm:grid-cols-3"
-        >
-          {labels.map((l) => (
+        <div className="grid max-h-[45vh] grid-cols-2 gap-2 overflow-y-auto rounded-md border bg-white p-3 sm:grid-cols-3">
+          {previewLabels.map((l) => (
             <div
               key={l.key}
               className="flex flex-col items-center gap-1 rounded border border-dashed border-neutral-300 p-2 text-center"
@@ -78,12 +79,23 @@ export function BarcodeLabelsDialog({
             </div>
           ))}
         </div>
+        {previewLabels.length === 0 && (
+          <p className="py-4 text-center text-sm text-muted-foreground">No variants to label.</p>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
           </Button>
-          <Button onClick={() => window.print()}>
+          <Button
+            disabled={!productId || previewLabels.length === 0}
+            onClick={() => {
+              if (!productId) return;
+              const url = `/print/labels?productId=${encodeURIComponent(productId)}&copies=${Math.max(1, Math.min(24, copies))}`;
+              window.open(url, "_blank");
+              onOpenChange(false);
+            }}
+          >
             <Printer className="mr-1.5 h-4 w-4" /> Print labels
           </Button>
         </DialogFooter>

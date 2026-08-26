@@ -24,6 +24,7 @@ class IMSBranchSettingsRepository:
             branch_id=branch_id,
             vat_enabled=True,
             vat_rate=Decimal("13"),
+            qr_image_url=None,
             created_at=now,
             updated_at=now,
         )
@@ -38,11 +39,19 @@ class IMSBranchSettingsRepository:
         settings: IMSBranchSettings,
         vat_enabled: bool | None = None,
         vat_rate: Decimal | None = None,
+        qr_image_url: str | None = None,
+        clear_qr: bool = False,
     ) -> IMSBranchSettings:
         if vat_enabled is not None:
             settings.vat_enabled = vat_enabled
         if vat_rate is not None:
             settings.vat_rate = vat_rate
+        # clear_qr wins over qr_image_url so a caller can null it in the
+        # same PATCH that also touches vat fields.
+        if clear_qr:
+            settings.qr_image_url = None
+        elif qr_image_url is not None:
+            settings.qr_image_url = qr_image_url
         db.commit()
         db.refresh(settings)
         return settings

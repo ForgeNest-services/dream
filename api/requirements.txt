@@ -16,3 +16,5 @@ google-auth
 sib-api-v3-sdk
 jinja2
 boto3
+openpyxl
+reportlab

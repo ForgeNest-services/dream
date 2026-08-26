@@ -19,7 +19,7 @@ import { normalizeTableSearch } from "@/hooks/useTableQuery";
 import { useParties } from "@/hooks/useParties";
 import type { Party } from "@/data/types";
 import { downloadCsv } from "@/lib/csv";
-import { computeTotals } from "@/lib/invoice";
+import { computeStoredTotals } from "@/lib/invoice";
 import { createFileRoute } from "@tanstack/react-router";
 import { BookOpen, Download, Pencil, Plus, Search, Trash2, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -132,7 +132,7 @@ function CustomersPage() {
   const rows = parties.map((dto) => {
     const party = dtoToParty(dto);
     const invoices = app.invoices.filter((i) => i.customerId === party.id && i.kind !== "quotation");
-    const purchased = invoices.reduce((s, i) => s + computeTotals(i.lines, app.company).total, 0);
+    const purchased = invoices.reduce((s, i) => s + computeStoredTotals(i.lines).total, 0);
     return { party, orders: invoices.length, purchased, balance: app.partyBalance(party.id) };
   });
 

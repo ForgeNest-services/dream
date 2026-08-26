@@ -375,6 +375,25 @@ def ensure_ims_fiscal_year_link_schema() -> None:
         db.close()
 
 
+def ensure_ims_branch_settings_qr_schema() -> None:
+    """Back-fill the optional qr_image_url column onto ims_branch_settings
+    (see IMSBranchSettings' docstring) — mirrors restro_branch_settings'
+    existing qr_image_url column."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.ims_branch_settings "
+            "ADD COLUMN IF NOT EXISTS qr_image_url VARCHAR(1000)"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill ims_branch_settings QR schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
 def seed_apps():
     db = SessionLocal()
     try:

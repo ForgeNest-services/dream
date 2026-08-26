@@ -1,25 +1,31 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useApp } from "@/context/app-store";
+import { DashboardDateFilter } from "@/components/common/dashboard-date-filter";
 import { DateText, Money, PageHeader, StatCard, StatusPill } from "@/components/common/primitives";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { useDashboard } from "@/hooks/useDashboard";
+import { formatBs, startOfMonthBs } from "@/lib/nepali-date";
 import {
   Area,
   AreaChart,
   CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Package, Wallet } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  Package,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
 import { formatMoney } from "@/lib/format";
+import { useState } from "react";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({
@@ -40,33 +46,32 @@ export const Route = createFileRoute("/_app/dashboard")({
   component: DashboardPage,
 });
 
+const num = (v: number | string): number => Number(v);
+
+const PIE_COLORS = [
+  "var(--color-primary)",
+  "#f59e0b",
+  "#10b981",
+  "#8b5cf6",
+  "#ef4444",
+  "#06b6d4",
+  "#ec4899",
+  "#84cc16",
+];
+
 function DashboardPage() {
   const app = useApp();
-  const inBranch = <T extends { branchId: string }>(rows: T[]) =>
-    app.branchId === "all" ? rows : rows.filter((r) => r.branchId === app.branchId);
+  const today = formatBs(new Date());
+  const [from, setFrom] = useState(startOfMonthBs());
+  const [to, setTo] = useState(today);
 
-  const invoices = inBranch(app.invoices.filter((i) => i.kind !== "quotation"));
-  const movements = inBranch(app.movements);
-
-  const totalSales = invoices.reduce((s, i) => s + app.invoiceTotal(i), 0);
-  const receivable = app.parties
-    .filter((p) => p.kind === "customer")
-    .reduce((s, p) => s + Math.max(0, app.partyBalance(p.id)), 0);
-  const payable = app.parties
-    .filter((p) => p.kind === "supplier")
-    .reduce((s, p) => s + Math.max(0, app.partyBalance(p.id)), 0);
-  const stockValue = app.variants.reduce((s, v) => s + app.stockOf(v) * v.costPrice, 0);
-  const lowStock = app.variants.filter((v) => app.stockOf(v) <= v.lowStockAt);
-
-  const chartData = Array.from({ length: 12 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (11 - i) * 5);
-    const key = d.toISOString().slice(0, 10);
-    const value = invoices
-      .filter((inv) => Math.abs(new Date(inv.date).getTime() - d.getTime()) < 2.5 * 86400000)
-      .reduce((s, inv) => s + app.invoiceTotal(inv), 0);
-    return { date: key.slice(5), value };
+  const { data, isLoading } = useDashboard({
+    branch_id: app.branchId === "all" ? undefined : app.branchId,
+    bs_from: from,
+    bs_to: to,
   });
+
+  const lowStockCount = data?.low_stock_count ?? 0;
 
   return (
     <div className="mx-auto max-w-[1760px] px-4 py-6">
@@ -77,42 +82,45 @@ function DashboardPage() {
             ? "Consolidated across all branches"
             : (app.branches.find((b) => b.id === app.branchId)?.name ?? "Branch")
         }
+        actions={<DashboardDateFilter from={from} to={to} onChange={(f, t) => (setFrom(f), setTo(t))} />}
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
           label="Sales (period)"
-          value={<Money value={totalSales} />}
-          hint={`${invoices.length} invoices`}
+          value={<Money value={num(data?.sales_total ?? 0)} />}
+          hint={`${data?.sales_count ?? 0} invoices`}
           icon={<ArrowUpRight className="h-4 w-4" />}
         />
         <StatCard
           label="Receivables"
-          value={<Money value={receivable} />}
+          value={<Money value={num(data?.receivable ?? 0)} />}
           tone="warning"
           hint="Unpaid from customers"
           icon={<Wallet className="h-4 w-4" />}
         />
         <StatCard
           label="Payables"
-          value={<Money value={payable} />}
+          value={<Money value={num(data?.payable ?? 0)} />}
           tone="destructive"
           hint="Owed to suppliers"
           icon={<ArrowDownRight className="h-4 w-4" />}
         />
         <StatCard
           label="Stock value"
-          value={<Money value={stockValue} />}
+          value={<Money value={num(data?.stock_value ?? 0)} />}
           hint="At cost price"
           icon={<Package className="h-4 w-4" />}
         />
-        <StatCard
-          label="Low stock"
-          value={lowStock.length}
-          tone={lowStock.length ? "warning" : "success"}
-          hint="Variants at or below threshold"
-          icon={<AlertTriangle className="h-4 w-4" />}
-        />
+        <Link to="/reports/low-stock">
+          <StatCard
+            label="Low stock"
+            value={lowStockCount}
+            tone={lowStockCount ? "warning" : "success"}
+            hint="Variants at or below threshold"
+            icon={<AlertTriangle className="h-4 w-4" />}
+          />
+        </Link>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
@@ -120,7 +128,13 @@ function DashboardPage() {
           <h2 className="text-sm font-medium">Sales trend</h2>
           <div className="mt-4 h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ left: -18, right: 8, top: 8 }}>
+              <AreaChart
+                data={(data?.sales_trend ?? []).map((p) => ({
+                  date: p.date_bs.slice(5),
+                  value: num(p.total),
+                }))}
+                margin={{ left: -18, right: 8, top: 8 }}
+              >
                 <defs>
                   <linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={0.35} />
@@ -152,67 +166,123 @@ function DashboardPage() {
         </div>
 
         <div className="rounded-lg border bg-card p-4">
+          <h2 className="text-sm font-medium">Sales by category</h2>
+          {!isLoading && (data?.sales_by_category.length ?? 0) === 0 ? (
+            <p className="mt-8 text-center text-sm text-muted-foreground">No sales in this period.</p>
+          ) : (
+            <div className="mt-2 h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={(data?.sales_by_category ?? []).map((c) => ({
+                      name: c.category_name,
+                      value: num(c.total),
+                    }))}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={50}
+                    outerRadius={80}
+                    paddingAngle={2}
+                  >
+                    {(data?.sales_by_category ?? []).map((_, i) => (
+                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(v: number) => formatMoney(v, app.currency)}
+                    contentStyle={{
+                      background: "var(--color-card)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="-mt-4 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                {(data?.sales_by_category ?? []).slice(0, 6).map((c, i) => (
+                  <span key={c.category_id ?? i} className="flex items-center gap-1">
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
+                    />
+                    {c.category_name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <div className="rounded-lg border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium">Top sellers</h2>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <div className="mt-3 space-y-2">
+            {(data?.top_sellers ?? []).map((s) => (
+              <div key={s.variant_id} className="flex items-center justify-between gap-2 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate">{s.product_name}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {s.variant_name} · {s.qty_sold} sold
+                  </p>
+                </div>
+                <span className="num shrink-0 font-medium">
+                  <Money value={num(s.revenue)} />
+                </span>
+              </div>
+            ))}
+            {!isLoading && (data?.top_sellers.length ?? 0) === 0 && (
+              <p className="text-sm text-muted-foreground">No sales in this period.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border bg-card p-4">
           <h2 className="text-sm font-medium">Low stock alerts</h2>
           <div className="mt-3 space-y-2">
-            {lowStock.slice(0, 7).map((v) => {
-              const p = app.products.find((x) => x.id === v.productId);
-              return (
-                <div key={v.id} className="flex items-center justify-between gap-2 text-sm">
-                  <div className="min-w-0">
-                    <p className="truncate">{p?.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">{v.name}</p>
-                  </div>
-                  <StatusPill status={app.stockOf(v) === 0 ? "out" : "low"} />
+            {(data?.low_stock_alerts ?? []).map((v) => (
+              <div key={v.variant_id} className="flex items-center justify-between gap-2 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate">{v.product_name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{v.variant_name}</p>
                 </div>
-              );
-            })}
-            {lowStock.length === 0 && (
+                <StatusPill status={num(v.stock_qty) <= 0 ? "out" : "low"} />
+              </div>
+            ))}
+            {!isLoading && (data?.low_stock_alerts.length ?? 0) === 0 && (
               <p className="text-sm text-muted-foreground">Everything is above threshold.</p>
             )}
           </div>
         </div>
-      </div>
 
-      <div className="mt-4 rounded-lg border bg-card">
-        <div className="border-b px-4 py-3">
+        <div className="rounded-lg border bg-card p-4">
           <h2 className="text-sm font-medium">Recent stock movements</h2>
+          <div className="mt-3 space-y-2">
+            {(data?.recent_movements ?? []).map((m) => (
+              <div key={m.id} className="flex items-center justify-between gap-2 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate">{m.product_name}</p>
+                  <p className="truncate text-xs text-muted-foreground capitalize">
+                    <DateText value={m.date} /> · {m.type.replace("-", " ")}
+                  </p>
+                </div>
+                <span
+                  className={`num shrink-0 font-medium ${num(m.qty) >= 0 ? "text-success" : "text-destructive"}`}
+                >
+                  {num(m.qty) > 0 ? "+" : ""}
+                  {m.qty}
+                </span>
+              </div>
+            ))}
+            {!isLoading && (data?.recent_movements.length ?? 0) === 0 && (
+              <p className="text-sm text-muted-foreground">No recent activity.</p>
+            )}
+          </div>
         </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Product</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead className="text-right">Qty</TableHead>
-              <TableHead className="text-right">Balance</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {movements.slice(0, 8).map((m) => {
-              const p = app.products.find((x) => x.id === m.productId);
-              const v = app.variants.find((x) => x.id === m.variantId);
-              return (
-                <TableRow key={m.id}>
-                  <TableCell>
-                    <DateText value={m.date} />
-                  </TableCell>
-                  <TableCell>
-                    <span className="block">{p?.name}</span>
-                    <span className="text-xs text-muted-foreground">{v?.name}</span>
-                  </TableCell>
-                  <TableCell className="capitalize">{m.type.replace("-", " ")}</TableCell>
-                  <TableCell
-                    className={`num text-right ${m.qty >= 0 ? "text-success" : "text-destructive"}`}
-                  >
-                    {m.qty > 0 ? "+" : ""}
-                    {m.qty}
-                  </TableCell>
-                  <TableCell className="num text-right">{m.balanceAfter}</TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
       </div>
     </div>
   );

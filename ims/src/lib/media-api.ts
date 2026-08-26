@@ -19,6 +19,9 @@ export const mediaApi = {
     const qs = q ? `?q=${encodeURIComponent(q)}` : "";
     return apiClient.get<MediaDto[]>(`/ims/media${qs}`);
   },
+  delete(mediaId: string) {
+    return apiClient.delete<{ deleted: boolean }>(`/ims/media/${mediaId}`);
+  },
   async upload(file: File, folder: string) {
     const form = new FormData();
     form.append("folder", folder);

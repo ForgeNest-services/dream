@@ -37,6 +37,7 @@ import {
 } from "@/lib/purchases-api";
 import { invoicesApi, type InvoiceDto, type CreateInvoicePayload } from "@/lib/invoices-api";
 import { branchSettingsApi } from "@/lib/branch-settings-api";
+import { uploadsApi } from "@/lib/uploads-api";
 import { ApiError } from "@/lib/api-client";
 import { generateBarcode } from "@/lib/barcode";
 import { toast } from "sonner";
@@ -298,6 +299,13 @@ interface AppState extends SeedData {
   currentUser: User | null;
   /** owner-only: preview the app as another role */
   viewAsRole: User["role"] | null;
+  /** Flips true once the real per-tenant catalogue fetch (branches,
+   *  products, etc.) has completed at least once. `state.branches` holds
+   *  mock seed data until then — code that must never act on a fake mock
+   *  branch id (e.g. the per-branch settings fetch) should gate on this
+   *  rather than on `branches.length > 0`, since the mock seed is never
+   *  empty either. */
+  branchesReady: boolean;
 }
 
 interface AppContextValue extends AppState {
@@ -349,6 +357,7 @@ interface AppContextValue extends AppState {
   deleteCategory: (id: string) => Promise<{ ok: boolean; error?: string }>;
   addBrand: (name: string) => Promise<{ ok: boolean; brand?: Brand; error?: string }>;
   addMedia: (file: File, folder: string) => Promise<{ ok: boolean; media?: MediaItem; error?: string }>;
+  deleteMedia: (mediaId: string) => Promise<{ ok: boolean; error?: string }>;
   adjustStock: (input: {
     variantId: string;
     branchId: string;
@@ -398,6 +407,11 @@ interface AppContextValue extends AppState {
     vatEnabled?: boolean;
     vatRate?: number;
   }) => Promise<{ ok: boolean; error?: string }>;
+  /** Uploads a payment QR image (via the generic one-shot /uploads
+   *  endpoint, not the Media Center) and saves it on the current branch's
+   *  settings. */
+  uploadQrImage: (file: File) => Promise<{ ok: boolean; error?: string }>;
+  clearQrImage: () => Promise<{ ok: boolean; error?: string }>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -414,6 +428,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     fiscalYearId: "",
     currentUser: null,
     viewAsRole: null,
+    branchesReady: false,
   }));
 
   useEffect(() => {
@@ -521,6 +536,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // branches load, then resolves to the first one.
           branchId: s.branchId === "all" ? (loadedBranches[0]?.id ?? "all") : s.branchId,
           branches: loadedBranches,
+          branchesReady: true,
           categories: (categoriesRes.data ?? []).map(toCategory),
           brands: (brandsRes.data ?? []).map(toBrand),
           units: (unitsRes.data ?? []).map(toUnit),
@@ -552,7 +568,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const effectiveBranchId =
     state.branchId === "all" ? (state.branches[0]?.id ?? "") : state.branchId;
   useEffect(() => {
-    if (!state.currentUser || !effectiveBranchId) return;
+    if (!state.currentUser || !state.branchesReady || !effectiveBranchId) return;
     let cancelled = false;
     (async () => {
       try {
@@ -561,7 +577,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const settings = res.data;
         setState((s) => ({
           ...s,
-          company: { ...s.company, vatRegistered: settings.vat_enabled, vatRate: num(settings.vat_rate) },
+          company: {
+            ...s.company,
+            vatRegistered: settings.vat_enabled,
+            vatRate: num(settings.vat_rate),
+            qrImageUrl: settings.qr_image_url ?? undefined,
+          },
         }));
       } catch {
         // Non-fatal — VAT UI just falls back to whatever company state already had.
@@ -570,7 +591,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [state.currentUser?.id, effectiveBranchId]);
+  }, [state.currentUser?.id, state.branchesReady, effectiveBranchId]);
 
   const value = useMemo<AppContextValue>(() => {
     const fiscalYear =
@@ -913,6 +934,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return { ok: false, error: e instanceof Error ? e.message : "Upload failed" };
         }
       },
+      deleteMedia: async (mediaId) => {
+        try {
+          const res = await mediaApi.delete(mediaId);
+          if (!res.success) return { ok: false, error: "Failed to delete image" };
+          setState((s) => ({ ...s, media: s.media.filter((m) => m.id !== mediaId) }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to delete image" };
+        }
+      },
 
       adjustStock: async ({ variantId, branchId, qty, reason, date }) => {
         try {
@@ -1021,6 +1052,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
               },
         );
 
+        // default_vat_rate is resolved server-side from the branch's own
+        // settings — never sent from here (see IMSPurchaseService.create).
         const payload: CreatePurchasePayload = {
           date: input.date,
           branch_id: input.branchId,
@@ -1032,7 +1065,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           payment_method: input.paymentMethod,
           post_to_ledger: input.postToLedger,
           items,
-          default_vat_rate: state.company.vatRate,
         };
 
         try {
@@ -1172,11 +1204,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       createInvoice: async (inv, options) => {
         const isQuotation = inv.kind === "quotation";
-        // Per-sale VAT-bill toggle (POS) overrides the company-wide
-        // setting for this one sale only — lets staff print a plain
-        // no-breakdown bill for a walk-in customer even on a VAT-registered
-        // business, without touching the company's actual VAT registration.
-        const vatRegistered = options?.vatOverride ?? state.company.vatRegistered;
+        // vat_registered/vat_rate are resolved server-side from the
+        // branch's own settings — never sent from here (see
+        // IMSInvoiceService.create). The POS "VAT bill" toggle only
+        // controls show_vat_breakdown: whether this bill is itemized
+        // (Taxable + VAT lines, "tax" invoice) or printed as a plain total
+        // ("abbreviated") — the customer pays the same total either way.
         const payload: CreateInvoicePayload = {
           date: inv.date,
           branch_id: inv.branchId,
@@ -1191,10 +1224,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             discount: l.discount,
             taxable: l.taxable,
           })),
-          vat_registered: vatRegistered,
-          vat_rate: state.company.vatRate,
           invoice_prefix: state.company.invoicePrefix,
           is_quotation: isQuotation,
+          show_vat_breakdown: options?.vatOverride,
         };
 
         try {
@@ -1239,8 +1271,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const res = await invoicesApi.convert(id, {
             payment_method: payment.paymentMethod,
             paid_amount: payment.paidAmount,
-            vat_registered: state.company.vatRegistered,
-            vat_rate: state.company.vatRate,
             invoice_prefix: state.company.invoicePrefix,
           });
           if (!res.success || !res.data) return { ok: false, error: "Failed to convert quotation" };
@@ -1299,6 +1329,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
             ok: false,
             error: e instanceof ApiError ? e.message : "Failed to update VAT settings",
           };
+        }
+      },
+
+      uploadQrImage: async (file) => {
+        if (!effectiveBranchId) return { ok: false, error: "No branch selected" };
+        try {
+          const uploaded = await uploadsApi.uploadPaymentQr(effectiveBranchId, file);
+          if (!uploaded.success || !uploaded.data) {
+            return { ok: false, error: "Upload failed" };
+          }
+          const res = await branchSettingsApi.update(effectiveBranchId, {
+            qr_image_url: uploaded.data.url,
+          });
+          if (!res.success || !res.data) return { ok: false, error: "Failed to save QR image" };
+          const settings = res.data;
+          setState((s) => ({
+            ...s,
+            company: { ...s.company, qrImageUrl: settings.qr_image_url ?? undefined },
+          }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to upload QR image" };
+        }
+      },
+
+      clearQrImage: async () => {
+        if (!effectiveBranchId) return { ok: false, error: "No branch selected" };
+        try {
+          const res = await branchSettingsApi.clearQr(effectiveBranchId);
+          if (!res.success || !res.data) return { ok: false, error: "Failed to remove QR image" };
+          setState((s) => ({ ...s, company: { ...s.company, qrImageUrl: undefined } }));
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: e instanceof ApiError ? e.message : "Failed to remove QR image" };
         }
       },
     };

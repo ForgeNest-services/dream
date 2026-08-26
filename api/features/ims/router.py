@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from decimal import Decimal
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_ims_staff
@@ -38,6 +39,10 @@ from features.ims.schemas import (
     ConvertQuotationRequest,
     BranchSettingsData,
     UpdateBranchSettingsRequest,
+    StockSummaryRow,
+    MarginRow,
+    PartyStatementRow,
+    DashboardData,
 )
 from features.ims.service import IMSCredentialService, IMSAuthService
 from features.ims.category_service import IMSCategoryService
@@ -48,10 +53,19 @@ from features.ims.media_service import IMSMediaService
 from features.ims.stock_service import IMSStockService
 from features.ims.fiscal_year_service import IMSFiscalYearService
 from features.ims.party_service import IMSPartyService, IMSLedgerService
-from features.ims.party_repository import IMSLedgerRepository
+from features.ims.party_repository import IMSLedgerRepository, IMSPartyRepository
 from features.ims.purchase_service import IMSPurchaseService
 from features.ims.invoice_service import IMSInvoiceService
 from features.ims.branch_settings_service import IMSBranchSettingsService
+from features.ims.reports_service import IMSReportsService
+from features.ims.dashboard_service import IMSDashboardService
+from features.ims.category_repository import IMSCategoryRepository
+from features.ims.unit_repository import IMSUnitRepository
+from features.ims.invoice_repository import IMSInvoiceRepository
+from features.ims.purchase_repository import IMSPurchaseRepository
+from features.ims.reports_export import build_xlsx, build_pdf
+from features.auth.repository import TenantRepository
+from utils.bikram_sambat import to_bs_iso
 
 
 router = APIRouter(prefix="/ims", tags=["ims"])
@@ -989,7 +1003,6 @@ def create_purchase(
         payment_method=data.payment_method,
         post_to_ledger=data.post_to_ledger,
         items=[item.model_dump() for item in data.items],
-        default_vat_rate=data.default_vat_rate,
     )
     if not result["success"]:
         return _purchase_error(result["error_code"])
@@ -1026,14 +1039,20 @@ _INVOICE_ERROR_MAP = {
     "NO_ITEMS": ("NO_ITEMS", "Add at least one item to the cart.", 422),
     "CREATION_FAILED": ("CREATION_FAILED", "Failed to record sale.", 500),
     "INVOICE_NOT_FOUND": ("INVOICE_NOT_FOUND", "Quotation not found.", 404),
+    "DOCUMENT_NOT_FOUND": ("DOCUMENT_NOT_FOUND", "Invoice or quotation not found.", 404),
     "NOT_A_QUOTATION": ("NOT_A_QUOTATION", "This document is not a quotation.", 422),
     "CONVERSION_FAILED": ("CONVERSION_FAILED", "Failed to convert quotation.", 500),
+    "INSUFFICIENT_STOCK": ("INSUFFICIENT_STOCK", "Not enough stock for one or more items.", 409),
 }
 
 
-def _invoice_error(code: str):
+def _invoice_error(result: dict):
+    code = result["error_code"]
     mapped = _INVOICE_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to process request.", 500))
-    return error_response(*mapped)
+    error_code, default_message, status_code = mapped
+    return error_response(
+        error_code, result.get("message", default_message), status_code, result.get("details")
+    )
 
 
 @router.get("/invoices")
@@ -1076,6 +1095,18 @@ def list_invoices(
     )
 
 
+@router.get("/invoices/{invoice_id}")
+def get_invoice(
+    invoice_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    result = IMSInvoiceService.get(db, staff["tenant_id"], invoice_id)
+    if not result["success"]:
+        return _invoice_error(result)
+    return success_response(data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"))
+
+
 @router.post("/invoices")
 def create_invoice(
     data: CreateInvoiceRequest,
@@ -1095,13 +1126,12 @@ def create_invoice(
         paid_amount=data.paid_amount,
         note=data.note,
         lines=[line.model_dump() for line in data.lines],
-        vat_registered=data.vat_registered,
-        vat_rate=data.vat_rate,
         invoice_prefix=data.invoice_prefix,
         is_quotation=data.is_quotation,
+        show_vat_breakdown=data.show_vat_breakdown,
     )
     if not result["success"]:
-        return _invoice_error(result["error_code"])
+        return _invoice_error(result)
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation saved" if data.is_quotation else "Sale recorded",
@@ -1123,14 +1153,13 @@ def convert_quotation(
         tenant_id=staff["tenant_id"],
         user_id=staff.get("cred_id") or "",
         invoice_id=invoice_id,
-        vat_registered=data.vat_registered,
-        vat_rate=data.vat_rate,
         invoice_prefix=data.invoice_prefix,
         payment_method=data.payment_method,
         paid_amount=data.paid_amount,
+        show_vat_breakdown=data.show_vat_breakdown,
     )
     if not result["success"]:
-        return _invoice_error(result["error_code"])
+        return _invoice_error(result)
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation converted to invoice",
@@ -1189,6 +1218,8 @@ def update_branch_settings(
         branch_id=branch_id,
         vat_enabled=data.vat_enabled,
         vat_rate=data.vat_rate,
+        qr_image_url=data.qr_image_url,
+        clear_qr=data.clear_qr,
     )
     if not result["success"]:
         return _branch_settings_error(result["error_code"])
@@ -1196,3 +1227,435 @@ def update_branch_settings(
         data=BranchSettingsData.model_validate(result["settings"]).model_dump(mode="json"),
         message="Settings updated",
     )
+
+
+@router.delete("/branches/{branch_id}/settings/qr")
+def clear_branch_qr(
+    branch_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """Dedicated endpoint for the "Remove QR" button. Same as PATCH with
+    clear_qr=true but a plain DELETE reads more clearly in the UI code."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can change settings")
+    _assert_branch_scope(staff, branch_id)
+    result = IMSBranchSettingsService.clear_qr(db, staff["tenant_id"], branch_id)
+    if not result["success"]:
+        return _branch_settings_error(result["error_code"])
+    return success_response(
+        data=BranchSettingsData.model_validate(result["settings"]).model_dump(mode="json"),
+        message="QR removed",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Reports (aggregation endpoints — Sales/Purchase/VAT-register reports reuse
+# GET /invoices and GET /purchases directly; only the genuinely new
+# aggregations live here)
+# ---------------------------------------------------------------------------
+
+
+def _category_path_map(db: Session, tenant_id: str) -> dict[str, str]:
+    """id -> "Parent / Child" path string, mirroring the frontend's
+    app.categoryPath — built once per request from the full (small)
+    category list rather than a recursive SQL query."""
+    categories = IMSCategoryRepository.list_for_tenant(db, tenant_id)
+    by_id = {c.id: c for c in categories}
+
+    def path(cid: str) -> str:
+        c = by_id.get(cid)
+        if not c:
+            return "—"
+        return f"{path(c.parent_id)} / {c.name}" if c.parent_id else c.name
+
+    return {c.id: path(c.id) for c in categories}
+
+
+@router.get("/reports/stock-summary")
+def report_stock_summary(
+    branch_id: str | None = None,
+    category_id: str | None = None,
+    q: str | None = None,
+    low_stock_only: bool = False,
+    page: int = 1,
+    per_page: int = 25,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    paging = parse_paging(page, per_page)
+    result = IMSReportsService.stock_summary(
+        db, staff["tenant_id"], branch_id, category_id, q, low_stock_only,
+        paging["offset"], paging["limit"],
+    )
+    paths = _category_path_map(db, staff["tenant_id"])
+    unit_symbols = {u.id: u.symbol for u in IMSUnitRepository.list_for_tenant(db, staff["tenant_id"])}
+    rows = [
+        StockSummaryRow(
+            variant_id=r["variant"].id,
+            product_id=r["product"].id,
+            product_name=r["product"].name,
+            variant_name=r["variant"].name,
+            category_path=paths.get(r["product"].category_id, "—"),
+            unit_symbol=unit_symbols.get(r["variant"].unit_id, ""),
+            stock_qty=r["stock_qty"],
+            low_stock_at=r["variant"].low_stock_at,
+            cost_price=r["variant"].cost_price,
+            selling_price=r["variant"].selling_price,
+            cost_value=r["stock_qty"] * r["variant"].cost_price,
+            retail_value=r["stock_qty"] * r["variant"].selling_price,
+        )
+        for r in result["rows"]
+    ]
+    return success_response(
+        data=[row.model_dump(mode="json") for row in rows],
+        meta=build_meta(result["total"], paging["page"], paging["per_page"]),
+    )
+
+
+@router.get("/reports/margin")
+def report_margin(
+    branch_id: str | None = None,
+    category_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    paging = parse_paging(page, per_page)
+    result = IMSReportsService.margin(
+        db, staff["tenant_id"], branch_id, category_id, bs_from, bs_to,
+        paging["offset"], paging["limit"],
+    )
+    rows = []
+    for r in result["rows"]:
+        profit = r["revenue"] - r["cost"]
+        margin_pct = (profit / r["revenue"] * 100) if r["revenue"] else 0
+        rows.append(
+            MarginRow(
+                variant_id=r["variant"].id,
+                product_id=r["product"].id,
+                product_name=r["product"].name,
+                variant_name=r["variant"].name,
+                qty_sold=r["qty_sold"],
+                revenue=r["revenue"],
+                cost=r["cost"],
+                profit=profit,
+                margin_pct=margin_pct,
+            )
+        )
+    return success_response(
+        data=[row.model_dump(mode="json") for row in rows],
+        meta=build_meta(result["total"], paging["page"], paging["per_page"]),
+    )
+
+
+@router.get("/reports/party-statement")
+def report_party_statement(
+    kind: str,
+    q: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if kind not in ("customer", "supplier"):
+        return error_response("INVALID_KIND", "kind must be 'customer' or 'supplier'.", 422)
+    paging = parse_paging(page, per_page)
+    result = IMSReportsService.party_statement(
+        db, staff["tenant_id"], kind, q, bs_from, bs_to, paging["offset"], paging["limit"],
+    )
+    rows = [
+        PartyStatementRow(
+            party_id=r["party"].id,
+            name=r["party"].name,
+            pan=r["party"].pan,
+            phone=r["party"].phone,
+            period_debit=r["period_debit"],
+            period_credit=r["period_credit"],
+            balance=r["balance"],
+        )
+        for r in result["rows"]
+    ]
+    return success_response(
+        data=[row.model_dump(mode="json") for row in rows],
+        meta=build_meta(result["total"], paging["page"], paging["per_page"]),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Report exports (XLSX / PDF) — always ALL rows matching the filters, not
+# just the current page. Each report builds its (title, columns, rows) shape
+# from the same query the list endpoint uses (no offset/limit), then hands
+# off to the shared build_xlsx/build_pdf in reports_export.py.
+# ---------------------------------------------------------------------------
+
+_EXPORT_LIMIT = 100_000  # effectively unbounded — a real safety ceiling, not a UX limit
+
+
+def _business_header_lines(tenant) -> list[str]:
+    """Business name/PAN/address/contact block every export prints at the
+    top — same identity info the print-invoice page shows, so an exported
+    sheet is self-identifying without the app UI around it."""
+    lines = [tenant.name]
+    details = []
+    if tenant.pan:
+        details.append(f"PAN: {tenant.pan}")
+    if tenant.business_address:
+        details.append(tenant.business_address)
+    contact = [c for c in (tenant.business_phone, tenant.business_email) if c]
+    if contact:
+        details.append(" · ".join(contact))
+    lines.extend(details)
+    return lines
+
+
+def _export_response(
+    fmt: str,
+    title: str,
+    columns: list[str],
+    rows: list[list],
+    business_lines: list[str] | None = None,
+    wide: bool = False,
+):
+    if fmt not in ("xlsx", "pdf"):
+        return error_response("INVALID_FORMAT", "format must be 'xlsx' or 'pdf'.", 422)
+    if fmt == "xlsx":
+        content = build_xlsx(title, columns, rows, business_lines)
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ext = "xlsx"
+    else:
+        content = build_pdf(title, columns, rows, business_lines, wide)
+        media_type = "application/pdf"
+        ext = "pdf"
+    # Content-Disposition's filename param is Latin-1-only — titles built
+    # from user data (e.g. a party name) can contain characters like em
+    # dashes that aren't. ASCII-fold rather than reject the whole export.
+    safe_title = title.lower().replace(" ", "-").encode("ascii", "ignore").decode("ascii") or "export"
+    filename = f"{safe_title}.{ext}"
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/reports/sales/export")
+def export_sales_report(
+    format: str,
+    branch_id: str | None = None,
+    fiscal_year_id: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    items, _ = IMSInvoiceRepository.list_for_tenant(
+        db, staff["tenant_id"], branch_id, None, fiscal_year_id, status, None,
+        q, bs_from, bs_to, 0, _EXPORT_LIMIT,
+    )
+    parties = {p.id: p.name for p in IMSPartyRepository.list_for_tenant(db, staff["tenant_id"], None, None, 0, _EXPORT_LIMIT)[0]}
+    columns = ["Invoice", "Date (BS)", "Customer", "Items", "Taxable", "VAT", "Total", "Status"]
+    rows = [
+        [
+            i.number, i.date_bs, parties.get(i.customer_id, "—"), len(i.lines),
+            i.taxable_amount, i.vat_amount, i.total_amount, i.status,
+        ]
+        for i in items
+    ]
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, "Sales Report", columns, rows, _business_header_lines(tenant))
+
+
+@router.get("/reports/vat-register/export")
+def export_vat_register(
+    format: str,
+    branch_id: str | None = None,
+    fiscal_year_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    items, _ = IMSInvoiceRepository.list_for_tenant(
+        db, staff["tenant_id"], branch_id, None, fiscal_year_id, None, None,
+        None, bs_from, bs_to, 0, _EXPORT_LIMIT,
+    )
+    parties = {p.id: p for p in IMSPartyRepository.list_for_tenant(db, staff["tenant_id"], None, None, 0, _EXPORT_LIMIT)[0]}
+    columns = ["Invoice", "Date (BS)", "Buyer", "Buyer PAN", "Taxable", "VAT", "Total"]
+    rows = [
+        [
+            i.number, i.date_bs, parties.get(i.customer_id).name if i.customer_id in parties else "—",
+            (parties.get(i.customer_id).pan if i.customer_id in parties else None) or "—",
+            i.taxable_amount, i.vat_amount, i.total_amount,
+        ]
+        for i in items
+    ]
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, "VAT Sales Register", columns, rows, _business_header_lines(tenant))
+
+
+@router.get("/reports/purchases/export")
+def export_purchase_report(
+    format: str,
+    branch_id: str | None = None,
+    fiscal_year_id: str | None = None,
+    q: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    items, _ = IMSPurchaseRepository.list_for_tenant(
+        db, staff["tenant_id"], branch_id, None, fiscal_year_id, q, bs_from, bs_to, 0, _EXPORT_LIMIT,
+    )
+    parties = {p.id: p.name for p in IMSPartyRepository.list_for_tenant(db, staff["tenant_id"], None, None, 0, _EXPORT_LIMIT)[0]}
+    columns = ["Bill", "Bill No.", "Date (BS)", "Supplier", "Items", "Items Total", "Bill Amount", "Paid"]
+    rows = [
+        [
+            p.number, p.bill_no or "—", p.date_bs, parties.get(p.party_id, "Direct") if p.party_id else "Direct",
+            len(p.lines), p.items_total, p.bill_amount, p.paid_amount,
+        ]
+        for p in items
+    ]
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, "Purchase Report", columns, rows, _business_header_lines(tenant))
+
+
+@router.get("/reports/stock-summary/export")
+def export_stock_summary(
+    format: str,
+    branch_id: str | None = None,
+    category_id: str | None = None,
+    q: str | None = None,
+    low_stock_only: bool = False,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    result = IMSReportsService.stock_summary(
+        db, staff["tenant_id"], branch_id, category_id, q, low_stock_only, 0, _EXPORT_LIMIT,
+    )
+    paths = _category_path_map(db, staff["tenant_id"])
+    unit_symbols = {u.id: u.symbol for u in IMSUnitRepository.list_for_tenant(db, staff["tenant_id"])}
+    columns = ["Product", "Variant", "Category", "Unit", "Stock", "Reorder At", "Cost Price", "Selling Price", "Cost Value", "Retail Value"]
+    rows = [
+        [
+            r["product"].name, r["variant"].name, paths.get(r["product"].category_id, "—"),
+            unit_symbols.get(r["variant"].unit_id, ""), r["stock_qty"], r["variant"].low_stock_at,
+            r["variant"].cost_price, r["variant"].selling_price,
+            r["stock_qty"] * r["variant"].cost_price, r["stock_qty"] * r["variant"].selling_price,
+        ]
+        for r in result["rows"]
+    ]
+    title = "Low Stock Report" if low_stock_only else "Stock Summary"
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, title, columns, rows, _business_header_lines(tenant), wide=True)
+
+
+@router.get("/reports/margin/export")
+def export_margin_report(
+    format: str,
+    branch_id: str | None = None,
+    category_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    result = IMSReportsService.margin(
+        db, staff["tenant_id"], branch_id, category_id, bs_from, bs_to, 0, _EXPORT_LIMIT,
+    )
+    columns = ["Product", "Variant", "Qty Sold", "Revenue", "Cost", "Profit", "Margin %"]
+    rows = []
+    for r in result["rows"]:
+        profit = r["revenue"] - r["cost"]
+        margin_pct = round((profit / r["revenue"] * 100), 2) if r["revenue"] else 0
+        rows.append([r["product"].name, r["variant"].name, r["qty_sold"], r["revenue"], r["cost"], profit, margin_pct])
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, "Profit Margin Report", columns, rows, _business_header_lines(tenant))
+
+
+@router.get("/reports/party-statement/export")
+def export_party_statement(
+    format: str,
+    kind: str,
+    q: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if kind not in ("customer", "supplier"):
+        return error_response("INVALID_KIND", "kind must be 'customer' or 'supplier'.", 422)
+    result = IMSReportsService.party_statement(
+        db, staff["tenant_id"], kind, q, bs_from, bs_to, 0, _EXPORT_LIMIT,
+    )
+    columns = ["Party", "PAN", "Phone", "Period Debit", "Period Credit", "Balance"]
+    rows = [
+        [r["party"].name, r["party"].pan or "—", r["party"].phone or "—", r["period_debit"], r["period_credit"], r["balance"]]
+        for r in result["rows"]
+    ]
+    title = "Customer Statement" if kind == "customer" else "Supplier Statement"
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, title, columns, rows, _business_header_lines(tenant))
+
+
+@router.get("/parties/{party_id}/ledger/export")
+def export_party_ledger(
+    party_id: str,
+    format: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """Full ledger for ONE party with a running balance — distinct from
+    /reports/party-statement/export, which is one row per party (totals
+    only). Always the complete history, never just what's on screen."""
+    party = IMSPartyRepository.get_by_id(db, staff["tenant_id"], party_id)
+    if not party:
+        return error_response("PARTY_NOT_FOUND", "Party not found.", 404)
+    entries = IMSLedgerRepository.list_for_party(db, staff["tenant_id"], party_id)
+    is_supplier = party.kind == "supplier"
+
+    columns = ["Date (BS)", "Description", "Reference", "Debit", "Credit", "Balance"]
+    rows = []
+    balance = Decimal(0)
+    for e in entries:
+        balance += (e.credit - e.debit) if is_supplier else (e.debit - e.credit)
+        rows.append([
+            to_bs_iso(e.date) or e.date.strftime("%Y-%m-%d"), e.description, e.reference or "—",
+            e.debit, e.credit, balance,
+        ])
+
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    business_lines = _business_header_lines(tenant)
+    business_lines.append(
+        f"{'Supplier' if is_supplier else 'Customer'} statement — {party.name}"
+        + (f" (PAN: {party.pan})" if party.pan else "")
+    )
+    title = f"{party.name} - Ledger"
+    return _export_response(format, title, columns, rows, business_lines)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard — one endpoint, everything filtered by the same branch_id +
+# bs_from/bs_to so a single date-range change updates every section at once.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/dashboard")
+def get_dashboard(
+    branch_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    result = IMSDashboardService.get(db, staff["tenant_id"], branch_id, bs_from, bs_to)
+    data = DashboardData(**{k: v for k, v in result.items() if k != "success"})
+    return success_response(data=data.model_dump(mode="json"))

@@ -25,6 +25,11 @@ class IMSBranchSettings(Base):
     branch_id = Column(String(36), ForeignKey("public.branches.id"), nullable=False)
     vat_enabled = Column(Boolean, nullable=False, default=True)
     vat_rate = Column(Numeric(5, 2), nullable=False, default=13)
+    # Public MinIO URL of the branch's payment QR image. NULL = no QR set.
+    # Old file is deleted from storage whenever this is replaced or cleared
+    # (see IMSBranchSettingsService.update / clear_qr) — mirrors
+    # restro_branch_settings.qr_image_url exactly.
+    qr_image_url = Column(String(1000), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
         DateTime,
