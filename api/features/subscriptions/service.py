@@ -346,3 +346,34 @@ class SubscriptionService:
                 SubscriptionRepository.expire(db, sub)
             result.append({"sub": sub, "tenant_name": tenant_name, "tenant_email": tenant_email})
         return result
+
+    @staticmethod
+    def list_all_owners(db: Session) -> list:
+        """One row per owner account for the superadmin Users page — each
+        carries its tenant's business info (if business setup is done) and
+        every app subscription that tenant has (lazily expired same as
+        list_all_subscriptions). An owner with no tenant yet (registered,
+        business setup incomplete) still shows up with an empty subscription
+        list, not omitted — the superadmin should be able to see signups
+        stuck at that step too."""
+        owner_rows = SubscriptionRepository.list_owners_with_tenants(db)
+        tenant_ids = [t.id for _, t in owner_rows if t is not None]
+        subs = SubscriptionRepository.list_subscriptions_for_tenants(db, tenant_ids)
+
+        now = datetime.now(timezone.utc)
+        subs_by_tenant: dict[str, list] = {}
+        for sub in subs:
+            if sub.status == "trialing" and sub.trial_ends_at and sub.trial_ends_at <= now:
+                sub = SubscriptionRepository.expire(db, sub)
+            elif sub.status == "active" and sub.period_end and sub.period_end <= now:
+                sub = SubscriptionRepository.expire(db, sub)
+            subs_by_tenant.setdefault(sub.tenant_id, []).append(sub)
+
+        result = []
+        for user, tenant in owner_rows:
+            result.append({
+                "user": user,
+                "tenant": tenant,
+                "subscriptions": subs_by_tenant.get(tenant.id, []) if tenant else [],
+            })
+        return result

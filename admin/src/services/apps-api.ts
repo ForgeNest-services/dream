@@ -16,6 +16,8 @@ import {
   AdminSubscription,
   PaymentGroup,
   PriceQuote,
+  OwnerUser,
+  ManuallyActivatePayload,
 } from '@/types/apps';
 
 const normalizeError = (error: any, context?: string): ApiError => {
@@ -310,6 +312,24 @@ export const appsApi = {
       return response.data;
     } catch (error) {
       throw normalizeError(error, 'adminExtendTrial');
+    }
+  },
+
+  adminListUsers: async (): Promise<ApiResponse<OwnerUser[]>> => {
+    try {
+      const response = await axiosClient.get<ApiResponse<OwnerUser[]>>('/subscriptions/admin/users');
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'adminListUsers');
+    }
+  },
+
+  adminActivateSubscription: async (payload: ManuallyActivatePayload): Promise<ApiResponse<unknown>> => {
+    try {
+      const response = await axiosClient.post('/subscriptions/admin/activate', payload);
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'adminActivateSubscription');
     }
   },
 };

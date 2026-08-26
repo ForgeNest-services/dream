@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { appsApi } from '@/services/apps-api';
-import type { SubscriptionPlan, AdminSubscription, PaymentGroup } from '@/types/apps';
+import type { SubscriptionPlan, AdminSubscription, PaymentGroup, OwnerUser, AppSubscription } from '@/types/apps';
 import { colors, spacing, radius } from '@/lib/design-tokens';
 import { Spinner } from '@/components/shared/Spinner';
 
@@ -668,12 +668,251 @@ function SubscriptionsTab() {
   );
 }
 
+// ── Users tab ────────────────────────────────────────────────────────────────
+
+function ChangePlanForm({
+  ownerUser,
+  appCode,
+  currentSub,
+  onDone,
+  onCancel,
+}: {
+  ownerUser: OwnerUser;
+  appCode: string;
+  currentSub: AppSubscription | undefined;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [plan, setPlan] = useState<'monthly' | 'yearly'>('yearly');
+  const [price, setPrice] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    appsApi.listPlans(appCode).then((res) => {
+      const match = res.data?.find((p) => p.plan === plan);
+      if (match) setPrice(match.price_npr);
+    });
+  }, [appCode, plan]);
+
+  const save = async () => {
+    if (!ownerUser.tenant) return;
+    const priceVal = parseFloat(price);
+    if (isNaN(priceVal) || priceVal <= 0) { toast.error('Enter a valid price'); return; }
+    setSaving(true);
+    try {
+      const res = await appsApi.adminActivateSubscription({
+        tenant_id: ownerUser.tenant.id,
+        app_code: appCode,
+        plan,
+        months: plan === 'monthly' ? 1 : 12,
+        price_npr: priceVal,
+        notes: `Plan changed by admin from Users page.`,
+      });
+      if (res.success) { toast.success('Plan updated'); onDone(); }
+      else toast.error('Failed to update plan');
+    } catch { toast.error('Failed to update plan'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm, padding: spacing.sm, backgroundColor: colors.neutral[50], borderRadius: '8px' }}>
+      <select
+        value={plan}
+        onChange={(e) => setPlan(e.target.value as 'monthly' | 'yearly')}
+        style={{ fontSize: '12px', border: `1px solid ${colors.neutral[300]}`, borderRadius: '6px', padding: '5px 8px' }}
+      >
+        <option value="monthly">Monthly</option>
+        <option value="yearly">Yearly</option>
+      </select>
+      <input
+        type="number"
+        value={price}
+        onChange={(e) => setPrice(e.target.value)}
+        placeholder="Price (Rs.)"
+        style={{ width: '100px', fontSize: '12px', border: `1px solid ${colors.neutral[300]}`, borderRadius: '6px', padding: '5px 8px' }}
+      />
+      <button
+        onClick={save}
+        disabled={saving}
+        style={{ fontSize: '12px', fontWeight: 600, color: '#fff', backgroundColor: colors.primary[800], border: 'none', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}
+      >
+        {saving ? 'Saving…' : 'Save'}
+      </button>
+      <button
+        onClick={onCancel}
+        disabled={saving}
+        style={{ fontSize: '12px', fontWeight: 600, color: colors.neutral[600], backgroundColor: 'transparent', border: 'none', cursor: 'pointer' }}
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+const ALL_APP_CODES = ['srota_pms', 'srota_rms', 'srota_ims'];
+
+function UserRow({ ownerUser, onChanged }: { ownerUser: OwnerUser; onChanged: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [editingApp, setEditingApp] = useState<string | null>(null);
+
+  const subByApp = Object.fromEntries(ownerUser.subscriptions.map((s) => [s.app_code, s]));
+
+  return (
+    <div style={{ backgroundColor: colors.neutral[0], border: `1px solid ${colors.neutral[200]}`, borderRadius: '12px', overflow: 'hidden' }}>
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: spacing.md, padding: spacing.lg, backgroundColor: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, minWidth: 0 }}>
+          <div style={{
+            width: '38px', height: '38px', borderRadius: '50%', flexShrink: 0,
+            backgroundColor: colors.primary[50], color: colors.primary[800],
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '14px', fontWeight: 700,
+          }}>
+            {ownerUser.full_name.slice(0, 1).toUpperCase()}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: colors.neutral[900] }}>{ownerUser.full_name}</div>
+            <div style={{ fontSize: '12px', color: colors.neutral[500] }}>{ownerUser.email}</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, flexShrink: 0 }}>
+          <div style={{ fontSize: '12px', color: colors.neutral[500], textAlign: 'right' }}>
+            {ownerUser.tenant ? ownerUser.tenant.name : <span style={{ color: colors.neutral[400], fontStyle: 'italic' }}>No business yet</span>}
+          </div>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {ownerUser.subscriptions.map((s) => (
+              <span key={s.app_code} title={`${APP_LABELS[s.app_code] ?? s.app_code}: ${s.status}`} style={{
+                width: '8px', height: '8px', borderRadius: '50%',
+                backgroundColor: s.status === 'active' ? '#22C55E' : s.status === 'trialing' ? '#3B82F6' : '#EF4444',
+              }} />
+            ))}
+          </div>
+          <span style={{ fontSize: '18px', color: colors.neutral[400], transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>›</span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div style={{ borderTop: `1px solid ${colors.neutral[100]}`, padding: spacing.lg, display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
+          {!ownerUser.tenant ? (
+            <p style={{ fontSize: '13px', color: colors.neutral[400], margin: 0 }}>
+              This owner hasn't completed business setup yet — no subscriptions to manage.
+            </p>
+          ) : (
+            ALL_APP_CODES.map((appCode) => {
+              const sub = subByApp[appCode];
+              return (
+                <div key={appCode} style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: colors.neutral[800], width: '90px' }}>
+                        {APP_LABELS[appCode] ?? appCode}
+                      </span>
+                      {sub ? <StatusPill status={sub.status} /> : (
+                        <span style={{ fontSize: '11px', color: colors.neutral[400] }}>Not started</span>
+                      )}
+                      {sub?.plan && <span style={{ fontSize: '12px', color: colors.neutral[500], textTransform: 'capitalize' }}>{sub.plan}</span>}
+                      {sub?.status === 'trialing' && sub.trial_ends_at && (
+                        <span style={{ fontSize: '11px', color: colors.neutral[400] }}>ends {formatDate(sub.trial_ends_at)}</span>
+                      )}
+                      {sub?.status === 'active' && sub.period_end && (
+                        <span style={{ fontSize: '11px', color: colors.neutral[400] }}>renews {formatDate(sub.period_end)}</span>
+                      )}
+                    </div>
+                    {editingApp !== appCode && (
+                      <button
+                        onClick={() => setEditingApp(appCode)}
+                        style={{ fontSize: '11px', fontWeight: 600, color: colors.primary[700], backgroundColor: colors.neutral[0], border: `1px solid ${colors.primary[200]}`, borderRadius: '6px', padding: '3px 10px', cursor: 'pointer' }}
+                      >
+                        {sub ? 'Change plan' : 'Activate'}
+                      </button>
+                    )}
+                  </div>
+                  {editingApp === appCode && (
+                    <ChangePlanForm
+                      ownerUser={ownerUser}
+                      appCode={appCode}
+                      currentSub={sub}
+                      onDone={() => { setEditingApp(null); onChanged(); }}
+                      onCancel={() => setEditingApp(null)}
+                    />
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UsersTab() {
+  const [users, setUsers] = useState<OwnerUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await appsApi.adminListUsers();
+      if (res.success && res.data) setUsers(res.data);
+    } catch { toast.error('Failed to load users'); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: spacing['2xl'] }}><Spinner size="lg" /></div>;
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? users.filter((u) =>
+        u.full_name.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        (u.tenant?.name.toLowerCase().includes(q) ?? false),
+      )
+    : users;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search by name, email, or business…"
+        style={{
+          width: '100%', maxWidth: '360px',
+          border: `1.5px solid ${colors.neutral[200]}`,
+          borderRadius: radius.sm,
+          padding: '10px 14px',
+          fontSize: '13px',
+          outline: 'none',
+        }}
+      />
+      {filtered.length === 0 ? (
+        <div style={{ padding: spacing.xl, color: colors.neutral[500], fontSize: '14px' }}>No users found.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
+          {filtered.map((u) => (
+            <UserRow key={u.user_id} ownerUser={u} onChanged={load} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 const TABS = [
   { id: 'plans', label: 'Pricing Plans' },
   { id: 'payments', label: 'Payment Requests' },
   { id: 'subscriptions', label: 'All Subscriptions' },
+  { id: 'users', label: 'Users' },
 ] as const;
 
 type Tab = (typeof TABS)[number]['id'];
@@ -719,6 +958,7 @@ export function AdminPanelContent() {
       {tab === 'plans' && <PlansTab />}
       {tab === 'payments' && <PaymentsTab />}
       {tab === 'subscriptions' && <SubscriptionsTab />}
+      {tab === 'users' && <UsersTab />}
     </div>
   );
 }

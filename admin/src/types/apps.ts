@@ -204,3 +204,34 @@ export interface AdminSubscription {
   created_at: string;
   updated_at: string;
 }
+
+export interface OwnerTenant {
+  id: string;
+  name: string;
+  pan: string | null;
+  is_vat_registered: boolean;
+  business_address: string | null;
+  business_phone: string | null;
+  business_email: string | null;
+}
+
+/** One row on the superadmin Users page. */
+export interface OwnerUser {
+  user_id: string;
+  full_name: string;
+  email: string;
+  is_verified: boolean;
+  is_active: boolean;
+  created_at: string;
+  tenant: OwnerTenant | null;
+  subscriptions: AppSubscription[];
+}
+
+export interface ManuallyActivatePayload {
+  tenant_id: string;
+  app_code: string;
+  plan: 'monthly' | 'yearly';
+  months: number;
+  price_npr: number;
+  notes?: string | null;
+}

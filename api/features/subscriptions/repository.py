@@ -1,6 +1,6 @@
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
-from shared_models import AppSubscription, SubscriptionPayment, SubscriptionPlan, PlatformSetting, Tenant
+from shared_models import AppSubscription, SubscriptionPayment, SubscriptionPlan, PlatformSetting, Tenant, User
 
 
 class SubscriptionRepository:
@@ -248,6 +248,30 @@ class SubscriptionRepository:
             db.query(SubscriptionPayment, Tenant.name.label("tenant_name"))
             .join(Tenant, SubscriptionPayment.tenant_id == Tenant.id)
             .order_by(SubscriptionPayment.created_at.desc())
+            .all()
+        )
+
+    @staticmethod
+    def list_owners_with_tenants(db: Session) -> list[tuple]:
+        """Returns (User, Tenant | None) for every owner account — the unit
+        the superadmin Users page lists, since subscriptions live on the
+        tenant, not the user. Tenant is None for an owner who registered
+        but hasn't completed business setup yet."""
+        return (
+            db.query(User, Tenant)
+            .outerjoin(Tenant, User.tenant_id == Tenant.id)
+            .filter(User.is_owner == True)
+            .order_by(User.created_at.desc())
+            .all()
+        )
+
+    @staticmethod
+    def list_subscriptions_for_tenants(db: Session, tenant_ids: list[str]) -> list[AppSubscription]:
+        if not tenant_ids:
+            return []
+        return (
+            db.query(AppSubscription)
+            .filter(AppSubscription.tenant_id.in_(tenant_ids))
             .all()
         )
 

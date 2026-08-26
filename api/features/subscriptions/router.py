@@ -19,6 +19,7 @@ from features.subscriptions.schemas import (
     CreatePlanRequest,
     UpdatePlanRequest,
     UpdateBundleDiscountRequest,
+    OwnerUserData,
 )
 
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
@@ -272,6 +273,37 @@ def list_all_subscriptions(
         d["tenant_name"] = row["tenant_name"]
         d["tenant_email"] = row["tenant_email"]
         result.append(d)
+    return success_response(data=result)
+
+
+# ── Superadmin: users ─────────────────────────────────────────────────────────
+
+
+@router.get("/admin/users")
+def list_all_owners(
+    _admin: dict = Depends(_require_superadmin),
+    db: Session = Depends(get_db),
+):
+    """Every owner account with their business info (if set up) and every
+    app subscription that business has — the superadmin Users page. Plan
+    changes for a listed user's subscription go through the existing
+    POST /admin/activate (same manual-activation path a payment
+    confirmation uses)."""
+    rows = SubscriptionService.list_all_owners(db)
+    result = []
+    for row in rows:
+        result.append(
+            OwnerUserData(
+                user_id=row["user"].id,
+                full_name=row["user"].full_name,
+                email=row["user"].email,
+                is_verified=row["user"].is_verified,
+                is_active=row["user"].is_active,
+                created_at=row["user"].created_at,
+                tenant=row["tenant"],
+                subscriptions=row["subscriptions"],
+            ).model_dump(mode="json")
+        )
     return success_response(data=result)
 
 

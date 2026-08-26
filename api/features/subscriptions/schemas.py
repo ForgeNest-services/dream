@@ -25,6 +25,31 @@ class SubscriptionWithTenantData(SubscriptionData):
     tenant_email: str | None
 
 
+class OwnerTenantData(BaseModel):
+    id: str
+    name: str
+    pan: str | None
+    is_vat_registered: bool
+    business_address: str | None
+    business_phone: str | None
+    business_email: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class OwnerUserData(BaseModel):
+    """One row on the superadmin Users page — an owner account, their
+    business (if set up), and every app subscription that business has."""
+    user_id: str
+    full_name: str
+    email: str
+    is_verified: bool
+    is_active: bool
+    created_at: datetime
+    tenant: OwnerTenantData | None
+    subscriptions: list[SubscriptionData]
+
+
 class PaymentData(BaseModel):
     id: str
     group_id: str
