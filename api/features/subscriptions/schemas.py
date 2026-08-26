@@ -27,6 +27,7 @@ class SubscriptionWithTenantData(SubscriptionData):
 
 class PaymentData(BaseModel):
     id: str
+    group_id: str
     tenant_id: str
     app_code: str
     amount_npr: Decimal
@@ -43,8 +44,19 @@ class PaymentData(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class PaymentWithTenantData(PaymentData):
+class PaymentGroupData(BaseModel):
+    """One purchase request — a single app is a group of one row; a bundle
+    purchase (2+ apps) is N rows sharing one group_id (see SubscriptionPayment's
+    docstring). This is the shape the superadmin's payment queue works with,
+    so a bundle request shows and confirms/rejects as one unit."""
+    group_id: str
+    tenant_id: str
     tenant_name: str
+    plan: str
+    status: str
+    payment_method: str | None
+    created_at: datetime
+    payments: list[PaymentData]
 
 
 class PlanData(BaseModel):
@@ -59,8 +71,30 @@ class PlanData(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class SubmitPaymentRequest(BaseModel):
+class BundleDiscountData(BaseModel):
+    percent: Decimal
+
+
+class PriceQuoteLine(BaseModel):
     app_code: str
+    amount_npr: Decimal
+
+
+class PriceQuoteData(BaseModel):
+    lines: list[PriceQuoteLine]
+    subtotal_npr: Decimal
+    discount_percent: Decimal
+    discount_amount_npr: Decimal
+    total_npr: Decimal
+
+
+class PriceQuoteRequest(BaseModel):
+    app_codes: list[str]
+    plan: str  # monthly | yearly
+
+
+class SubmitPaymentRequest(BaseModel):
+    app_codes: list[str]
     plan: str  # monthly | yearly
     payment_method: str | None = None
     notes: str | None = None
@@ -73,7 +107,7 @@ class ConfirmPaymentRequest(BaseModel):
 class ManuallyActivateRequest(BaseModel):
     tenant_id: str
     app_code: str
-    plan: str  # monthly | yearly | bundle
+    plan: str  # monthly | yearly
     months: int = 1
     price_npr: float
     notes: str | None = None
@@ -96,3 +130,7 @@ class UpdatePlanRequest(BaseModel):
     price_npr: float | None = None
     label: str | None = None
     is_active: bool | None = None
+
+
+class UpdateBundleDiscountRequest(BaseModel):
+    percent: Decimal

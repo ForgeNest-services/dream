@@ -14,7 +14,8 @@ import {
   SubscriptionPlan,
   UpdatePlanPayload,
   AdminSubscription,
-  AdminPayment,
+  PaymentGroup,
+  PriceQuote,
 } from '@/types/apps';
 
 const normalizeError = (error: any, context?: string): ApiError => {
@@ -182,7 +183,7 @@ export const appsApi = {
 
   submitPayment: async (
     payload: import('@/types/apps').SubmitPaymentPayload,
-  ): Promise<ApiResponse<import('@/types/apps').SubscriptionPayment>> => {
+  ): Promise<ApiResponse<{ group_id: string; payments: import('@/types/apps').SubscriptionPayment[] }>> => {
     try {
       const response = await axiosClient.post('/subscriptions/my/payments', payload);
       return response.data;
@@ -198,6 +199,27 @@ export const appsApi = {
       return response.data;
     } catch (error) {
       throw normalizeError(error, 'listPlans');
+    }
+  },
+
+  getBundleDiscount: async (): Promise<ApiResponse<{ percent: string }>> => {
+    try {
+      const response = await axiosClient.get<ApiResponse<{ percent: string }>>('/subscriptions/bundle-discount');
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'getBundleDiscount');
+    }
+  },
+
+  quotePrice: async (appCodes: string[], plan: 'monthly' | 'yearly'): Promise<ApiResponse<PriceQuote>> => {
+    try {
+      const response = await axiosClient.post<ApiResponse<PriceQuote>>('/subscriptions/quote', {
+        app_codes: appCodes,
+        plan,
+      });
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'quotePrice');
     }
   },
 
@@ -233,30 +255,48 @@ export const appsApi = {
     }
   },
 
-  adminListAllPayments: async (): Promise<ApiResponse<AdminPayment[]>> => {
+  adminListPendingPayments: async (): Promise<ApiResponse<PaymentGroup[]>> => {
     try {
-      const response = await axiosClient.get<ApiResponse<AdminPayment[]>>('/subscriptions/admin/all-payments');
+      const response = await axiosClient.get<ApiResponse<PaymentGroup[]>>('/subscriptions/admin/pending-payments');
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'adminListPendingPayments');
+    }
+  },
+
+  adminListAllPayments: async (): Promise<ApiResponse<PaymentGroup[]>> => {
+    try {
+      const response = await axiosClient.get<ApiResponse<PaymentGroup[]>>('/subscriptions/admin/all-payments');
       return response.data;
     } catch (error) {
       throw normalizeError(error, 'adminListAllPayments');
     }
   },
 
-  adminConfirmPayment: async (paymentId: string, notes?: string): Promise<ApiResponse<unknown>> => {
+  adminConfirmPaymentGroup: async (groupId: string, notes?: string): Promise<ApiResponse<unknown>> => {
     try {
-      const response = await axiosClient.post(`/subscriptions/admin/payments/${paymentId}/confirm`, { notes: notes ?? null });
+      const response = await axiosClient.post(`/subscriptions/admin/payment-groups/${groupId}/confirm`, { notes: notes ?? null });
       return response.data;
     } catch (error) {
-      throw normalizeError(error, 'adminConfirmPayment');
+      throw normalizeError(error, 'adminConfirmPaymentGroup');
     }
   },
 
-  adminRejectPayment: async (paymentId: string, notes?: string): Promise<ApiResponse<unknown>> => {
+  adminRejectPaymentGroup: async (groupId: string, notes?: string): Promise<ApiResponse<unknown>> => {
     try {
-      const response = await axiosClient.post(`/subscriptions/admin/payments/${paymentId}/reject`, { notes: notes ?? null });
+      const response = await axiosClient.post(`/subscriptions/admin/payment-groups/${groupId}/reject`, { notes: notes ?? null });
       return response.data;
     } catch (error) {
-      throw normalizeError(error, 'adminRejectPayment');
+      throw normalizeError(error, 'adminRejectPaymentGroup');
+    }
+  },
+
+  adminUpdateBundleDiscount: async (percent: number): Promise<ApiResponse<{ percent: string }>> => {
+    try {
+      const response = await axiosClient.patch<ApiResponse<{ percent: string }>>('/subscriptions/admin/bundle-discount', { percent });
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'adminUpdateBundleDiscount');
     }
   },
 

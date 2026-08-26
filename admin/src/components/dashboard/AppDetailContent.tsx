@@ -12,7 +12,7 @@ import {
   MdOutlineApps,
 } from 'react-icons/md';
 import { IconType } from 'react-icons';
-import { useAppDetail } from '@/hooks/useApps';
+import { useApps, useAppDetail } from '@/hooks/useApps';
 import { useBranches } from '@/hooks/useBranches';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { APP_CODE_TO_ROLES } from '@/types/apps';
@@ -31,8 +31,9 @@ const ICON_MAP: Record<string, IconType> = {
 
 export function AppDetailContent({ slug }: { slug: string }) {
   const { app, isLoading, error } = useAppDetail(slug);
+  const { apps: allApps } = useApps();
   const { branches, isLoading: branchesLoading } = useBranches();
-  const { forApp, submitPayment, fetchPlansForApp } = useSubscriptions();
+  const { forApp, submitPayment, quotePrice } = useSubscriptions();
 
   if (isLoading) {
     return (
@@ -213,7 +214,8 @@ export function AppDetailContent({ slug }: { slug: string }) {
           appCode={app.code}
           sub={sub}
           onSubmitPayment={submitPayment}
-          fetchPlans={fetchPlansForApp}
+          quotePrice={quotePrice}
+          allApps={allApps}
         />
       </section>
 

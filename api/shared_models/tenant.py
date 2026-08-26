@@ -16,7 +16,6 @@ class Tenant(Base):
     business_address = Column(String(500), nullable=True)
     business_phone = Column(String(20), nullable=True, unique=True)
     business_email = Column(String(255), nullable=True, unique=True)
-    free_app_code = Column(String(50), nullable=True)  # chosen once during onboarding, immutable after
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")

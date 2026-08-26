@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { appsApi } from '@/services/apps-api';
-import type { SubscriptionPlan, AdminSubscription, AdminPayment } from '@/types/apps';
+import type { SubscriptionPlan, AdminSubscription, PaymentGroup } from '@/types/apps';
 import { colors, spacing, radius } from '@/lib/design-tokens';
 import { Spinner } from '@/components/shared/Spinner';
 
@@ -43,16 +43,18 @@ const APP_LABELS: Record<string, string> = {
   srota_pms: 'Srota PMS',
   srota_rms: 'Srota RMS',
   srota_ims: 'Srota IMS',
-  bundle: 'Bundle (All Apps)',
 };
 
 // ── Plans tab ────────────────────────────────────────────────────────────────
+// No 'bundle' app_code anymore — a bundle purchase is just 2+ real apps
+// priced together with a discount (see SubscriptionService.price_selection),
+// not a separate SKU. The discount % itself is edited below the per-app
+// plan grid.
 
 const APP_DESCRIPTIONS: Record<string, string> = {
   srota_pms: 'Hotel property management — rooms, bookings, folios',
   srota_rms: 'Restaurant POS — orders, kitchen, menu management',
   srota_ims: 'Inventory management — stock, suppliers, movements',
-  bundle: 'All apps at a discounted combined rate',
 };
 
 function PricingCard({
@@ -234,6 +236,100 @@ function PricingCard({
   );
 }
 
+// The % knocked off the summed individual app prices when a tenant buys 2+
+// apps together in one purchase (see SubscriptionService.price_selection).
+// One platform-wide setting, not per-app.
+function BundleDiscountEditor() {
+  const [percent, setPercent] = useState<string>('');
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    appsApi.getBundleDiscount().then((res) => {
+      if (res.success && res.data) setPercent(res.data.percent);
+      setLoading(false);
+    });
+  }, []);
+
+  const save = async () => {
+    const val = parseFloat(percent);
+    if (isNaN(val) || val < 0 || val > 100) { toast.error('Enter a percentage between 0 and 100'); return; }
+    setSaving(true);
+    try {
+      const res = await appsApi.adminUpdateBundleDiscount(val);
+      if (res.success && res.data) {
+        setPercent(res.data.percent);
+        toast.success('Bundle discount updated');
+        setEditing(false);
+      } else toast.error('Failed to update discount');
+    } catch { toast.error('Failed to update discount'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{
+      borderRadius: '14px',
+      border: `1.5px solid ${colors.primary[200]}`,
+      backgroundColor: colors.primary[50],
+      padding: spacing.lg,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.lg,
+      marginBottom: spacing.xl,
+    }}>
+      <div>
+        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: colors.neutral[900] }}>
+          Bundle discount
+        </h3>
+        <p style={{ margin: `${spacing.xs} 0 0`, fontSize: '12px', color: colors.neutral[600] }}>
+          Applied to the summed price whenever a tenant buys 2 or more apps together in one purchase.
+        </p>
+      </div>
+      {loading ? (
+        <Spinner size="sm" />
+      ) : editing ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
+          <input
+            type="number"
+            value={percent}
+            onChange={(e) => setPercent(e.target.value)}
+            min={0}
+            max={100}
+            style={{ width: '80px', border: `1.5px solid ${colors.neutral[300]}`, borderRadius: radius.sm, padding: '8px 10px', fontSize: '14px', textAlign: 'right' }}
+          />
+          <span style={{ fontSize: '14px', color: colors.neutral[600] }}>%</span>
+          <button
+            onClick={save}
+            disabled={saving}
+            style={{ fontSize: '12px', fontWeight: 700, color: '#fff', backgroundColor: colors.primary[800], border: 'none', borderRadius: '6px', padding: '6px 12px', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          <button
+            onClick={() => setEditing(false)}
+            disabled={saving}
+            style={{ fontSize: '12px', fontWeight: 600, color: colors.neutral[600], backgroundColor: 'transparent', border: 'none', cursor: 'pointer' }}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md }}>
+          <span style={{ fontSize: '24px', fontWeight: 800, color: colors.primary[800] }}>{percent}%</span>
+          <button
+            onClick={() => setEditing(true)}
+            style={{ fontSize: '12px', fontWeight: 600, color: colors.primary[700], backgroundColor: colors.neutral[0], border: `1px solid ${colors.primary[200]}`, borderRadius: '6px', padding: '6px 12px', cursor: 'pointer' }}
+          >
+            Edit
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PlansTab() {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -273,16 +369,18 @@ function PlansTab() {
     return acc;
   }, {});
 
-  const appOrder = ['srota_pms', 'srota_rms', 'srota_ims', 'bundle'];
+  const appOrder = ['srota_pms', 'srota_rms', 'srota_ims'];
   const sortedApps = [...Object.keys(grouped)].sort((a, b) => appOrder.indexOf(a) - appOrder.indexOf(b));
 
   return (
     <div>
-      <p style={{ fontSize: '13px', color: colors.neutral[500], marginTop: 0, marginBottom: spacing['2xl'] }}>
+      <p style={{ fontSize: '13px', color: colors.neutral[500], marginTop: 0, marginBottom: spacing.xl }}>
         Prices tenants see when they pick a plan. Changes take effect immediately for new payment requests.
       </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
+      <BundleDiscountEditor />
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '40px', marginTop: spacing['2xl'] }}>
         {sortedApps.map((appCode) => {
           const appPlans = [...grouped[appCode]].sort((a, b) => a.plan === 'monthly' ? -1 : 1);
           const monthlyPlan = appPlans.find((x) => x.plan === 'monthly');
@@ -332,7 +430,7 @@ function PlansTab() {
 // ── Payments tab ─────────────────────────────────────────────────────────────
 
 function PaymentsTab() {
-  const [payments, setPayments] = useState<AdminPayment[]>([]);
+  const [groups, setGroups] = useState<PaymentGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -340,27 +438,27 @@ function PaymentsTab() {
     setLoading(true);
     try {
       const res = await appsApi.adminListAllPayments();
-      if (res.success && res.data) setPayments(res.data);
+      if (res.success && res.data) setGroups(res.data);
     } catch { toast.error('Failed to load payments'); }
     finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  const confirm = async (id: string) => {
-    setBusy(id);
+  const confirm = async (groupId: string) => {
+    setBusy(groupId);
     try {
-      const res = await appsApi.adminConfirmPayment(id);
-      if (res.success) { toast.success('Payment confirmed, subscription activated'); await load(); }
+      const res = await appsApi.adminConfirmPaymentGroup(groupId);
+      if (res.success) { toast.success('Payment confirmed, subscription(s) activated'); await load(); }
       else toast.error('Failed to confirm');
     } catch { toast.error('Failed to confirm'); }
     finally { setBusy(null); }
   };
 
-  const reject = async (id: string) => {
-    setBusy(id);
+  const reject = async (groupId: string) => {
+    setBusy(groupId);
     try {
-      const res = await appsApi.adminRejectPayment(id);
+      const res = await appsApi.adminRejectPaymentGroup(groupId);
       if (res.success) { toast.success('Payment rejected'); await load(); }
       else toast.error('Failed to reject');
     } catch { toast.error('Failed to reject'); }
@@ -368,10 +466,10 @@ function PaymentsTab() {
   };
 
   if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: spacing['2xl'] }}><Spinner size="lg" /></div>;
-  if (!payments.length) return <div style={{ padding: spacing.xl, color: colors.neutral[500], fontSize: '14px' }}>No payment requests yet.</div>;
+  if (!groups.length) return <div style={{ padding: spacing.xl, color: colors.neutral[500], fontSize: '14px' }}>No payment requests yet.</div>;
 
-  const pending = payments.filter((p) => p.status === 'pending');
-  const rest = payments.filter((p) => p.status !== 'pending');
+  const pending = groups.filter((g) => g.status === 'pending');
+  const rest = groups.filter((g) => g.status !== 'pending');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg }}>
@@ -395,15 +493,18 @@ function PaymentsTab() {
   );
 }
 
+// One row per payment GROUP — a single-app purchase is a group of one, a
+// bundle purchase is 2+ apps confirmed/rejected together in one action
+// (see SubscriptionService.confirm_payment_group).
 function PaymentTable({
   rows,
   onConfirm,
   onReject,
   busy,
 }: {
-  rows: AdminPayment[];
-  onConfirm?: (id: string) => void;
-  onReject?: (id: string) => void;
+  rows: PaymentGroup[];
+  onConfirm?: (groupId: string) => void;
+  onReject?: (groupId: string) => void;
   busy: string | null;
 }) {
   return (
@@ -411,7 +512,7 @@ function PaymentTable({
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '720px' }}>
         <thead>
           <tr style={{ backgroundColor: colors.neutral[50] }}>
-            {['Tenant', 'App', 'Plan', 'Amount', 'Method', 'Notes', 'Submitted', 'Status', ''].map((h) => (
+            {['Tenant', 'Apps', 'Plan', 'Total', 'Method', 'Notes', 'Submitted', 'Status', ''].map((h) => (
               <th key={h} style={{ padding: `${spacing.sm} ${spacing.md}`, textAlign: 'left', fontSize: '11px', fontWeight: 700, color: colors.neutral[500], textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: `1px solid ${colors.neutral[100]}`, whiteSpace: 'nowrap' }}>
                 {h}
               </th>
@@ -419,47 +520,59 @@ function PaymentTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((p) => (
-            <tr
-              key={p.id}
-              style={{ borderBottom: `1px solid ${colors.neutral[50]}`, transition: 'background-color 0.1s' }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = colors.neutral[50])}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-            >
-              <td style={{ padding: `${spacing.sm} ${spacing.md}`, fontWeight: 600, color: colors.neutral[800], whiteSpace: 'nowrap' }}>{p.tenant_name}</td>
-              <td style={{ padding: `${spacing.sm} ${spacing.md}`, color: colors.neutral[600], whiteSpace: 'nowrap' }}>{APP_LABELS[p.app_code] ?? p.app_code}</td>
-              <td style={{ padding: `${spacing.sm} ${spacing.md}`, color: colors.neutral[600], textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{p.plan}</td>
-              <td style={{ padding: `${spacing.sm} ${spacing.md}`, fontWeight: 600, whiteSpace: 'nowrap' }}>Rs. {Number(p.amount_npr).toLocaleString()}</td>
-              <td style={{ padding: `${spacing.sm} ${spacing.md}`, color: colors.neutral[500], whiteSpace: 'nowrap' }}>{p.payment_method ?? '—'}</td>
-              <td style={{ padding: `${spacing.sm} ${spacing.md}`, color: colors.neutral[500], maxWidth: '160px' }}>
-                {p.notes ? (
-                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.notes}>{p.notes}</span>
-                ) : '—'}
-              </td>
-              <td style={{ padding: `${spacing.sm} ${spacing.md}`, color: colors.neutral[500], whiteSpace: 'nowrap' }}>{formatDate(p.created_at)}</td>
-              <td style={{ padding: `${spacing.sm} ${spacing.md}` }}><StatusPill status={p.status} /></td>
-              <td style={{ padding: `${spacing.sm} ${spacing.md}` }}>
-                {p.status === 'pending' && onConfirm && onReject && (
-                  <div style={{ display: 'flex', gap: spacing.xs }}>
-                    <button
-                      onClick={() => onConfirm(p.id)}
-                      disabled={busy === p.id}
-                      style={{ fontSize: '12px', fontWeight: 600, color: '#fff', backgroundColor: '#16A34A', border: 'none', borderRadius: '6px', padding: '3px 10px', cursor: 'pointer', opacity: busy === p.id ? 0.6 : 1, whiteSpace: 'nowrap' }}
-                    >
-                      Confirm
-                    </button>
-                    <button
-                      onClick={() => onReject(p.id)}
-                      disabled={busy === p.id}
-                      style={{ fontSize: '12px', fontWeight: 600, color: '#B91C1C', backgroundColor: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '6px', padding: '3px 10px', cursor: 'pointer', opacity: busy === p.id ? 0.6 : 1, whiteSpace: 'nowrap' }}
-                    >
-                      Reject
-                    </button>
-                  </div>
-                )}
-              </td>
-            </tr>
-          ))}
+          {rows.map((g) => {
+            const total = g.payments.reduce((sum, p) => sum + Number(p.amount_npr), 0);
+            const appNames = g.payments.map((p) => APP_LABELS[p.app_code] ?? p.app_code).join(' + ');
+            const notes = g.payments[0]?.notes;
+            return (
+              <tr
+                key={g.group_id}
+                style={{ borderBottom: `1px solid ${colors.neutral[50]}`, transition: 'background-color 0.1s' }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = colors.neutral[50])}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+              >
+                <td style={{ padding: `${spacing.sm} ${spacing.md}`, fontWeight: 600, color: colors.neutral[800], whiteSpace: 'nowrap' }}>{g.tenant_name}</td>
+                <td style={{ padding: `${spacing.sm} ${spacing.md}`, color: colors.neutral[600], whiteSpace: 'nowrap' }}>
+                  {appNames}
+                  {g.payments.length > 1 && (
+                    <span style={{ marginLeft: '6px', fontSize: '10px', fontWeight: 700, color: '#15803D', backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: radius.full, padding: '1px 6px' }}>
+                      BUNDLE
+                    </span>
+                  )}
+                </td>
+                <td style={{ padding: `${spacing.sm} ${spacing.md}`, color: colors.neutral[600], textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{g.plan}</td>
+                <td style={{ padding: `${spacing.sm} ${spacing.md}`, fontWeight: 600, whiteSpace: 'nowrap' }}>Rs. {Math.round(total).toLocaleString()}</td>
+                <td style={{ padding: `${spacing.sm} ${spacing.md}`, color: colors.neutral[500], whiteSpace: 'nowrap' }}>{g.payment_method ?? '—'}</td>
+                <td style={{ padding: `${spacing.sm} ${spacing.md}`, color: colors.neutral[500], maxWidth: '160px' }}>
+                  {notes ? (
+                    <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={notes}>{notes}</span>
+                  ) : '—'}
+                </td>
+                <td style={{ padding: `${spacing.sm} ${spacing.md}`, color: colors.neutral[500], whiteSpace: 'nowrap' }}>{formatDate(g.created_at)}</td>
+                <td style={{ padding: `${spacing.sm} ${spacing.md}` }}><StatusPill status={g.status} /></td>
+                <td style={{ padding: `${spacing.sm} ${spacing.md}` }}>
+                  {g.status === 'pending' && onConfirm && onReject && (
+                    <div style={{ display: 'flex', gap: spacing.xs }}>
+                      <button
+                        onClick={() => onConfirm(g.group_id)}
+                        disabled={busy === g.group_id}
+                        style={{ fontSize: '12px', fontWeight: 600, color: '#fff', backgroundColor: '#16A34A', border: 'none', borderRadius: '6px', padding: '3px 10px', cursor: 'pointer', opacity: busy === g.group_id ? 0.6 : 1, whiteSpace: 'nowrap' }}
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        onClick={() => onReject(g.group_id)}
+                        disabled={busy === g.group_id}
+                        style={{ fontSize: '12px', fontWeight: 600, color: '#B91C1C', backgroundColor: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '6px', padding: '3px 10px', cursor: 'pointer', opacity: busy === g.group_id ? 0.6 : 1, whiteSpace: 'nowrap' }}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

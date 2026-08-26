@@ -20,6 +20,7 @@ from core.seed import (
     ensure_ims_fiscal_year_link_schema,
     ensure_ims_branch_settings_qr_schema,
     ensure_tenants_free_app_schema,
+    ensure_subscription_payments_group_schema,
 )
 from core.storage import ensure_bucket
 import shared_models
@@ -100,11 +101,19 @@ async def lifespan(app: FastAPI):
         raise
 
     try:
-        logger.info("Backfilling tenants free_app_code schema...")
+        logger.info("Removing obsolete tenants.free_app_code column if present...")
         ensure_tenants_free_app_schema()
-        logger.info("tenants free_app_code schema backfill completed")
+        logger.info("tenants free_app_code cleanup completed")
     except Exception as e:
-        logger.error(f"Failed to backfill tenants free_app_code schema: {type(e).__name__}: {str(e)}")
+        logger.error(f"Failed to clean up tenants free_app_code column: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Backfilling subscription_payments group schema...")
+        ensure_subscription_payments_group_schema()
+        logger.info("subscription_payments group schema backfill completed")
+    except Exception as e:
+        logger.error(f"Failed to backfill subscription_payments group schema: {type(e).__name__}: {str(e)}")
         raise
 
     try:

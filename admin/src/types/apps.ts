@@ -106,7 +106,7 @@ export interface AppSubscription {
   tenant_id: string;
   app_code: string;
   status: 'trialing' | 'active' | 'expired' | 'cancelled';
-  plan: 'monthly' | 'yearly' | 'bundle' | null;
+  plan: 'monthly' | 'yearly' | null;
   trial_ends_at: string | null;
   period_start: string | null;
   period_end: string | null;
@@ -118,6 +118,7 @@ export interface AppSubscription {
 
 export interface SubscriptionPayment {
   id: string;
+  group_id: string;
   tenant_id: string;
   app_code: string;
   amount_npr: string;
@@ -132,17 +133,39 @@ export interface SubscriptionPayment {
   updated_at: string;
 }
 
+/** One purchase request — a single app is a group of one row; a bundle
+ *  purchase (2+ apps bought together at a discount) is N rows sharing one
+ *  group_id, each carrying that app's discounted share of the total. */
+export interface PaymentGroup {
+  group_id: string;
+  tenant_id: string;
+  tenant_name: string;
+  plan: string;
+  status: 'pending' | 'confirmed' | 'rejected';
+  payment_method: string | null;
+  created_at: string;
+  payments: SubscriptionPayment[];
+}
+
 export interface SubmitPaymentPayload {
-  app_code: string;
+  app_codes: string[];
   plan: 'monthly' | 'yearly';
   payment_method?: string | null;
   notes?: string | null;
 }
 
-export const PLAN_PRICES: Record<string, { label: string; price: number }> = {
-  monthly: { label: 'Monthly', price: 2999 },
-  yearly: { label: 'Yearly', price: 11999 },
-};
+export interface PriceQuoteLine {
+  app_code: string;
+  amount_npr: string;
+}
+
+export interface PriceQuote {
+  lines: PriceQuoteLine[];
+  subtotal_npr: string;
+  discount_percent: string;
+  discount_amount_npr: string;
+  total_npr: string;
+}
 
 export const APP_CODE_TO_ROLES: Record<string, ReadonlyArray<{ code: string; label: string }>> = {
   srota_pms: HOTEL_PMS_ROLES,
@@ -178,23 +201,6 @@ export interface AdminSubscription {
   period_start: string | null;
   period_end: string | null;
   price_npr: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface AdminPayment {
-  id: string;
-  tenant_id: string;
-  tenant_name: string;
-  app_code: string;
-  amount_npr: string;
-  plan: string;
-  period_months: number;
-  payment_method: string | null;
-  status: string;
-  notes: string | null;
-  confirmed_by: string | null;
-  confirmed_at: string | null;
   created_at: string;
   updated_at: string;
 }

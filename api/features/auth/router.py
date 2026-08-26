@@ -15,7 +15,6 @@ from features.auth.schemas import (
     ResendOTPRequest,
     BusinessRegisterRequest,
     UpdateTaxInfoRequest,
-    ChooseFreeAppRequest,
 )
 from features.auth.service import AuthService
 from features.auth.repository import UserRepository
@@ -319,7 +318,6 @@ def get_current_user_info(
                 "business_address": tenant.business_address,
                 "business_phone": tenant.business_phone,
                 "business_email": tenant.business_email,
-                "free_app_code": tenant.free_app_code,
             }
 
     return success_response(data=response_data)
@@ -388,31 +386,6 @@ def google_complete(data: GoogleCompleteRequest, db: Session = Depends(get_db)):
         },
         message="Account created — please complete your business setup.",
         status_code=201,
-    )
-
-
-@router.post("/choose-free-app")
-def choose_free_app(
-    data: ChooseFreeAppRequest,
-    current_user: dict = Depends(require_tenant_user),
-    db: Session = Depends(get_db),
-):
-    user = current_user["user"]
-    result = AuthService.choose_free_app(db, user.tenant_id, data.app_code)
-
-    if not result["success"]:
-        code = result["error_code"]
-        if code == "FREE_APP_ALREADY_CHOSEN":
-            return error_response("FREE_APP_ALREADY_CHOSEN", "You have already chosen your free app.", 409)
-        if code == "APP_NOT_FOUND":
-            return error_response("APP_NOT_FOUND", "App not found or inactive.", 404)
-        if code == "TENANT_NOT_FOUND":
-            return error_response("TENANT_NOT_FOUND", "Business not found.", 404)
-        return error_response("CHOOSE_FAILED", "Failed to set free app.", 500)
-
-    return success_response(
-        data={"tenant": result["tenant"].model_dump()},
-        message="Free app selected. Your 30-day trial has started!",
     )
 
 

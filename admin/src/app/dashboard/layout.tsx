@@ -18,15 +18,11 @@ function OnboardingGuard({ children }: { children: ReactNode }) {
     if (!isAuthenticated || isSuperAdmin) return;
     if (!tenant) {
       router.replace('/onboarding');
-      return;
-    }
-    if (!tenant.free_app_code) {
-      router.replace('/onboarding');
     }
   }, [isAuthenticated, tenant, isSuperAdmin, router]);
 
   // Briefly show spinner while redirecting to onboarding
-  if (isAuthenticated && !isSuperAdmin && (!tenant || !tenant.free_app_code)) {
+  if (isAuthenticated && !isSuperAdmin && !tenant) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', backgroundColor: colors.neutral[50] }}>
         <Spinner size="lg" />

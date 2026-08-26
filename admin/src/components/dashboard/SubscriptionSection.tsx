@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import type { AppSubscription, SubmitPaymentPayload, SubscriptionPlan } from '@/types/apps';
+import { useState, useEffect, useMemo } from 'react';
+import type { App, AppSubscription, PriceQuote, SubmitPaymentPayload } from '@/types/apps';
 import { colors, spacing, radius } from '@/lib/design-tokens';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -79,36 +79,42 @@ function StatusBadge({ sub }: { sub: AppSubscription | null }) {
 }
 
 // ── Plan card ─────────────────────────────────────────────────────────────────
+// Priced from the live quote (SubscriptionService.price_selection), not a
+// single app's static SubscriptionPlan.price_npr — with 2+ apps selected
+// this is the discounted bundle total, computed server-side.
 
 function PlanCard({
   period,
-  info,
+  price,
+  perMonth,
+  disabled,
   active,
   savings,
   onSelect,
 }: {
   period: 'monthly' | 'yearly';
-  info: SubscriptionPlan | undefined;
+  price: number | null;
+  perMonth: number | null;
+  disabled: boolean;
   active: boolean;
   savings: number | null;
   onSelect: () => void;
 }) {
   const isYearly = period === 'yearly';
-  const perMonth = isYearly && info ? Math.round(Number(info.price_npr) / 12) : null;
   const hasBestValue = isYearly && savings !== null && savings > 0;
 
   return (
     <button
       onClick={onSelect}
-      disabled={!info}
+      disabled={disabled}
       style={{
         borderRadius: '14px',
         border: `2px solid ${active ? colors.primary[800] : colors.neutral[200]}`,
         backgroundColor: active ? colors.primary[800] : colors.neutral[0],
         padding: '20px 18px 18px',
         textAlign: 'left',
-        cursor: info ? 'pointer' : 'default',
-        opacity: info ? 1 : 0.4,
+        cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.4 : 1,
         transition: 'all 0.18s',
         position: 'relative',
         overflow: 'hidden',
@@ -116,7 +122,7 @@ function PlanCard({
         boxShadow: active ? '0 8px 24px rgba(10,41,71,0.18)' : 'none',
       }}
       onMouseEnter={(e) => {
-        if (!active && info) {
+        if (!active && !disabled) {
           e.currentTarget.style.borderColor = colors.primary[300];
           e.currentTarget.style.boxShadow = '0 4px 12px rgba(10,41,71,0.08)';
         }
@@ -175,7 +181,7 @@ function PlanCard({
       <p style={{ margin: 0, lineHeight: 1 }}>
         <span style={{ fontSize: '13px', fontWeight: 700, color: active ? 'rgba(255,255,255,0.7)' : colors.neutral[500] }}>Rs. </span>
         <span style={{ fontSize: '28px', fontWeight: 800, color: active ? '#fff' : colors.neutral[900], letterSpacing: '-0.5px' }}>
-          {info ? Number(info.price_npr).toLocaleString() : '—'}
+          {price !== null ? Math.round(price).toLocaleString() : '—'}
         </span>
       </p>
 
@@ -201,33 +207,61 @@ function PlanCard({
 
 function PayModal({
   appCode,
+  allApps,
   onClose,
   onSubmit,
-  fetchPlans,
+  quotePrice,
 }: {
   appCode: string;
+  allApps: App[];
   onClose: () => void;
   onSubmit: (p: SubmitPaymentPayload) => Promise<{ ok: boolean }>;
-  fetchPlans: (appCode: string) => Promise<SubscriptionPlan[]>;
+  quotePrice: (appCodes: string[], plan: 'monthly' | 'yearly') => Promise<PriceQuote | null>;
 }) {
   const [plan, setPlan] = useState<'monthly' | 'yearly'>('yearly');
   const [method, setMethod] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
-  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  // The app the modal opened for is always included; other apps can be
+  // added to buy a discounted bundle in the same purchase (see
+  // SubscriptionService.price_selection — 2+ apps = the platform's bundle
+  // discount % applied to their summed prices).
+  const [selectedCodes, setSelectedCodes] = useState<string[]>([appCode]);
+  const [monthlyQuote, setMonthlyQuote] = useState<PriceQuote | null>(null);
+  const [yearlyQuote, setYearlyQuote] = useState<PriceQuote | null>(null);
+  const [quoting, setQuoting] = useState(false);
 
-  useEffect(() => { fetchPlans(appCode).then(setPlans); }, [appCode, fetchPlans]);
+  useEffect(() => {
+    let cancelled = false;
+    setQuoting(true);
+    Promise.all([quotePrice(selectedCodes, 'monthly'), quotePrice(selectedCodes, 'yearly')]).then(
+      ([m, y]) => {
+        if (cancelled) return;
+        setMonthlyQuote(m);
+        setYearlyQuote(y);
+        setQuoting(false);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCodes, quotePrice]);
 
-  const planMap = Object.fromEntries(plans.map((p) => [p.plan, p]));
-  const monthly = planMap['monthly'];
-  const yearly = planMap['yearly'];
-  const monthlySavings = monthly && yearly
-    ? Math.round(Number(monthly.price_npr) * 12 - Number(yearly.price_npr))
+  const otherApps = allApps.filter((a) => a.code !== appCode);
+  const monthlySavings = monthlyQuote && yearlyQuote
+    ? Math.round(Number(monthlyQuote.total_npr) * 12 - Number(yearlyQuote.total_npr))
     : null;
+  const activeQuote = plan === 'monthly' ? monthlyQuote : yearlyQuote;
+  const perMonth = plan === 'yearly' && yearlyQuote ? Math.round(Number(yearlyQuote.total_npr) / 12) : null;
+
+  const toggleApp = (code: string) => {
+    if (code === appCode) return; // the app this modal opened for can't be deselected
+    setSelectedCodes((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
+  };
 
   const handle = async () => {
     setBusy(true);
-    const res = await onSubmit({ app_code: appCode, plan, payment_method: method || null, notes: notes || null });
+    const res = await onSubmit({ app_codes: selectedCodes, plan, payment_method: method || null, notes: notes || null });
     setBusy(false);
     if (res.ok) onClose();
   };
@@ -256,7 +290,7 @@ function PayModal({
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div style={{
-        width: '100%', maxWidth: '460px',
+        width: '100%', maxWidth: '500px',
         borderRadius: '22px',
         backgroundColor: colors.neutral[0],
         boxShadow: '0 32px 80px rgba(10,41,71,0.22)',
@@ -288,23 +322,82 @@ function PayModal({
             </button>
           </div>
 
+          {/* Bundle app selector — the current app is always included;
+              adding more apps here prices the whole selection as one
+              discounted bundle purchase (see price_selection below). */}
+          {otherApps.length > 0 && (
+            <div style={{ marginTop: spacing.lg }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: colors.neutral[600], marginBottom: '8px', letterSpacing: '0.2px' }}>
+                Bundle with other apps <span style={{ fontWeight: 400, color: colors.neutral[400] }}>(optional — 2+ apps get a discount)</span>
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.xs }}>
+                {allApps.map((a) => {
+                  const isCurrent = a.code === appCode;
+                  const isSelected = selectedCodes.includes(a.code);
+                  return (
+                    <button
+                      key={a.code}
+                      onClick={() => toggleApp(a.code)}
+                      disabled={isCurrent}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: radius.full,
+                        border: `1.5px solid ${isSelected ? colors.primary[800] : colors.neutral[200]}`,
+                        backgroundColor: isSelected ? colors.primary[800] : colors.neutral[0],
+                        color: isSelected ? '#fff' : colors.neutral[700],
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: isCurrent ? 'default' : 'pointer',
+                        opacity: isCurrent ? 0.85 : 1,
+                      }}
+                    >
+                      {a.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Plan cards */}
           <div style={{ marginTop: spacing.lg, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: spacing.md }}>
             <PlanCard
               period="monthly"
-              info={planMap['monthly']}
+              price={monthlyQuote ? Number(monthlyQuote.total_npr) : null}
+              perMonth={null}
+              disabled={quoting || !monthlyQuote}
               active={plan === 'monthly'}
               savings={null}
               onSelect={() => setPlan('monthly')}
             />
             <PlanCard
               period="yearly"
-              info={planMap['yearly']}
+              price={yearlyQuote ? Number(yearlyQuote.total_npr) : null}
+              perMonth={perMonth}
+              disabled={quoting || !yearlyQuote}
               active={plan === 'yearly'}
               savings={monthlySavings}
               onSelect={() => setPlan('yearly')}
             />
           </div>
+
+          {/* Bundle discount breakdown */}
+          {activeQuote && Number(activeQuote.discount_amount_npr) > 0 && (
+            <div style={{
+              marginTop: spacing.md,
+              padding: `${spacing.sm} ${spacing.md}`,
+              borderRadius: radius.sm,
+              backgroundColor: '#F0FDF4',
+              border: '1px solid #BBF7D0',
+              fontSize: '12px',
+              color: '#15803D',
+              display: 'flex',
+              justifyContent: 'space-between',
+            }}>
+              <span>{activeQuote.lines.length} apps · {Number(activeQuote.discount_percent)}% bundle discount</span>
+              <span style={{ fontWeight: 700 }}>−Rs. {Math.round(Number(activeQuote.discount_amount_npr)).toLocaleString()}</span>
+            </div>
+          )}
         </div>
 
         {/* Divider */}
@@ -374,7 +467,7 @@ function PayModal({
           </button>
           <button
             onClick={handle}
-            disabled={busy}
+            disabled={busy || quoting || !activeQuote}
             style={{
               flex: 2,
               borderRadius: radius.full,
@@ -383,8 +476,8 @@ function PayModal({
               color: '#fff',
               fontSize: '14px', fontWeight: 700,
               padding: `10px ${spacing.xl}`,
-              cursor: busy ? 'default' : 'pointer',
-              opacity: busy ? 0.6 : 1,
+              cursor: busy || quoting || !activeQuote ? 'default' : 'pointer',
+              opacity: busy || quoting || !activeQuote ? 0.6 : 1,
               transition: 'opacity 0.15s, background-color 0.15s',
             }}
             onMouseEnter={(e) => { if (!busy) e.currentTarget.style.backgroundColor = colors.primary[700]; }}
@@ -404,12 +497,14 @@ export function SubscriptionSection({
   appCode,
   sub,
   onSubmitPayment,
-  fetchPlans,
+  quotePrice,
+  allApps,
 }: {
   appCode: string;
   sub: AppSubscription | null;
   onSubmitPayment: (p: SubmitPaymentPayload) => Promise<{ ok: boolean }>;
-  fetchPlans: (appCode: string) => Promise<SubscriptionPlan[]>;
+  quotePrice: (appCodes: string[], plan: 'monthly' | 'yearly') => Promise<PriceQuote | null>;
+  allApps: App[];
 }) {
   const [showPay, setShowPay] = useState(false);
 
@@ -471,9 +566,10 @@ export function SubscriptionSection({
       {showPay && (
         <PayModal
           appCode={appCode}
+          allApps={allApps}
           onClose={() => setShowPay(false)}
           onSubmit={onSubmitPayment}
-          fetchPlans={fetchPlans}
+          quotePrice={quotePrice}
         />
       )}
     </>

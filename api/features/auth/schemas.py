@@ -48,7 +48,6 @@ class TenantData(BaseModel):
     business_address: str | None = None
     business_phone: str | None = None
     business_email: str | None = None
-    free_app_code: str | None = None
 
 
 class TokenData(BaseModel):
@@ -89,7 +88,3 @@ class VerifyOTPRequest(BaseModel):
 
 class ResendOTPRequest(BaseModel):
     email: EmailStr
-
-
-class ChooseFreeAppRequest(BaseModel):
-    app_code: str
