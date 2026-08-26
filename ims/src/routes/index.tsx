@@ -57,7 +57,7 @@ function LoginPage() {
   return (
     <main className="grid min-h-screen lg:grid-cols-2">
       <div className="hidden flex-col justify-between bg-ink p-10 text-ink-foreground lg:flex">
-        <img src="/white.png" alt="Srota" className="h-9 w-auto" />
+        <img src="/white.png" alt="Srota" className="h-14 w-auto self-start" />
         <div className="max-w-md">
           <h1 className="text-3xl font-medium leading-tight tracking-tight">
             Inventory, stock movement and IRD billing — in one place.

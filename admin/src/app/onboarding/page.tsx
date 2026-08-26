@@ -31,124 +31,6 @@ const EMPTY_FIELDS: BusinessFormFields = {
   businessPhone: '',
 };
 
-function todayBs(): string {
-  // Lightweight display date for the receipt preview — not the source of
-  // truth for any stored date, purely decorative context on the mock slip.
-  return new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-/** The signature element: a live receipt that fills in as the owner types,
- *  because that's literally what this record becomes — the header printed
- *  on every invoice the business issues (see CLAUDE.md §2.9/§2.10). Makes
- *  the abstract act of "registering a business" visibly concrete. */
-function ReceiptPreview({ fields }: { fields: BusinessFormFields }) {
-  const hasPan = fields.pan.trim().length === 9;
-  const taxLine = !fields.pan.trim()
-    ? null
-    : hasPan
-      ? fields.isVatRegistered
-        ? { label: 'VAT REG.', value: fields.pan }
-        : { label: 'PAN', value: fields.pan }
-      : { label: 'PAN', value: fields.pan.padEnd(9, '·') };
-
-  return (
-    <div
-      style={{
-        position: 'relative',
-        backgroundColor: '#FFFFFF',
-        borderRadius: '4px',
-        padding: `${spacing.xl} ${spacing.lg}`,
-        boxShadow: '0 24px 48px -12px rgba(0,0,0,0.35)',
-        fontFamily: 'var(--font-sans)',
-      }}
-    >
-      {/* perforated top edge */}
-      <div
-        aria-hidden
-        style={{
-          position: 'absolute',
-          top: '-1px',
-          left: 0,
-          right: 0,
-          height: '10px',
-          backgroundImage: `radial-gradient(circle at 10px 0, transparent 5px, #FFFFFF 5.5px)`,
-          backgroundSize: '20px 10px',
-          backgroundRepeat: 'repeat-x',
-          transform: 'translateY(-9px)',
-        }}
-      />
-
-      <div style={{ textAlign: 'center', paddingBottom: spacing.md, marginBottom: spacing.md, borderBottom: `1.5px dashed ${colors.neutral[200]}` }}>
-        <p
-          style={{
-            margin: 0,
-            fontFamily: 'var(--font-fraunces)',
-            fontStyle: 'italic',
-            fontSize: '19px',
-            fontWeight: 600,
-            color: colors.neutral[900],
-            lineHeight: '1.3',
-            wordBreak: 'break-word',
-          }}
-        >
-          {fields.businessName.trim() || 'Your business name'}
-        </p>
-        <p style={{ margin: `${spacing.xs} 0 0`, fontSize: '11px', color: colors.neutral[400], lineHeight: '1.5' }}>
-          {fields.businessAddress.trim() || 'Business address'}
-        </p>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', fontSize: '12px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', color: colors.neutral[500] }}>
-          <span>DATE (AD)</span>
-          <span style={{ fontVariantNumeric: 'tabular-nums', color: colors.neutral[700] }}>{todayBs()}</span>
-        </div>
-        {taxLine ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', color: colors.neutral[500] }}>
-            <span>{taxLine.label}</span>
-            <span style={{ fontVariantNumeric: 'tabular-nums', color: colors.neutral[700], letterSpacing: '0.5px' }}>{taxLine.value}</span>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', justifyContent: 'space-between', color: colors.neutral[300] }}>
-            <span>TAX ID</span>
-            <span>not registered</span>
-          </div>
-        )}
-        {(fields.businessPhone.trim() || fields.businessEmail.trim()) && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', color: colors.neutral[500] }}>
-            <span>CONTACT</span>
-            <span style={{ color: colors.neutral[700], textAlign: 'right', maxWidth: '65%', wordBreak: 'break-word' }}>
-              {fields.businessPhone.trim() || fields.businessEmail.trim()}
-            </span>
-          </div>
-        )}
-      </div>
-
-      <div style={{ marginTop: spacing.md, paddingTop: spacing.md, borderTop: `1.5px dashed ${colors.neutral[200]}`, textAlign: 'center' }}>
-        <p style={{ margin: 0, fontSize: '10px', letterSpacing: '1.5px', color: colors.neutral[300], textTransform: 'uppercase' }}>
-          This heads every invoice you send
-        </p>
-      </div>
-
-      {/* perforated bottom edge */}
-      <div
-        aria-hidden
-        style={{
-          position: 'absolute',
-          bottom: '-1px',
-          left: 0,
-          right: 0,
-          height: '10px',
-          backgroundImage: `radial-gradient(circle at 10px 10px, transparent 5px, #FFFFFF 5.5px)`,
-          backgroundSize: '20px 10px',
-          backgroundRepeat: 'repeat-x',
-          transform: 'translateY(9px)',
-        }}
-      />
-    </div>
-  );
-}
-
 /** Plays once after a successful save, then hands off to /dashboard — the
  *  one moment in this flow that earns a burst of energy, after the quiet,
  *  serious work of registering tax details is actually done. */
@@ -282,15 +164,15 @@ export default function OnboardingPage() {
               letterSpacing: '-0.01em',
             }}
           >
-            This becomes what your customers see on every bill.
+            A few details, and your business is ready to launch.
           </p>
           <p style={{ marginTop: spacing.lg, maxWidth: '340px', fontSize: '14px', lineHeight: '1.7', color: 'rgba(255,255,255,0.6)' }}>
             One business record, shared by your whole team and every app you run — hotel, restaurant, or shop floor.
           </p>
         </div>
 
-        <div style={{ position: 'relative', zIndex: 1, maxWidth: '340px' }}>
-          <ReceiptPreview fields={fields} />
+        <div style={{ position: 'relative', zIndex: 1, maxWidth: '340px', margin: '0 auto' }}>
+          <Lottie src="/animations/businessman_lies_up_with_rocket.json" autoplay loop />
         </div>
 
         <p style={{ position: 'relative', zIndex: 1, margin: 0, fontSize: '12px', color: 'rgba(255,255,255,0.35)' }}>
