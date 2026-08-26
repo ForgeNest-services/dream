@@ -19,6 +19,7 @@ from core.seed import (
     ensure_ims_variant_expiry_schema,
     ensure_ims_fiscal_year_link_schema,
     ensure_ims_branch_settings_qr_schema,
+    backfill_branch_settings_vat_mismatch,
     ensure_tenants_free_app_schema,
     ensure_subscription_payments_group_schema,
 )
@@ -98,6 +99,14 @@ async def lifespan(app: FastAPI):
         logger.info("ims_branch_settings QR schema backfill completed")
     except Exception as e:
         logger.error(f"Failed to backfill ims_branch_settings QR schema: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Correcting stale branch settings VAT mismatches...")
+        backfill_branch_settings_vat_mismatch()
+        logger.info("Branch settings VAT mismatch correction completed")
+    except Exception as e:
+        logger.error(f"Failed to correct branch settings VAT mismatches: {type(e).__name__}: {str(e)}")
         raise
 
     try:

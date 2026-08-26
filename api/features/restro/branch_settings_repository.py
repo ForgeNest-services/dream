@@ -18,13 +18,13 @@ class BranchSettingsRepository:
 
     @staticmethod
     def create_default(
-        db: Session, tenant_id: str, branch_id: str
+        db: Session, tenant_id: str, branch_id: str, vat_enabled: bool
     ) -> RestroBranchSettings:
         now = datetime.now(timezone.utc)
         row = RestroBranchSettings(
             tenant_id=tenant_id,
             branch_id=branch_id,
-            vat_enabled=True,
+            vat_enabled=vat_enabled,
             vat_rate=Decimal("13"),
             qr_image_url=None,
             created_at=now,

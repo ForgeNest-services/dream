@@ -17,12 +17,14 @@ class IMSBranchSettingsRepository:
         )
 
     @staticmethod
-    def create_default(db: Session, tenant_id: str, branch_id: str) -> IMSBranchSettings:
+    def create_default(
+        db: Session, tenant_id: str, branch_id: str, vat_enabled: bool
+    ) -> IMSBranchSettings:
         now = datetime.now(timezone.utc)
         row = IMSBranchSettings(
             tenant_id=tenant_id,
             branch_id=branch_id,
-            vat_enabled=True,
+            vat_enabled=vat_enabled,
             vat_rate=Decimal("13"),
             qr_image_url=None,
             created_at=now,

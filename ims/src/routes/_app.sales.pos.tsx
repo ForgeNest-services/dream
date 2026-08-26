@@ -24,7 +24,7 @@ import { priceWithVat, priceWithoutVat } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Minus, Plus, QrCode, Search, Trash2, UserPlus, Wallet } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 interface PosSearch {
@@ -78,7 +78,16 @@ function PosPage() {
   // walk-in customer who doesn't need a tax invoice, without touching the
   // business's actual VAT registration. Only meaningful when the business
   // is genuinely VAT-registered; a PAN-only business has nothing to toggle.
-  const [vatBillOn, setVatBillOn] = useState(app.company.vatRegistered);
+  const [vatBillOn, setVatBillOn] = useState(false);
+  // app.company starts as seed/mock data (vatRegistered: true) until the
+  // real tenant fetch resolves — seeding vatBillOn from it at useState time
+  // would stick a non-VAT tenant with vatBillOn=true forever (nothing else
+  // re-derives it once branchesReady flips). Apply the real value once it's
+  // actually known, same fix as ProductFormPage's `taxable`.
+  useEffect(() => {
+    if (app.branchesReady) setVatBillOn(app.company.vatRegistered);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.branchesReady, app.company.vatRegistered]);
 
   const branchId = app.branchId === "all" ? (app.branches[0]?.id ?? "") : app.branchId;
   const customers = app.parties.filter((p) => p.kind === "customer");

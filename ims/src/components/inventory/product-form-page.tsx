@@ -62,7 +62,7 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
   const [description, setDescription] = useState("");
   const [hasVariants, setHasVariants] = useState(false);
   const [variants, setVariants] = useState<DraftVariant[]>([]);
-  const [taxable, setTaxable] = useState(app.company.vatRegistered);
+  const [taxable, setTaxable] = useState(false);
   const [taxRate, setTaxRate] = useState<number | "">("");
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [brandDialogOpen, setBrandDialogOpen] = useState(false);
@@ -103,6 +103,20 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product?.id]);
+
+  // `taxable` can't be correctly seeded from app.company.vatRegistered at
+  // useState/mount time — app.company (and, for the edit route, app.products)
+  // start as seed/mock data (vatRegistered: true) until the real tenant fetch
+  // resolves, and that fetch is async. This effect re-applies the real value
+  // the moment app.branchesReady flips true, for both the new-product case
+  // (product undefined) and the edit case (product resolved from what may
+  // still have been mock data when the effect above last ran) — so a non-VAT
+  // tenant never sees the Taxable box flash on or stay stuck true.
+  useEffect(() => {
+    if (!app.branchesReady) return;
+    setTaxable(app.company.vatRegistered && (!product || product.taxable !== false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.branchesReady, app.company.vatRegistered]);
 
   const [baseCost, setBaseCost] = useState(0);
   const [basePrice, setBasePrice] = useState(0);

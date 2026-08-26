@@ -107,6 +107,11 @@ def _assert_branch_scope(staff: dict, branch_id: str) -> None:
 _BRANCH_SETTINGS_ERROR_MAP = {
     "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
     "INVALID_VAT_RATE": ("INVALID_VAT_RATE", "VAT rate must be between 0 and 100.", 422),
+    "NOT_VAT_REGISTERED": (
+        "NOT_VAT_REGISTERED",
+        "This business isn't VAT-registered — update PAN/VAT status in the admin app first.",
+        422,
+    ),
 }
 
 

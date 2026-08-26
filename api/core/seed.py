@@ -394,6 +394,39 @@ def ensure_ims_branch_settings_qr_schema() -> None:
         db.close()
 
 
+def backfill_branch_settings_vat_mismatch() -> None:
+    """One-time data correction, not a schema change: create_default() on
+    both ims_branch_settings and restro_branch_settings used to hardcode
+    vat_enabled=True regardless of the owning tenant's real VAT registration
+    (fixed to seed from tenants.is_vat_registered — see
+    IMSBranchSettingsService.get_or_create / BranchSettingsService.get_or_create).
+    Any row auto-provisioned before that fix is stuck with vat_enabled=true
+    for a PAN-only tenant, which leaks VAT fields/math into the product,
+    purchase and sales UIs for a business that was never VAT-registered.
+    Idempotent — only touches rows that are actually wrong, safe to run
+    every startup."""
+    db = SessionLocal()
+    try:
+        for table in ("ims_branch_settings", "restro_branch_settings"):
+            result = db.execute(text(
+                f"UPDATE public.{table} bs "
+                "SET vat_enabled = false "
+                "FROM public.tenants t "
+                "WHERE bs.tenant_id = t.id "
+                "AND bs.vat_enabled = true "
+                "AND t.is_vat_registered = false"
+            ))
+            if result.rowcount:
+                logger.info(f"Corrected {result.rowcount} stale vat_enabled row(s) in {table}")
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill branch settings VAT mismatch: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
 def ensure_tenants_free_app_schema() -> None:
     """The 'pick one free app during onboarding' model was replaced by
     independent per-app trials (each starts on that app's first credential
