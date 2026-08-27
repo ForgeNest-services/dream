@@ -1,6 +1,9 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from sqlalchemy.orm import Session
+from core.database import get_db
 from core.deps import require_tenant_scope
 from core.storage import upload_file
+from features.branches.repository import BranchRepository
 from utils.helpers import success_response, error_response
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
@@ -25,6 +28,7 @@ async def upload(
     branch_id: str | None = Form(None),
     file: UploadFile = File(...),
     scope: dict = Depends(require_tenant_scope),
+    db: Session = Depends(get_db),
 ):
     if app not in APP_PREFIXES:
         return error_response("INVALID_APP", f"Unknown app '{app}'.", 400)
@@ -37,6 +41,14 @@ async def upload(
     # prefix — never trust the client-supplied branch_id beyond that check.
     if scope["source"] == "staff" and scope.get("branch_id") and branch_id != scope["branch_id"]:
         raise HTTPException(403, "Not allowed for this branch")
+
+    # Platform/owner tokens and tenant-wide staff (App Owner) aren't locked
+    # to one branch by the check above, so branch_id is still whatever the
+    # client typed — verify it's a real branch on this tenant before it
+    # becomes part of a storage path. Never trust a client-supplied ID past
+    # this point (project convention — see CLAUDE.md).
+    if branch_id and not BranchRepository.get_by_id(db, scope["tenant_id"], branch_id):
+        return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
 
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         return error_response(

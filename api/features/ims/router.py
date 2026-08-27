@@ -76,7 +76,9 @@ def _assert_branch_scope(staff: dict, branch_id: str) -> None:
     if staff["role"] == "owner":
         return
     if staff.get("branch_id") != branch_id:
-        raise HTTPException(403, "Not allowed for this branch")
+        raise HTTPException(
+            403, {"error_code": "BRANCH_SCOPE_VIOLATION", "message": "Not allowed for this branch"}
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -372,7 +374,7 @@ def create_category(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can create categories")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can create categories"})
     result = IMSCategoryService.create(db, staff["tenant_id"], data.name, data.parent_id)
     if not result["success"]:
         return _category_error(result["error_code"])
@@ -391,7 +393,7 @@ def rename_category(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can rename categories")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can rename categories"})
     result = IMSCategoryService.rename(db, staff["tenant_id"], category_id, data.name)
     if not result["success"]:
         return _category_error(result["error_code"])
@@ -408,7 +410,7 @@ def delete_category(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can delete categories")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can delete categories"})
     result = IMSCategoryService.delete(db, staff["tenant_id"], category_id)
     if not result["success"]:
         return _category_error(result["error_code"])
@@ -438,7 +440,7 @@ def create_brand(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can create brands")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can create brands"})
     result = IMSBrandService.create(db, staff["tenant_id"], data.name)
     if not result["success"]:
         code = result["error_code"]
@@ -544,7 +546,7 @@ def create_product(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager", "storekeeper"):
-        raise HTTPException(403, "Not allowed to create products")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Not allowed to create products"})
     result = IMSProductService.create(
         db,
         tenant_id=staff["tenant_id"],
@@ -577,7 +579,7 @@ def update_product(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager", "storekeeper"):
-        raise HTTPException(403, "Not allowed to edit products")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Not allowed to edit products"})
     result = IMSProductService.update(
         db,
         tenant_id=staff["tenant_id"],
@@ -607,7 +609,7 @@ def delete_product(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can delete products")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can delete products"})
     result = IMSProductService.delete(db, staff["tenant_id"], product_id)
     if not result["success"]:
         return _product_error(result["error_code"])
@@ -637,7 +639,7 @@ def adjust_stock(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager", "storekeeper"):
-        raise HTTPException(403, "Not allowed to adjust stock")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Not allowed to adjust stock"})
     result = IMSStockService.adjust(
         db,
         tenant_id=staff["tenant_id"],
@@ -663,7 +665,7 @@ def restock(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager", "storekeeper"):
-        raise HTTPException(403, "Not allowed to restock")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Not allowed to restock"})
     result = IMSStockService.restock(
         db,
         tenant_id=staff["tenant_id"],
@@ -753,7 +755,7 @@ async def upload_media(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager", "storekeeper"):
-        raise HTTPException(403, "Not allowed to upload images")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Not allowed to upload images"})
     content = await file.read()
     result = IMSMediaService.upload(
         db,
@@ -779,7 +781,7 @@ def delete_media(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can delete images")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can delete images"})
     result = IMSMediaService.delete(db, staff["tenant_id"], media_id)
     if not result["success"]:
         return _media_error(result["error_code"])
@@ -840,7 +842,7 @@ def create_fiscal_year(
     db: Session = Depends(get_db),
 ):
     if staff["role"] != "owner":
-        raise HTTPException(403, "Only the Owner can add fiscal years")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only the Owner can add fiscal years"})
     result = IMSFiscalYearService.create(db, staff["tenant_id"], data.start_year)
     if not result["success"]:
         return _fiscal_year_error(result["error_code"])
@@ -858,7 +860,7 @@ def activate_fiscal_year(
     db: Session = Depends(get_db),
 ):
     if staff["role"] != "owner":
-        raise HTTPException(403, "Only the Owner can switch the active fiscal year")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only the Owner can switch the active fiscal year"})
     result = IMSFiscalYearService.set_active(db, staff["tenant_id"], fy_id)
     if not result["success"]:
         return _fiscal_year_error(result["error_code"])
@@ -875,7 +877,7 @@ def delete_fiscal_year(
     db: Session = Depends(get_db),
 ):
     if staff["role"] != "owner":
-        raise HTTPException(403, "Only the Owner can delete fiscal years")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only the Owner can delete fiscal years"})
     result = IMSFiscalYearService.delete(db, staff["tenant_id"], fy_id)
     if not result["success"]:
         return _fiscal_year_error(result["error_code"])
@@ -984,7 +986,7 @@ def delete_party(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can delete parties")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can delete parties"})
     result = IMSPartyService.delete(db, staff["tenant_id"], party_id)
     if not result["success"]:
         return _party_error(result["error_code"])
@@ -1105,7 +1107,7 @@ def create_purchase(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager", "storekeeper"):
-        raise HTTPException(403, "Not allowed to record purchases")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Not allowed to record purchases"})
     result = IMSPurchaseService.create(
         db,
         tenant_id=staff["tenant_id"],
@@ -1231,7 +1233,7 @@ def create_invoice(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager", "cashier"):
-        raise HTTPException(403, "Not allowed to record sales")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Not allowed to record sales"})
     result = IMSInvoiceService.create(
         db,
         tenant_id=staff["tenant_id"],
@@ -1264,7 +1266,7 @@ def convert_quotation(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager", "cashier"):
-        raise HTTPException(403, "Not allowed to convert quotations")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Not allowed to convert quotations"})
     result = IMSInvoiceService.convert(
         db,
         tenant_id=staff["tenant_id"],
@@ -1327,7 +1329,7 @@ def update_branch_settings(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can change settings")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can change settings"})
     _assert_branch_scope(staff, branch_id)
     result = IMSBranchSettingsService.update(
         db,
@@ -1355,7 +1357,7 @@ def clear_branch_qr(
     """Dedicated endpoint for the "Remove QR" button. Same as PATCH with
     clear_qr=true but a plain DELETE reads more clearly in the UI code."""
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can change settings")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can change settings"})
     _assert_branch_scope(staff, branch_id)
     result = IMSBranchSettingsService.clear_qr(db, staff["tenant_id"], branch_id)
     if not result["success"]:

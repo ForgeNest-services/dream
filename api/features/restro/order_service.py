@@ -21,19 +21,17 @@ from features.branches.repository import BranchRepository
 from utils.logger import logger
 
 
-# TODO(settings): once per-branch VAT settings persist (Phase C: Settings),
-# read from settings instead of these constants. Snapshot at mark-paid time so
-# a later VAT rate change doesn't restate historical orders.
-DEFAULT_VAT_ENABLED = True
-DEFAULT_VAT_RATE = Decimal("13")
-
-
-def compute_order_total(order) -> Decimal:
+def compute_order_total(order, vat_enabled: bool, vat_rate: Decimal) -> Decimal:
     """Mirrors the frontend billTotals(): subtotal from non-voided lines,
     discount (percent or flat), then VAT applied to the taxable amount.
     Used server-side both for reports and for the khata outstanding-balance
     calculation, so the number always matches what the customer was shown at
-    bill time."""
+    bill time.
+
+    vat_enabled/vat_rate must come from that order's own branch's
+    RestroBranchSettings (see BranchSettingsService.get_or_create) — never a
+    hardcoded default. A tenant that isn't VAT-registered must never have VAT
+    silently added to a reported/reconciled total."""
     subtotal = sum(
         (Decimal(line.price) * line.qty for line in order.lines if not line.is_voided),
         Decimal("0"),
@@ -43,8 +41,31 @@ def compute_order_total(order) -> Decimal:
     else:
         discount = Decimal(order.discount_value)
     taxable = max(Decimal("0"), subtotal - discount)
-    vat = (taxable * DEFAULT_VAT_RATE / Decimal("100")) if DEFAULT_VAT_ENABLED else Decimal("0")
+    vat = (taxable * vat_rate / Decimal("100")) if vat_enabled else Decimal("0")
     return (taxable + vat).quantize(Decimal("0.01"))
+
+
+def sum_order_totals(db: Session, tenant_id: str, orders: list) -> Decimal:
+    """compute_order_total() summed across a list of orders, resolving each
+    order's own branch's VAT settings — batched to one settings lookup per
+    distinct branch_id in the list (not one per order), since in practice a
+    customer's orders all share one branch but nothing here assumes that."""
+    from features.restro.branch_settings_service import BranchSettingsService
+
+    settings_by_branch: dict[str, tuple[bool, Decimal]] = {}
+    total = Decimal("0")
+    for order in orders:
+        if order.branch_id not in settings_by_branch:
+            result = BranchSettingsService.get_or_create(db, tenant_id, order.branch_id)
+            settings = result.get("settings")
+            settings_by_branch[order.branch_id] = (
+                (bool(settings.vat_enabled), Decimal(settings.vat_rate))
+                if result["success"]
+                else (False, Decimal("0"))
+            )
+        vat_enabled, vat_rate = settings_by_branch[order.branch_id]
+        total += compute_order_total(order, vat_enabled, vat_rate)
+    return total
 
 
 class OrderService:
@@ -525,7 +546,7 @@ class OrderService:
         the ledger). Does NOT subtract settlements — that's the caller's job
         via outstanding_balance()."""
         orders = OrderRepository.list_khata_orders_for_customer(db, tenant_id, customer_id)
-        return sum((compute_order_total(o) for o in orders), Decimal("0"))
+        return sum_order_totals(db, tenant_id, orders)
 
     @staticmethod
     def outstanding_balance(db: Session, tenant_id: str, customer_id: str) -> Decimal:

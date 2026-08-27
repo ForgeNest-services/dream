@@ -89,7 +89,9 @@ def _assert_branch_scope(staff: dict, branch_id: str) -> None:
     if staff["role"] == "owner":
         return
     if staff.get("branch_id") != branch_id:
-        raise HTTPException(403, "Not allowed for this branch")
+        raise HTTPException(
+            403, {"error_code": "BRANCH_SCOPE_VIOLATION", "message": "Not allowed for this branch"}
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +147,7 @@ def update_branch_settings(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can change settings")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can change settings"})
     _assert_branch_scope(staff, branch_id)
     result = BranchSettingsService.update(
         db,
@@ -173,7 +175,7 @@ def clear_branch_qr(
     """Dedicated endpoint for the "Remove QR" button. Same as PATCH with
     clear_qr=true but a plain DELETE reads more clearly in the UI code."""
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can change settings")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can change settings"})
     _assert_branch_scope(staff, branch_id)
     result = BranchSettingsService.clear_qr(db, staff["tenant_id"], branch_id)
     if not result["success"]:
@@ -259,7 +261,7 @@ def update_expense(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can edit expenses")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can edit expenses"})
     _assert_branch_scope(staff, branch_id)
     result = ExpenseService.update(
         db,
@@ -288,7 +290,7 @@ def delete_expense(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can delete expenses")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can delete expenses"})
     _assert_branch_scope(staff, branch_id)
     result = ExpenseService.delete(db, staff["tenant_id"], branch_id, expense_id)
     if not result["success"]:
@@ -590,7 +592,7 @@ def create_category(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can create categories")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can create categories"})
     _assert_branch_scope(staff, branch_id)
 
     result = CategoryService.create(
@@ -625,7 +627,7 @@ def update_category(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can edit categories")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can edit categories"})
     _assert_branch_scope(staff, branch_id)
 
     result = CategoryService.update(
@@ -658,7 +660,7 @@ def delete_category(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can delete categories")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can delete categories"})
     _assert_branch_scope(staff, branch_id)
 
     result = CategoryService.delete(db, tenant_id=staff["tenant_id"], category_id=category_id)
@@ -776,7 +778,7 @@ def create_menu_item(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can create menu items")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can create menu items"})
     _assert_branch_scope(staff, branch_id)
 
     result = MenuItemService.create(
@@ -812,7 +814,7 @@ def update_menu_item(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can edit menu items")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can edit menu items"})
     _assert_branch_scope(staff, branch_id)
 
     result = MenuItemService.update(
@@ -874,7 +876,7 @@ def delete_menu_item(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can delete menu items")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can delete menu items"})
     _assert_branch_scope(staff, branch_id)
 
     result = MenuItemService.delete(db, tenant_id=staff["tenant_id"], branch_id=branch_id, item_id=item_id)
@@ -927,7 +929,7 @@ def create_zone(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can create zones")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can create zones"})
     _assert_branch_scope(staff, branch_id)
     result = ZoneService.create(
         db,
@@ -954,7 +956,7 @@ def update_zone(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can edit zones")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can edit zones"})
     _assert_branch_scope(staff, branch_id)
     result = ZoneService.update(
         db,
@@ -979,7 +981,7 @@ def delete_zone(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can delete zones")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can delete zones"})
     _assert_branch_scope(staff, branch_id)
     result = ZoneService.delete(db, tenant_id=staff["tenant_id"], zone_id=zone_id)
     if not result["success"]:
@@ -1054,7 +1056,7 @@ def create_table(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can create tables")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can create tables"})
     _assert_branch_scope(staff, branch_id)
     result = TableService.create(
         db,
@@ -1081,7 +1083,7 @@ def update_table(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can edit tables")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can edit tables"})
     _assert_branch_scope(staff, branch_id)
     result = TableService.update(
         db,
@@ -1108,7 +1110,7 @@ def delete_table(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can delete tables")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can delete tables"})
     _assert_branch_scope(staff, branch_id)
     result = TableService.delete(db, tenant_id=staff["tenant_id"], branch_id=branch_id, table_id=table_id)
     if not result["success"]:
@@ -1710,7 +1712,7 @@ def set_order_delivery_status(
     # nav access to the Delivery page in the UI, but gate it here too so a
     # rogue token can't backdoor it.
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can update delivery status")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can update delivery status"})
     _assert_branch_scope(staff, branch_id)
     result = OrderService.set_delivery_status(
         db,
@@ -1784,7 +1786,7 @@ def create_inventory_item(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can create inventory items")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can create inventory items"})
     _assert_branch_scope(staff, branch_id)
     actor_name, cred_id = _actor_from_staff(db, staff)
     result = InventoryService.create(
@@ -1817,7 +1819,7 @@ def update_inventory_item(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can edit inventory items")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can edit inventory items"})
     _assert_branch_scope(staff, branch_id)
     result = InventoryService.update(
         db,
@@ -1845,7 +1847,7 @@ def delete_inventory_item(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can delete inventory items")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can delete inventory items"})
     _assert_branch_scope(staff, branch_id)
     result = InventoryService.delete(db, staff["tenant_id"], branch_id, item_id)
     if not result["success"]:
@@ -1979,7 +1981,7 @@ def create_employee(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can add employees")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can add employees"})
     _assert_branch_scope(staff, branch_id)
     result = EmployeeService.create(
         db,
@@ -2010,7 +2012,7 @@ def update_employee(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can edit employees")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can edit employees"})
     _assert_branch_scope(staff, branch_id)
     result = EmployeeService.update(
         db,
@@ -2043,7 +2045,7 @@ def delete_employee(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can delete employees")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can delete employees"})
     _assert_branch_scope(staff, branch_id)
     result = EmployeeService.delete(db, staff["tenant_id"], branch_id, employee_id)
     if not result["success"]:
@@ -2149,7 +2151,7 @@ def update_customer(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can edit customers")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can edit customers"})
     _assert_branch_scope(staff, branch_id)
     result = CustomerService.update(
         db,
@@ -2181,7 +2183,7 @@ def delete_customer(
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can delete customers")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can delete customers"})
     _assert_branch_scope(staff, branch_id)
     result = CustomerService.delete(db, staff["tenant_id"], branch_id, customer_id)
     if not result["success"]:
@@ -2208,6 +2210,10 @@ def khata_history(
     if not customer or customer.branch_id != branch_id or not customer.is_active:
         return error_response("CUSTOMER_NOT_FOUND", "Customer not found.", 404)
 
+    bs_result = BranchSettingsService.get_or_create(db, tenant_id, branch_id)
+    vat_enabled = bool(bs_result["settings"].vat_enabled) if bs_result["success"] else False
+    vat_rate = Decimal(bs_result["settings"].vat_rate) if bs_result["success"] else Decimal("0")
+
     orders = CustomerRepository.list_khata_orders(db, tenant_id, customer_id)
     settlements = KhataSettlementRepository.list_for_customer(db, tenant_id, customer_id)
     order_entries = [
@@ -2216,7 +2222,7 @@ def khata_history(
             type=o.type,
             placed_at=o.placed_at,
             placed_at_bs=o.placed_at_bs,
-            total=compute_order_total(o),
+            total=compute_order_total(o, vat_enabled, vat_rate),
             line_count=sum(1 for l in o.lines if not l.is_voided),
         )
         for o in orders
@@ -2254,6 +2260,10 @@ def customer_history(
     if not customer or customer.branch_id != branch_id or not customer.is_active:
         return error_response("CUSTOMER_NOT_FOUND", "Customer not found.", 404)
 
+    bs_result = BranchSettingsService.get_or_create(db, tenant_id, branch_id)
+    vat_enabled = bool(bs_result["settings"].vat_enabled) if bs_result["success"] else False
+    vat_rate = Decimal(bs_result["settings"].vat_rate) if bs_result["success"] else Decimal("0")
+
     orders = CustomerRepository.list_all_orders(db, tenant_id, customer_id)
     entries = [
         CustomerOrderEntry(
@@ -2264,7 +2274,7 @@ def customer_history(
             payment_method=o.payment_method,
             placed_at=o.placed_at,
             placed_at_bs=o.placed_at_bs,
-            total=compute_order_total(o),
+            total=compute_order_total(o, vat_enabled, vat_rate),
             line_count=sum(1 for l in o.lines if not l.is_voided),
         )
         for o in orders
@@ -2293,7 +2303,7 @@ def create_khata_settlement(
     """Record a partial or full payment against a customer's khata balance.
     Owner/Manager only — this is the cash-drawer moment."""
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only Owner or Manager can accept khata settlements")
+        raise HTTPException(403, {"error_code": "INSUFFICIENT_ROLE", "message": "Only Owner or Manager can accept khata settlements"})
     _assert_branch_scope(staff, branch_id)
     actor_name, cred_id = _actor_from_staff(db, staff)
     result = OrderService.record_khata_settlement(

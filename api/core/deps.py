@@ -85,15 +85,22 @@ def get_staff_token(
     return authorization[7:]
 
 
-def _make_staff_dep(decode_fn):
+def _make_staff_dep(decode_fn, app_code: str | None = None):
     """Builds a require_<app>_staff dependency factory around an app's own
     decode_staff_token. Each app calls this with its own decode function so
     the module boundary stays a real, independent trust check (not just a
     shared string comparison) — if one app's staff auth needs to diverge
-    later, only that app's wrapper changes."""
+    later, only that app's wrapper changes.
+
+    app_code, when given, gates every request behind that app's subscription
+    (trial or paid) — the same check require_module_access does for
+    platform-JWT endpoints, applied here since staff tokens are how RMS/IMS
+    are actually used day to day. Deliberately NOT checked for login itself
+    (staff_login doesn't call this dep) so an expired trial still gets a
+    real error message instead of a broken login screen."""
 
     def require_staff(role: str | None = None):
-        def _dep(token: str = Depends(get_staff_token)) -> dict:
+        def _dep(token: str = Depends(get_staff_token), db: Session = Depends(get_db)) -> dict:
             if not token:
                 raise HTTPException(401, "Unauthorized")
 
@@ -105,8 +112,20 @@ def _make_staff_dep(decode_fn):
             if role and staff_role != role:
                 raise HTTPException(403, "Insufficient role")
 
+            tenant_id = payload["tenant_id"]
+            if app_code:
+                from features.subscriptions.service import SubscriptionService
+                if not SubscriptionService.is_accessible(db, tenant_id, app_code):
+                    raise HTTPException(
+                        402,
+                        {
+                            "error_code": "SUBSCRIPTION_REQUIRED",
+                            "message": f"An active subscription or trial is required to access {app_code}.",
+                        },
+                    )
+
             return {
-                "tenant_id": payload["tenant_id"],
+                "tenant_id": tenant_id,
                 "role": staff_role,
                 "cred_id": payload.get("cred_id"),
                 "branch_id": payload.get("branch_id"),
@@ -120,19 +139,19 @@ def _make_staff_dep(decode_fn):
 def require_hotel_pms_staff(role: str | None = None):
     from features.hotel_pms.auth import decode_staff_token
 
-    return _make_staff_dep(decode_staff_token)(role)
+    return _make_staff_dep(decode_staff_token, "srota_pms")(role)
 
 
 def require_restro_staff(role: str | None = None):
     from features.restro.auth import decode_staff_token
 
-    return _make_staff_dep(decode_staff_token)(role)
+    return _make_staff_dep(decode_staff_token, "srota_rms")(role)
 
 
 def require_ims_staff(role: str | None = None):
     from features.ims.auth import decode_staff_token
 
-    return _make_staff_dep(decode_staff_token)(role)
+    return _make_staff_dep(decode_staff_token, "srota_ims")(role)
 
 
 def require_module_access(app_code: str):

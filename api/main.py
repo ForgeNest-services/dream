@@ -200,6 +200,18 @@ app.include_router(subscriptions_router)
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    # `detail` is usually a plain string (HTTP_ERROR fallback below), but a
+    # raise site can pass a {"error_code": ..., "message": ...} dict instead
+    # to surface a specific frontend-switchable code — same convention as
+    # every error_response(...) call, just reachable from a `raise` site
+    # (e.g. a shared helper like _assert_branch_scope that isn't itself a
+    # route handler and can't `return`).
+    if isinstance(exc.detail, dict) and "error_code" in exc.detail:
+        return error_response(
+            error_code=exc.detail["error_code"],
+            message=exc.detail.get("message"),
+            status_code=exc.status_code,
+        )
     return error_response(
         error_code="HTTP_ERROR",
         message=str(exc.detail),

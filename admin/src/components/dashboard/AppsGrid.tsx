@@ -19,7 +19,7 @@ import {
 import { IconType } from 'react-icons';
 
 const WHATSAPP_URL =
-  'https://wa.me/9779800000000?text=Hi%2C%20I%27d%20like%20to%20upgrade%20my%20Dream%20subscription.';
+  'https://wa.me/9779868211546?text=Hi%2C%20I%27d%20like%20to%20upgrade%20my%20Srota%20subscription.';
 
 const ICON_MAP: Record<string, IconType> = {
   Hotel: MdOutlineHotel,

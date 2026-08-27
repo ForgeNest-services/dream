@@ -378,7 +378,13 @@ const defaultSettings = (branch: Branch | null): Settings => ({
   restaurantName: "Restro POS",
   branchAddress: branch?.address ?? "",
   branchPhone: branch?.phone ?? "",
-  vatEnabled: true,
+  // Pre-fetch placeholder only — every consumer reads settings.vatEnabled
+  // live at render, so this self-corrects the instant the real branch
+  // settings load. False for consistency with the backend's own default
+  // (RestroBranchSettingsRepository.create_default seeds off the tenant's
+  // real is_vat_registered, never true, since a non-VAT tenant must never
+  // start VAT-on even transiently).
+  vatEnabled: false,
   vatRate: 13,
 });
 

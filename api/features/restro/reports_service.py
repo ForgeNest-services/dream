@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from features.restro.reports_repository import ReportsRepository
 from features.restro.order_service import compute_order_total
+from features.restro.branch_settings_service import BranchSettingsService
 from features.branches.repository import BranchRepository
 from utils.bikram_sambat import to_bs_iso, bs_iso_to_ad
 
@@ -17,11 +18,24 @@ def _assert_branch(db: Session, tenant_id: str, branch_id: str) -> bool:
     return BranchRepository.get_by_id(db, tenant_id, branch_id) is not None
 
 
-def _sum_totals(orders) -> Decimal:
-    return sum((compute_order_total(o) for o in orders), Decimal("0"))
+def _vat_settings(db: Session, tenant_id: str, branch_id: str) -> tuple[bool, Decimal]:
+    """Every report in this module is scoped to one branch, so its VAT
+    settings are fetched once per request and threaded through — never the
+    hardcoded default compute_order_total used to fall back to."""
+    result = BranchSettingsService.get_or_create(db, tenant_id, branch_id)
+    if not result["success"]:
+        return False, Decimal("0")
+    settings = result["settings"]
+    return bool(settings.vat_enabled), Decimal(settings.vat_rate)
 
 
-def _by_payment_method(orders) -> dict:
+def _sum_totals(orders, vat_enabled: bool, vat_rate: Decimal) -> Decimal:
+    return sum(
+        (compute_order_total(o, vat_enabled, vat_rate) for o in orders), Decimal("0")
+    )
+
+
+def _by_payment_method(orders, vat_enabled: bool, vat_rate: Decimal) -> dict:
     """Group paid orders by payment method (cash/qr/khata) with summed totals.
     Matches the "how did the money come in" cut on the sales report."""
     buckets: dict[str, Decimal] = {"cash": Decimal("0"), "qr": Decimal("0"), "khata": Decimal("0")}
@@ -31,7 +45,7 @@ def _by_payment_method(orders) -> dict:
         if method not in buckets:
             buckets[method] = Decimal("0")
             counts[method] = 0
-        buckets[method] += compute_order_total(o)
+        buckets[method] += compute_order_total(o, vat_enabled, vat_rate)
         counts[method] += 1
     return {
         "cash": {"amount": buckets["cash"], "count": counts["cash"]},
@@ -50,13 +64,14 @@ def _range_summary(
     """Shared engine for both daily and range summaries — daily is just a
     single-day range. Keeps the two endpoints structurally identical so the
     frontend can render them with one component."""
+    vat_enabled, vat_rate = _vat_settings(db, tenant_id, branch_id)
     paid = ReportsRepository.paid_orders_in_range(db, tenant_id, branch_id, bs_from, bs_to)
     counts = ReportsRepository.order_counts_in_range(db, tenant_id, branch_id, bs_from, bs_to)
     items_sold = ReportsRepository.items_sold_count(db, tenant_id, branch_id, bs_from, bs_to)
     by_cat = ReportsRepository.by_category(db, tenant_id, branch_id, bs_from, bs_to)
     exp = ReportsRepository.expenses_total_and_by_category(db, tenant_id, branch_id, bs_from, bs_to)
 
-    sales_gross = _sum_totals(paid)
+    sales_gross = _sum_totals(paid, vat_enabled, vat_rate)
     net = sales_gross - exp["total"]
     return {
         "bs_from": bs_from,
@@ -72,7 +87,7 @@ def _range_summary(
         "expenses_total": exp["total"],
         "net": net,
         "by_category": by_cat,
-        "by_payment": _by_payment_method(paid),
+        "by_payment": _by_payment_method(paid, vat_enabled, vat_rate),
         "expenses_by_category": exp["by_category"],
     }
 
@@ -138,6 +153,7 @@ class ReportsService:
         if bs_to < bs_from:
             return {"success": False, "error_code": "INVALID_RANGE"}
 
+        vat_enabled, vat_rate = _vat_settings(db, tenant_id, branch_id)
         paid = ReportsRepository.paid_orders_in_range(db, tenant_id, branch_id, bs_from, bs_to)
         exp = ReportsRepository.expenses_total_and_by_category(
             db, tenant_id, branch_id, bs_from, bs_to
@@ -148,7 +164,9 @@ class ReportsService:
         count_by_day: dict[str, int] = {}
         for o in paid:
             day = o.placed_at_bs
-            sales_by_day[day] = sales_by_day.get(day, Decimal("0")) + compute_order_total(o)
+            sales_by_day[day] = sales_by_day.get(day, Decimal("0")) + compute_order_total(
+                o, vat_enabled, vat_rate
+            )
             count_by_day[day] = count_by_day.get(day, 0) + 1
 
         # Expenses need their own bucket keyed by spent_at_bs.

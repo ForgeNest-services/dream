@@ -45,7 +45,6 @@ export const Route = createFileRoute("/_app/settings")({
 
 function SettingsPage() {
   const app = useApp();
-  const [form, setForm] = useState(app.company);
   const [fyStart, setFyStart] = useState("");
   const [deleteFyId, setDeleteFyId] = useState<string | null>(null);
   const [deletingFy, setDeletingFy] = useState(false);

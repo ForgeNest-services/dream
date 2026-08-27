@@ -53,9 +53,9 @@ export function invoiceDue(inv: Invoice, total: number) {
  *  company.vatRegistered/vatRate. This is what print/invoices-list must use:
  *  a bill made while VAT was on must keep showing its real VAT breakdown
  *  even if the company later turns VAT off (and vice versa) — recomputing
- *  live would silently rewrite history. Falls back to live computeTotals
- *  only for lines that predate per-line VAT snapshotting (taxRate/vatAmount
- *  undefined — see IMSInvoiceLine's schema-backfill note in api/core/seed.py). */
+ *  live would silently rewrite history. A line that predates per-line VAT
+ *  snapshotting (vatAmount undefined — see IMSInvoiceLine's schema-backfill
+ *  note in api/core/seed.py) contributes 0 VAT rather than recomputing it. */
 export function computeStoredTotals(lines: InvoiceLine[]): InvoiceTotals {
   const gross = lines.reduce((s, l) => s + l.rate * l.qty, 0);
   const discount = lines.reduce((s, l) => s + l.discount * l.qty, 0);
