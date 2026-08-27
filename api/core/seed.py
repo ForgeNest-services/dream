@@ -394,23 +394,107 @@ def ensure_ims_branch_settings_qr_schema() -> None:
         db.close()
 
 
+def backfill_branch_settings_vat_mismatch() -> None:
+    """One-time data correction, not a schema change: create_default() on
+    both ims_branch_settings and restro_branch_settings used to hardcode
+    vat_enabled=True regardless of the owning tenant's real VAT registration
+    (fixed to seed from tenants.is_vat_registered — see
+    IMSBranchSettingsService.get_or_create / BranchSettingsService.get_or_create).
+    Any row auto-provisioned before that fix is stuck with vat_enabled=true
+    for a PAN-only tenant, which leaks VAT fields/math into the product,
+    purchase and sales UIs for a business that was never VAT-registered.
+    Idempotent — only touches rows that are actually wrong, safe to run
+    every startup."""
+    db = SessionLocal()
+    try:
+        for table in ("ims_branch_settings", "restro_branch_settings"):
+            result = db.execute(text(
+                f"UPDATE public.{table} bs "
+                "SET vat_enabled = false "
+                "FROM public.tenants t "
+                "WHERE bs.tenant_id = t.id "
+                "AND bs.vat_enabled = true "
+                "AND t.is_vat_registered = false"
+            ))
+            if result.rowcount:
+                logger.info(f"Corrected {result.rowcount} stale vat_enabled row(s) in {table}")
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill branch settings VAT mismatch: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
 def ensure_tenants_free_app_schema() -> None:
-    """Back-fill the free_app_code column onto tenants (see Tenant model —
-    the tenant's one chosen free-trial app, set once during onboarding).
-    Base.create_all never ALTERs existing tables, and this column was added
-    by the pricing/subscriptions feature after tenants already existed in
-    production, so every pre-existing tenant row needs this backfill before
-    any query touching Tenant (login, /auth/me, ...) stops 500ing."""
+    """The 'pick one free app during onboarding' model was replaced by
+    independent per-app trials (each starts on that app's first credential
+    — see SubscriptionService.start_trial_if_needed), so tenants.free_app_code
+    is dead. This drops it if an earlier deploy already added it — safe to
+    run even if the column was never there (IF EXISTS)."""
     db = SessionLocal()
     try:
         db.execute(text(
             "ALTER TABLE public.tenants "
-            "ADD COLUMN IF NOT EXISTS free_app_code VARCHAR(50)"
+            "DROP COLUMN IF EXISTS free_app_code"
         ))
         db.commit()
     except Exception as e:
         db.rollback()
-        logger.error(f"Failed to backfill tenants free_app_code schema: {type(e).__name__}: {str(e)}")
+        logger.error(f"Failed to drop tenants free_app_code column: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
+def ensure_subscription_payments_group_schema() -> None:
+    """Back-fills subscription_payments.group_id (bundle purchases share one
+    group_id across N per-app rows — see SubscriptionPayment's docstring)
+    and drops the old CHECK constraints that still allowed plan='bundle'
+    from the original fixed-bundle-SKU design, replacing them with the
+    current ones (no 'bundle' plan value anymore). Table has no real rows
+    yet in any deployed environment, so no data backfill is needed for
+    group_id itself — existing (test) rows get group_id = their own id."""
+    db = SessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.subscription_payments "
+            "ADD COLUMN IF NOT EXISTS group_id VARCHAR"
+        ))
+        db.execute(text(
+            "UPDATE public.subscription_payments SET group_id = id WHERE group_id IS NULL"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.subscription_payments ALTER COLUMN group_id SET NOT NULL"
+        ))
+        db.execute(text(
+            "DROP INDEX IF EXISTS ix_public_subscription_payments_group_id"
+        ))
+        db.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_public_subscription_payments_group_id "
+            "ON public.subscription_payments (group_id)"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.subscription_payments "
+            "DROP CONSTRAINT IF EXISTS ck_subscription_payments_plan"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.subscription_payments "
+            "ADD CONSTRAINT ck_subscription_payments_plan CHECK (plan IN ('monthly','yearly'))"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.app_subscriptions "
+            "DROP CONSTRAINT IF EXISTS ck_app_subscriptions_plan"
+        ))
+        db.execute(text(
+            "ALTER TABLE public.app_subscriptions "
+            "ADD CONSTRAINT ck_app_subscriptions_plan CHECK (plan IS NULL OR plan IN ('monthly','yearly'))"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill subscription_payments group schema: {type(e).__name__}: {str(e)}")
         raise
     finally:
         db.close()
@@ -449,15 +533,23 @@ _DEFAULT_PLANS = [
     {"app_code": "srota_rms", "plan": "yearly",  "price_npr": 6999,  "label": "RMS Yearly"},
     {"app_code": "srota_ims", "plan": "monthly", "price_npr": 1299,  "label": "IMS Monthly"},
     {"app_code": "srota_ims", "plan": "yearly",  "price_npr": 6999,  "label": "IMS Yearly"},
-    {"app_code": "bundle",    "plan": "monthly", "price_npr": 4999,  "label": "Bundle Monthly (All Apps)"},
-    {"app_code": "bundle",    "plan": "yearly",  "price_npr": 19999, "label": "Bundle Yearly (All Apps)"},
 ]
+
+# Default % knocked off the summed individual prices when a tenant buys 2+
+# apps together in one purchase (see SubscriptionService.price_selection).
+# Superadmin-editable afterward — this is only the seed default.
+_DEFAULT_BUNDLE_DISCOUNT_PERCENT = "20"
 
 
 def seed_subscription_plans():
-    from shared_models import SubscriptionPlan
+    from shared_models import SubscriptionPlan, PlatformSetting
     db = SessionLocal()
     try:
+        # 'bundle' was an earlier design's fixed SKU — no longer a real
+        # app_code (bundles are now computed, see SubscriptionPlan's
+        # docstring). Remove any leftover rows from that design.
+        db.query(SubscriptionPlan).filter(SubscriptionPlan.app_code == "bundle").delete()
+
         for entry in _DEFAULT_PLANS:
             exists = (
                 db.query(SubscriptionPlan)
@@ -469,6 +561,10 @@ def seed_subscription_plans():
             )
             if not exists:
                 db.add(SubscriptionPlan(**entry))
+
+        if not db.query(PlatformSetting).filter(PlatformSetting.key == "bundle_discount_percent").first():
+            db.add(PlatformSetting(key="bundle_discount_percent", value=_DEFAULT_BUNDLE_DISCOUNT_PERCENT))
+
         db.commit()
         logger.info("Subscription plans seeded")
     except Exception as e:

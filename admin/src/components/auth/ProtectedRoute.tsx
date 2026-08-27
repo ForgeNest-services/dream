@@ -30,7 +30,7 @@ export function ProtectedRoute({ children, requiredRoles = [] }: ProtectedRouteP
 
   if (!isAuthenticated) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center' }}>
         <Spinner size="lg" />
       </div>
     );

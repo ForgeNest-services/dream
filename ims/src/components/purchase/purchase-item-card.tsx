@@ -252,7 +252,7 @@ export function PurchaseItemCard({
               <th className="py-1 text-left font-medium">Barcode</th>
               <th className="py-1 text-left font-medium">Unit</th>
               <th className="py-1 text-right font-medium">Qty</th>
-              <th className="py-1 text-right font-medium">Cost (exc. VAT)</th>
+              <th className="py-1 text-right font-medium">{taxable ? "Cost (exc. VAT)" : "Cost price"}</th>
               {taxable && <th className="py-1 text-right font-medium">Cost (inc. VAT)</th>}
               <th className="py-1 text-right font-medium">Selling</th>
               <th className="py-1 text-left font-medium">Expiry</th>

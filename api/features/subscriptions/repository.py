@@ -1,6 +1,6 @@
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
-from shared_models import AppSubscription, SubscriptionPayment, SubscriptionPlan, Tenant
+from shared_models import AppSubscription, SubscriptionPayment, SubscriptionPlan, PlatformSetting, Tenant, User
 
 
 class SubscriptionRepository:
@@ -91,6 +91,7 @@ class SubscriptionRepository:
     @staticmethod
     def create_payment(
         db: Session,
+        group_id: str,
         tenant_id: str,
         app_code: str,
         amount_npr: float,
@@ -100,6 +101,7 @@ class SubscriptionRepository:
         notes: str | None,
     ) -> SubscriptionPayment:
         pmt = SubscriptionPayment(
+            group_id=group_id,
             tenant_id=tenant_id,
             app_code=app_code,
             amount_npr=amount_npr,
@@ -116,6 +118,15 @@ class SubscriptionRepository:
     @staticmethod
     def get_payment(db: Session, payment_id: str) -> SubscriptionPayment | None:
         return db.query(SubscriptionPayment).filter(SubscriptionPayment.id == payment_id).first()
+
+    @staticmethod
+    def list_payments_for_group(db: Session, group_id: str) -> list[SubscriptionPayment]:
+        return (
+            db.query(SubscriptionPayment)
+            .filter(SubscriptionPayment.group_id == group_id)
+            .order_by(SubscriptionPayment.created_at)
+            .all()
+        )
 
     @staticmethod
     def list_payments_for_tenant(db: Session, tenant_id: str) -> list[SubscriptionPayment]:
@@ -239,3 +250,46 @@ class SubscriptionRepository:
             .order_by(SubscriptionPayment.created_at.desc())
             .all()
         )
+
+    @staticmethod
+    def list_owners_with_tenants(db: Session) -> list[tuple]:
+        """Returns (User, Tenant | None) for every owner account — the unit
+        the superadmin Users page lists, since subscriptions live on the
+        tenant, not the user. Tenant is None for an owner who registered
+        but hasn't completed business setup yet."""
+        return (
+            db.query(User, Tenant)
+            .outerjoin(Tenant, User.tenant_id == Tenant.id)
+            .filter(User.is_owner == True)
+            .order_by(User.created_at.desc())
+            .all()
+        )
+
+    @staticmethod
+    def list_subscriptions_for_tenants(db: Session, tenant_ids: list[str]) -> list[AppSubscription]:
+        if not tenant_ids:
+            return []
+        return (
+            db.query(AppSubscription)
+            .filter(AppSubscription.tenant_id.in_(tenant_ids))
+            .all()
+        )
+
+    # ── Platform settings ────────────────────────────────────────────────────
+
+    @staticmethod
+    def get_setting(db: Session, key: str) -> str | None:
+        row = db.query(PlatformSetting).filter(PlatformSetting.key == key).first()
+        return row.value if row else None
+
+    @staticmethod
+    def set_setting(db: Session, key: str, value: str) -> PlatformSetting:
+        row = db.query(PlatformSetting).filter(PlatformSetting.key == key).first()
+        if row:
+            row.value = value
+        else:
+            row = PlatformSetting(key=key, value=value)
+            db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row

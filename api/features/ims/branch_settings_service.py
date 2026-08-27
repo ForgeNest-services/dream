@@ -17,10 +17,19 @@ class IMSBranchSettingsService:
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
         settings = IMSBranchSettingsRepository.get(db, tenant_id, branch_id)
         if not settings:
-            settings = IMSBranchSettingsRepository.create_default(db, tenant_id, branch_id)
+            # VAT can only ever start on for a tenant that's actually
+            # VAT-registered — the same rule update() already enforces for
+            # an explicit change. A tenant that registers for VAT later gets
+            # a settings row here first (PAN-only), then flips vat_enabled
+            # on themselves via Settings once they are.
+            tenant = TenantRepository.get_by_id(db, tenant_id)
+            vat_enabled = bool(tenant and tenant.is_vat_registered)
+            settings = IMSBranchSettingsRepository.create_default(
+                db, tenant_id, branch_id, vat_enabled=vat_enabled
+            )
             logger.info(
                 f"Auto-provisioned default IMS branch settings for {branch_id}",
-                extra={"tenant_id": tenant_id, "branch_id": branch_id},
+                extra={"tenant_id": tenant_id, "branch_id": branch_id, "vat_enabled": vat_enabled},
             )
         return {"success": True, "settings": settings}
 

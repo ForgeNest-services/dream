@@ -44,13 +44,6 @@ class TenantRepository:
         return db.query(Tenant).filter(Tenant.id == tenant_id).first()
 
     @staticmethod
-    def set_free_app_code(db: Session, tenant: Tenant, app_code: str) -> Tenant:
-        tenant.free_app_code = app_code
-        db.commit()
-        db.refresh(tenant)
-        return tenant
-
-    @staticmethod
     def update_tax_info(
         db: Session,
         tenant: Tenant,

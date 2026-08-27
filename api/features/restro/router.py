@@ -107,6 +107,11 @@ def _assert_branch_scope(staff: dict, branch_id: str) -> None:
 _BRANCH_SETTINGS_ERROR_MAP = {
     "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
     "INVALID_VAT_RATE": ("INVALID_VAT_RATE", "VAT rate must be between 0 and 100.", 422),
+    "NOT_VAT_REGISTERED": (
+        "NOT_VAT_REGISTERED",
+        "This business isn't VAT-registered — update PAN/VAT status in the admin app first.",
+        422,
+    ),
 }
 
 
@@ -438,6 +443,119 @@ def delete_credential(
 ):
     user = current_user["user"]
     result = RestroCredentialService.delete(db, tenant_id=user.tenant_id, cred_id=cred_id)
+
+    if not result["success"]:
+        return error_response("CREDENTIAL_NOT_FOUND", "Credential not found.", 404)
+
+    return success_response(data={"deleted": True}, message="Credential removed")
+
+
+# ---------------------------------------------------------------------------
+# Staff-facing credential management — lets the Owner manage Manager/Waiter/
+# Chef logins from inside Zestro itself (Settings > Users), without going
+# back to the admin app. Gated to the "owner" staff role specifically (same
+# authority as platform owner/manager). `created_by` still needs a real
+# users.id (FK, not nullable) — we attribute it to the tenant's owner User
+# row since a staff actor has no User row of its own.
+# ---------------------------------------------------------------------------
+
+
+def _owner_user_id(db: Session, tenant_id: str) -> str:
+    from shared_models import User
+    owner = db.query(User).filter(User.tenant_id == tenant_id, User.is_owner.is_(True)).first()
+    if not owner:
+        owner = db.query(User).filter(User.tenant_id == tenant_id).first()
+    return owner.id
+
+
+@router.get("/staff/credentials")
+def staff_list_credentials(
+    staff: dict = Depends(require_restro_staff("owner")),
+    db: Session = Depends(get_db),
+):
+    creds = RestroCredentialService.list_for_tenant(db, staff["tenant_id"])
+    return success_response(
+        data=[CredentialData.model_validate(c).model_dump(mode="json") for c in creds]
+    )
+
+
+@router.post("/staff/credentials")
+def staff_create_credential(
+    data: CreateCredentialRequest,
+    staff: dict = Depends(require_restro_staff("owner")),
+    db: Session = Depends(get_db),
+):
+    result = RestroCredentialService.create(
+        db,
+        tenant_id=staff["tenant_id"],
+        created_by=_owner_user_id(db, staff["tenant_id"]),
+        role=data.role,
+        username=data.username,
+        password=data.password,
+        branch_id=data.branch_id,
+    )
+
+    if not result["success"]:
+        code = result["error_code"]
+        if code == "BRANCH_NOT_FOUND":
+            return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
+        if code == "ROLE_ALREADY_HAS_CREDENTIAL":
+            return error_response(
+                "ROLE_ALREADY_HAS_CREDENTIAL",
+                f"A credential for role '{data.role}' already exists for this branch.",
+                409,
+            )
+        if code == "USERNAME_TAKEN":
+            return error_response(
+                "USERNAME_TAKEN",
+                "This username is already in use. Pick another.",
+                409,
+            )
+        return error_response("CREATION_FAILED", "Failed to create credential.", 500)
+
+    return success_response(
+        data=CredentialData.model_validate(result["credential"]).model_dump(mode="json"),
+        message="Credential created",
+        status_code=201,
+    )
+
+
+@router.patch("/staff/credentials/{cred_id}")
+def staff_update_credential(
+    cred_id: str,
+    data: UpdateCredentialRequest,
+    staff: dict = Depends(require_restro_staff("owner")),
+    db: Session = Depends(get_db),
+):
+    result = RestroCredentialService.update(
+        db,
+        tenant_id=staff["tenant_id"],
+        cred_id=cred_id,
+        username=data.username,
+        password=data.password,
+    )
+
+    if not result["success"]:
+        code = result["error_code"]
+        if code == "CREDENTIAL_NOT_FOUND":
+            return error_response("CREDENTIAL_NOT_FOUND", "Credential not found.", 404)
+        if code == "USERNAME_TAKEN":
+            return error_response("USERNAME_TAKEN", "This username is already in use.", 409)
+        return error_response("UPDATE_FAILED", "Failed to update credential.", 500)
+
+    return success_response(
+        data=CredentialData.model_validate(result["credential"]).model_dump(mode="json"),
+        message="Credential updated",
+    )
+
+
+@router.delete("/staff/credentials/{cred_id}")
+def staff_delete_credential(
+    cred_id: str,
+    staff: dict = Depends(require_restro_staff("owner")),
+    db: Session = Depends(get_db),
+):
+    result = RestroCredentialService.delete(db, tenant_id=staff["tenant_id"], cred_id=cred_id)
 
     if not result["success"]:
         return error_response("CREDENTIAL_NOT_FOUND", "Credential not found.", 404)

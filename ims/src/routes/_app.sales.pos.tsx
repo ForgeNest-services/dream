@@ -24,7 +24,7 @@ import { priceWithVat, priceWithoutVat } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Minus, Plus, QrCode, Search, Trash2, UserPlus, Wallet } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 interface PosSearch {
@@ -78,7 +78,16 @@ function PosPage() {
   // walk-in customer who doesn't need a tax invoice, without touching the
   // business's actual VAT registration. Only meaningful when the business
   // is genuinely VAT-registered; a PAN-only business has nothing to toggle.
-  const [vatBillOn, setVatBillOn] = useState(app.company.vatRegistered);
+  const [vatBillOn, setVatBillOn] = useState(false);
+  // app.company starts as seed/mock data (vatRegistered: true) until the
+  // real tenant fetch resolves — seeding vatBillOn from it at useState time
+  // would stick a non-VAT tenant with vatBillOn=true forever (nothing else
+  // re-derives it once branchesReady flips). Apply the real value once it's
+  // actually known, same fix as ProductFormPage's `taxable`.
+  useEffect(() => {
+    if (app.branchesReady) setVatBillOn(app.company.vatRegistered);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.branchesReady, app.company.vatRegistered]);
 
   const branchId = app.branchId === "all" ? (app.branches[0]?.id ?? "") : app.branchId;
   const customers = app.parties.filter((p) => p.kind === "customer");
@@ -111,7 +120,8 @@ function PosPage() {
   // discount. totals.gross is the exclusive rate sum, which is the right
   // input for VAT math but the wrong number to show as a headline figure.
   const inclusiveSubtotal = lines.reduce(
-    (s, l) => s + priceWithVat(l.rate, app.company.vatRate, l.taxable !== false) * l.qty,
+    (s, l) =>
+      s + priceWithVat(l.rate, app.company.vatRate, app.company.vatRegistered && l.taxable !== false) * l.qty,
     0,
   );
   const paid = cash + qr;
@@ -256,7 +266,11 @@ function PosPage() {
                         </span>
                       </span>
                       <Money
-                        value={priceWithVat(v.sellingPrice, app.company.vatRate, p?.taxable !== false)}
+                        value={priceWithVat(
+                          v.sellingPrice,
+                          app.company.vatRate,
+                          app.company.vatRegistered && p?.taxable !== false,
+                        )}
                         className="text-sm"
                       />
                     </button>
@@ -319,14 +333,22 @@ function PosPage() {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <DecimalTextInput
-                        value={priceWithVat(l.rate, app.company.vatRate, l.taxable !== false)}
+                        value={priceWithVat(
+                          l.rate,
+                          app.company.vatRate,
+                          app.company.vatRegistered && l.taxable !== false,
+                        )}
                         onChange={(v) =>
                           patch(l.id, {
-                            rate: priceWithoutVat(v, app.company.vatRate, l.taxable !== false),
+                            rate: priceWithoutVat(
+                              v,
+                              app.company.vatRate,
+                              app.company.vatRegistered && l.taxable !== false,
+                            ),
                           })
                         }
                         className="h-7 w-24 text-right"
-                        title="Shelf price (incl. VAT)"
+                        title={app.company.vatRegistered ? "Shelf price (incl. VAT)" : "Selling price"}
                       />
                     </td>
                     <td className="px-3 py-2 text-right">
@@ -339,7 +361,13 @@ function PosPage() {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <Money
-                        value={priceWithVat(l.rate - l.discount, app.company.vatRate, l.taxable !== false) * l.qty}
+                        value={
+                          priceWithVat(
+                            l.rate - l.discount,
+                            app.company.vatRate,
+                            app.company.vatRegistered && l.taxable !== false,
+                          ) * l.qty
+                        }
                       />
                     </td>
                     <td className="px-2">

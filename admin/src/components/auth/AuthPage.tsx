@@ -109,7 +109,7 @@ export function AuthPage() {
             width={789}
             height={290}
             priority
-            style={{ height: '56px', width: 'auto', margin: '0 auto', marginBottom: spacing.lg }}
+            style={{ height: '84px', width: 'auto', margin: '0 auto', marginBottom: spacing.lg }}
           />
           <p style={{
             fontSize: '16px',

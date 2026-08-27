@@ -1,12 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { MdOutlineDescription, MdOutlineReceiptLong } from 'react-icons/md';
+import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
+import { MdOutlineDescription, MdOutlineReceiptLong, MdOutlineImage, MdOutlineClose } from 'react-icons/md';
 import { useAuth } from '@/hooks/useAuth';
 import { useUpdateTaxInfo } from '@/hooks/useUpdateTaxInfo';
 import { FormInput } from '@/components/ui/FormInput';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing } from '@/lib/design-tokens';
+
+const MAX_LOGO_BYTES = 5 * 1024 * 1024;
+const ACCEPTED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
 
 export function SettingsContent() {
   const { tenant } = useAuth();
@@ -14,6 +18,32 @@ export function SettingsContent() {
 
   const [pan, setPan] = useState(tenant?.pan ?? '');
   const [isVatRegistered, setIsVatRegistered] = useState(tenant?.is_vat_registered ?? false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleLogoPick = (file: File | undefined) => {
+    if (!file) return;
+    if (!ACCEPTED_LOGO_TYPES.includes(file.type)) {
+      toast.error('Use a PNG, JPG, WEBP or SVG image.');
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      toast.error('Image must be under 5MB.');
+      return;
+    }
+    setLogoPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  };
+
+  const clearLogo = () => {
+    setLogoPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   useEffect(() => {
     setPan(tenant?.pan ?? '');
@@ -52,6 +82,121 @@ export function SettingsContent() {
           Business details shared across every app you run.
         </p>
       </div>
+
+      <section
+        style={{
+          padding: spacing.xl,
+          backgroundColor: colors.neutral[0],
+          border: `1px solid ${colors.neutral[200]}`,
+          borderRadius: '16px',
+        }}
+      >
+        <h2
+          style={{
+            fontSize: '13px',
+            fontWeight: '600',
+            color: colors.neutral[500],
+            textTransform: 'uppercase',
+            letterSpacing: '0.8px',
+            marginBottom: spacing.lg,
+          }}
+        >
+          Business logo
+        </h2>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: spacing.lg, marginBottom: spacing.lg }}>
+          <div
+            style={{
+              width: '80px',
+              height: '80px',
+              borderRadius: '16px',
+              backgroundColor: colors.neutral[50],
+              border: `1px dashed ${colors.neutral[300]}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              overflow: 'hidden',
+              position: 'relative',
+            }}
+          >
+            {logoPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoPreview} alt="Business logo preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            ) : (
+              <MdOutlineImage size={28} color={colors.neutral[400]} />
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
+            <div style={{ display: 'flex', gap: spacing.sm }}>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  padding: `${spacing.sm} ${spacing.lg}`,
+                  borderRadius: '24px',
+                  border: `1px solid ${colors.neutral[300]}`,
+                  backgroundColor: colors.neutral[0],
+                  color: colors.neutral[800],
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+              >
+                {logoPreview ? 'Replace image' : 'Upload image'}
+              </button>
+              {logoPreview && (
+                <button
+                  type="button"
+                  onClick={clearLogo}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: `${spacing.sm} ${spacing.md}`,
+                    borderRadius: '24px',
+                    border: 'none',
+                    backgroundColor: 'transparent',
+                    color: colors.status.error,
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <MdOutlineClose size={15} />
+                  Remove
+                </button>
+              )}
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ACCEPTED_LOGO_TYPES.join(',')}
+              onChange={(e) => handleLogoPick(e.target.files?.[0])}
+              style={{ display: 'none' }}
+            />
+            <p style={{ fontSize: '12px', color: colors.neutral[500], margin: 0, maxWidth: '360px' }}>
+              PNG, JPG, WEBP or SVG, up to 5MB. Shown on invoices and receipts across every app.
+            </p>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: spacing.sm,
+            padding: `${spacing.sm} ${spacing.md}`,
+            borderRadius: '12px',
+            backgroundColor: colors.neutral[50],
+          }}
+        >
+          <MdOutlineImage size={16} color={colors.neutral[500]} style={{ flexShrink: 0 }} />
+          <p style={{ fontSize: '12px', color: colors.neutral[600], margin: 0, lineHeight: '1.5' }}>
+            Preview only for now — saving isn't wired up yet.
+          </p>
+        </div>
+      </section>
 
       <section
         style={{

@@ -6,10 +6,12 @@ import {
   MdOutlineAdd,
   MdOutlineEdit,
   MdOutlineDelete,
-  MdOutlinePerson,
   MdOutlineLock,
   MdOutlineClose,
   MdOutlineBusiness,
+  MdOutlineVpnKey,
+  MdCheckCircle,
+  MdContentCopy,
 } from 'react-icons/md';
 import { useCredentials } from '@/hooks/useCredentials';
 import { AppCredential, Branch, APP_CODE_TO_ROLES, BRANCH_SCOPED_ROLES } from '@/types/apps';
@@ -35,6 +37,39 @@ type Slot = {
   cred: AppCredential | null;
 };
 
+// Plain-language explanation of what each role can actually do — the thing
+// the old design left out entirely, forcing owners to guess from the label.
+// Keyed by app code because the same word ("manager") means different things
+// per app (see CLAUDE.md §2.4). Falls back to a generic sentence if a role
+// isn't listed here.
+const ROLE_DESCRIPTIONS: Record<string, Record<string, string>> = {
+  srota_pms: {
+    app_owner: 'Full access to every branch — rooms, bookings, guests, reports, and settings. Usually you.',
+    manager: 'Runs day-to-day operations at one branch: bookings, check-ins, guests, and reports for that branch only.',
+    front_desk: 'Handles guests at one branch — check-in, check-out, and bookings. No access to reports or settings.',
+  },
+  srota_rms: {
+    owner: 'Full access to every branch — menu, orders, staff, reports, and settings. Usually you.',
+    manager: 'Runs day-to-day operations at one branch: menu, orders, tables, and reports for that branch only.',
+    waiter: 'Takes and serves orders at one branch. No access to reports or settings.',
+    chef: 'Views and updates order status in the kitchen at one branch. No access to reports or settings.',
+  },
+  srota_ims: {
+    owner: 'Full access to every branch — stock, purchase orders, staff, and settings. Usually you.',
+    manager: 'Runs day-to-day inventory at one branch: stock levels, purchase orders, and reports for that branch only.',
+    storekeeper: 'Records stock in and out at one branch. No access to reports or settings.',
+  },
+};
+
+const TENANT_WIDE_NOTE =
+  'One login for this role, shared across your whole business — it can switch between every branch.';
+const BRANCH_SCOPED_NOTE =
+  'This role needs a separate login per branch — each one only sees that branch.';
+
+function roleDescription(appCode: string, role: string): string {
+  return ROLE_DESCRIPTIONS[appCode]?.[role] || 'Staff login for this role.';
+}
+
 export function CredentialsSection({ appCode, branches, branchesLoading }: Props) {
   const { credentials, isLoading: credsLoading, isMutating, create, update, remove } =
     useCredentials(appCode);
@@ -44,8 +79,6 @@ export function CredentialsSection({ appCode, branches, branchesLoading }: Props
 
   const roles = APP_CODE_TO_ROLES[appCode] || [];
   const roleLabel = (code: string) => roles.find((r) => r.code === code)?.label || code.replace('_', ' ');
-  const branchName = (branchId: string | null) =>
-    branches.find((b) => b.id === branchId)?.name ?? null;
 
   if (credsLoading || branchesLoading) {
     return (
@@ -55,90 +88,113 @@ export function CredentialsSection({ appCode, branches, branchesLoading }: Props
     );
   }
 
-  // Build the full slot list: tenant-wide roles get one slot; branch-scoped
-  // roles get one slot per active branch.
-  const slots: Slot[] = [];
-  for (const r of roles) {
-    if (BRANCH_SCOPED_ROLES.has(r.code)) {
-      for (const b of branches) {
-        const cred = credentials.find((c) => c.role === r.code && c.branch_id === b.id) || null;
-        slots.push({ role: r.code, branchId: b.id, branchName: b.name, cred });
-      }
-    } else {
-      const cred = credentials.find((c) => c.role === r.code) || null;
-      slots.push({ role: r.code, branchId: null, branchName: null, cred });
-    }
+  if (branches.length === 0) {
+    return (
+      <div
+        style={{
+          padding: spacing.lg,
+          backgroundColor: colors.neutral[50],
+          border: `1px dashed ${colors.neutral[300]}`,
+          borderRadius: '12px',
+          color: colors.neutral[600],
+          fontSize: '14px',
+        }}
+      >
+        Add a branch first — most staff roles are tied to a location.
+      </div>
+    );
   }
-
-  const filledSlots = slots.filter((s) => s.cred);
-  const emptySlots = slots.filter((s) => !s.cred);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg }}>
-      {filledSlots.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md }}>
-          {filledSlots.map((slot) => (
-            <CredentialRow
-              key={slot.cred!.id}
-              cred={slot.cred!}
-              label={roleLabel(slot.role)}
-              branchName={slot.branchName}
-              onEdit={() => setEditingCred(slot.cred)}
-              onDelete={() => setConfirmDeleteCred(slot.cred)}
-            />
-          ))}
-        </div>
-      )}
+      {roles.map((r) => {
+        const scoped = BRANCH_SCOPED_ROLES.has(r.code);
+        const roleSlots: Slot[] = scoped
+          ? branches.map((b) => ({
+              role: r.code,
+              branchId: b.id,
+              branchName: b.name,
+              cred: credentials.find((c) => c.role === r.code && c.branch_id === b.id) || null,
+            }))
+          : [
+              {
+                role: r.code,
+                branchId: null,
+                branchName: null,
+                cred: credentials.find((c) => c.role === r.code) || null,
+              },
+            ];
+        const filledCount = roleSlots.filter((s) => s.cred).length;
 
-      {emptySlots.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
-          <p style={{ fontSize: '13px', color: colors.neutral[500], fontWeight: '500' }}>
-            {filledSlots.length === 0
-              ? 'No credentials yet. Create one for each role your staff will use.'
-              : 'Add credentials for the remaining roles:'}
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.sm }}>
-            {emptySlots.map((slot) => (
-              <button
-                key={`${slot.role}-${slot.branchId ?? 'tenant'}`}
-                onClick={() => setAddingSlot(slot)}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: spacing.xs,
-                  padding: `${spacing.sm} ${spacing.md}`,
-                  borderRadius: '24px',
-                  border: `1px dashed ${colors.neutral[300]}`,
-                  backgroundColor: colors.neutral[0],
-                  color: colors.neutral[700],
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = colors.primary[800];
-                  e.currentTarget.style.color = colors.primary[800];
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = colors.neutral[300];
-                  e.currentTarget.style.color = colors.neutral[700];
-                }}
-              >
-                <MdOutlineAdd size={16} />
-                Add {roleLabel(slot.role)}
-                {slot.branchName ? ` — ${slot.branchName}` : ''}
-              </button>
-            ))}
+        return (
+          <div
+            key={r.code}
+            style={{
+              backgroundColor: colors.neutral[0],
+              border: `1px solid ${colors.neutral[200]}`,
+              borderRadius: '14px',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: spacing.md,
+                padding: spacing.lg,
+                borderBottom: `1px solid ${colors.neutral[100]}`,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
+                  <p style={{ fontSize: '15px', fontWeight: '700', color: colors.neutral[900], margin: 0 }}>
+                    {r.label}
+                  </p>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: scoped ? colors.accent[700] : colors.primary[800],
+                      backgroundColor: scoped ? colors.accent[50] : colors.primary[50],
+                      padding: '2px 8px',
+                      borderRadius: '10px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {scoped ? 'Per branch' : 'All branches'}
+                  </span>
+                </div>
+                <p style={{ fontSize: '13px', color: colors.neutral[600], margin: `${spacing.xs} 0 0`, lineHeight: '1.5', maxWidth: '520px' }}>
+                  {roleDescription(appCode, r.code)}
+                </p>
+              </div>
+              <div style={{ fontSize: '12px', color: colors.neutral[400], fontWeight: '600', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                {filledCount}/{roleSlots.length} set up
+              </div>
+            </div>
+
+            <div>
+              {roleSlots.map((slot) => (
+                <SlotRow
+                  key={`${slot.role}-${slot.branchId ?? 'tenant'}`}
+                  slot={slot}
+                  onAdd={() => setAddingSlot(slot)}
+                  onEdit={() => setEditingCred(slot.cred)}
+                  onDelete={() => setConfirmDeleteCred(slot.cred)}
+                />
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })}
 
       {addingSlot && (
         <CreateCredentialModal
           role={addingSlot.role}
           roleLabel={roleLabel(addingSlot.role)}
           branchName={addingSlot.branchName}
+          helpText={addingSlot.branchName ? BRANCH_SCOPED_NOTE : TENANT_WIDE_NOTE}
           isSaving={isMutating}
           onClose={() => setAddingSlot(null)}
           onSubmit={async (values) => {
@@ -156,7 +212,7 @@ export function CredentialsSection({ appCode, branches, branchesLoading }: Props
       {editingCred && (
         <EditCredentialModal
           roleLabel={roleLabel(editingCred.role)}
-          branchName={branchName(editingCred.branch_id)}
+          branchName={branches.find((b) => b.id === editingCred.branch_id)?.name ?? null}
           current={editingCred}
           isSaving={isMutating}
           onClose={() => setEditingCred(null)}
@@ -170,7 +226,7 @@ export function CredentialsSection({ appCode, branches, branchesLoading }: Props
       {confirmDeleteCred && (
         <ConfirmDeleteModal
           roleLabel={roleLabel(confirmDeleteCred.role)}
-          branchName={branchName(confirmDeleteCred.branch_id)}
+          branchName={branches.find((b) => b.id === confirmDeleteCred.branch_id)?.name ?? null}
           isDeleting={isMutating}
           onCancel={() => setConfirmDeleteCred(null)}
           onConfirm={async () => {
@@ -185,16 +241,14 @@ export function CredentialsSection({ appCode, branches, branchesLoading }: Props
 
 // -----------------------------------------------------------------------------
 
-function CredentialRow({
-  cred,
-  label,
-  branchName,
+function SlotRow({
+  slot,
+  onAdd,
   onEdit,
   onDelete,
 }: {
-  cred: AppCredential;
-  label: string;
-  branchName: string | null;
+  slot: Slot;
+  onAdd: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -204,113 +258,118 @@ function CredentialRow({
         display: 'flex',
         alignItems: 'center',
         gap: spacing.md,
-        padding: spacing.md,
-        backgroundColor: colors.neutral[0],
-        border: `1px solid ${colors.neutral[200]}`,
-        borderRadius: '12px',
+        padding: `${spacing.md} ${spacing.lg}`,
+        borderBottom: `1px solid ${colors.neutral[100]}`,
       }}
     >
-      <div
-        style={{
-          width: '40px',
-          height: '40px',
-          borderRadius: '50%',
-          backgroundColor: colors.primary[50],
-          color: colors.primary[800],
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        <MdOutlinePerson size={20} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p
-          style={{
-            fontSize: '14px',
-            fontWeight: '600',
-            color: colors.neutral[900],
-            margin: 0,
-            textTransform: 'capitalize',
-            display: 'flex',
-            alignItems: 'center',
-            gap: spacing.xs,
-          }}
-        >
-          {label}
-          {branchName && (
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                fontSize: '11px',
-                fontWeight: '600',
-                textTransform: 'none',
-                color: colors.primary[800],
-                backgroundColor: colors.primary[50],
-                padding: '2px 8px',
-                borderRadius: '10px',
-              }}
-            >
-              <MdOutlineBusiness size={12} />
-              {branchName}
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: spacing.sm }}>
+        {slot.branchName && (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '13px',
+              fontWeight: '600',
+              color: colors.neutral[700],
+              flexShrink: 0,
+            }}
+          >
+            <MdOutlineBusiness size={14} color={colors.neutral[400]} />
+            {slot.branchName}
+          </span>
+        )}
+        {slot.cred ? (
+          <span style={{ fontSize: '13px', color: colors.neutral[500], display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+            {slot.branchName && <span style={{ color: colors.neutral[300] }}>·</span>}
+            <MdCheckCircle size={14} color={colors.status.success} style={{ flexShrink: 0 }} />
+            <span style={{ fontFamily: 'monospace', color: colors.neutral[800], overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {slot.cred.username}
             </span>
-          )}
-        </p>
-        <p
-          style={{
-            fontSize: '13px',
-            color: colors.neutral[500],
-            margin: 0,
-            marginTop: '2px',
-          }}
-        >
-          Username: <span style={{ fontFamily: 'monospace', color: colors.neutral[800] }}>{cred.username}</span>
-        </p>
+          </span>
+        ) : (
+          <span style={{ fontSize: '13px', color: colors.neutral[400] }}>
+            {slot.branchName && <span style={{ color: colors.neutral[300], marginRight: spacing.sm }}>·</span>}
+            No login yet
+          </span>
+        )}
       </div>
-      <div style={{ display: 'flex', gap: spacing.xs }}>
-        <button
-          onClick={onEdit}
-          title="Edit"
-          style={{
-            padding: spacing.sm,
-            border: 'none',
-            background: 'transparent',
-            color: colors.neutral[600],
-            cursor: 'pointer',
-            borderRadius: '8px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = colors.neutral[100])}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-        >
-          <MdOutlineEdit size={18} />
-        </button>
-        <button
-          onClick={onDelete}
-          title="Delete"
-          style={{
-            padding: spacing.sm,
-            border: 'none',
-            background: 'transparent',
-            color: colors.status.error,
-            cursor: 'pointer',
-            borderRadius: '8px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${colors.status.error}15`)}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-        >
-          <MdOutlineDelete size={18} />
-        </button>
+      <div style={{ display: 'flex', gap: spacing.xs, flexShrink: 0 }}>
+        {slot.cred ? (
+          <>
+            <IconButton title="Edit login" onClick={onEdit}>
+              <MdOutlineEdit size={16} />
+            </IconButton>
+            <IconButton title="Remove login" onClick={onDelete} danger>
+              <MdOutlineDelete size={16} />
+            </IconButton>
+          </>
+        ) : (
+          <button
+            onClick={onAdd}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: `6px ${spacing.md}`,
+              borderRadius: '20px',
+              border: `1px solid ${colors.neutral[300]}`,
+              backgroundColor: colors.neutral[0],
+              color: colors.primary[800],
+              fontSize: '12px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = colors.primary[800];
+              e.currentTarget.style.backgroundColor = colors.primary[50];
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = colors.neutral[300];
+              e.currentTarget.style.backgroundColor = colors.neutral[0];
+            }}
+          >
+            <MdOutlineAdd size={14} />
+            Create login
+          </button>
+        )}
       </div>
     </div>
+  );
+}
+
+function IconButton({
+  children,
+  title,
+  onClick,
+  danger,
+}: {
+  children: React.ReactNode;
+  title: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{
+        padding: '6px',
+        border: 'none',
+        background: 'transparent',
+        color: danger ? colors.status.error : colors.neutral[500],
+        cursor: 'pointer',
+        borderRadius: '8px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = danger ? `${colors.status.error}15` : colors.neutral[100])}
+      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -394,6 +453,7 @@ function CreateCredentialModal({
   role,
   roleLabel,
   branchName,
+  helpText,
   isSaving,
   onClose,
   onSubmit,
@@ -401,6 +461,7 @@ function CreateCredentialModal({
   role: string;
   roleLabel: string;
   branchName: string | null;
+  helpText: string;
   isSaving: boolean;
   onClose: () => void;
   onSubmit: (values: CreateFormValues) => Promise<void>;
@@ -411,10 +472,24 @@ function CreateCredentialModal({
     formState: { errors },
   } = useForm<CreateFormValues>();
 
-  const title = branchName ? `New ${roleLabel} credential — ${branchName}` : `New ${roleLabel} credential`;
+  const title = branchName ? `New ${roleLabel} login — ${branchName}` : `New ${roleLabel} login`;
 
   return (
     <ModalShell title={title} onClose={onClose}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: spacing.sm,
+          padding: spacing.md,
+          backgroundColor: colors.neutral[50],
+          borderRadius: '10px',
+          marginBottom: spacing.lg,
+        }}
+      >
+        <MdOutlineVpnKey size={16} color={colors.neutral[500]} style={{ flexShrink: 0, marginTop: '2px' }} />
+        <p style={{ fontSize: '12.5px', color: colors.neutral[600], margin: 0, lineHeight: '1.5' }}>{helpText}</p>
+      </div>
       <form onSubmit={handleSubmit(onSubmit)}>
         <FormInput
           {...register('username', {
@@ -423,7 +498,7 @@ function CreateCredentialModal({
           })}
           label="Username"
           placeholder={`e.g. ${role}-hotelname`}
-          icon={<MdOutlinePerson size={18} />}
+          icon={<MdOutlineVpnKey size={18} />}
           error={errors.username?.message}
           disabled={isSaving}
         />
@@ -441,10 +516,10 @@ function CreateCredentialModal({
           disabled={isSaving}
         />
         <p style={{ fontSize: '12px', color: colors.neutral[500], marginBottom: spacing.lg }}>
-          Share these credentials with your {roleLabel.toLowerCase()} staff{branchName ? ` at ${branchName}` : ''}. Anyone with the login can access this role.
+          Share these with your {roleLabel.toLowerCase()} staff{branchName ? ` at ${branchName}` : ''}. Anyone with the login can sign in — it's shared, not per-person.
         </p>
         <Button type="submit" isLoading={isSaving} size="lg">
-          Create Credential
+          Create Login
         </Button>
       </form>
     </ModalShell>
@@ -473,6 +548,7 @@ function EditCredentialModal({
   } = useForm<EditFormValues>({
     defaultValues: { username: current?.username || '', password: '' },
   });
+  const [copied, setCopied] = useState(false);
 
   const submit = async (values: EditFormValues) => {
     const payload: EditFormValues = {};
@@ -485,20 +561,51 @@ function EditCredentialModal({
     await onSubmit(payload);
   };
 
-  const title = branchName ? `Edit ${roleLabel} credential — ${branchName}` : `Edit ${roleLabel} credential`;
+  const copyUsername = async () => {
+    if (!current?.username) return;
+    try {
+      await navigator.clipboard.writeText(current.username);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard unavailable — silently ignore, username is still visible to copy by hand
+    }
+  };
+
+  const title = branchName ? `Edit ${roleLabel} login — ${branchName}` : `Edit ${roleLabel} login`;
 
   return (
     <ModalShell title={title} onClose={onClose}>
       <form onSubmit={handleSubmit(submit)}>
-        <FormInput
-          {...register('username', {
-            minLength: { value: 3, message: 'At least 3 characters' },
-          })}
-          label="Username"
-          icon={<MdOutlinePerson size={18} />}
-          error={errors.username?.message}
-          disabled={isSaving}
-        />
+        <div style={{ position: 'relative' }}>
+          <FormInput
+            {...register('username', {
+              minLength: { value: 3, message: 'At least 3 characters' },
+            })}
+            label="Username"
+            icon={<MdOutlineVpnKey size={18} />}
+            error={errors.username?.message}
+            disabled={isSaving}
+          />
+          <button
+            type="button"
+            onClick={copyUsername}
+            title="Copy username"
+            style={{
+              position: 'absolute',
+              right: spacing.sm,
+              top: '34px',
+              border: 'none',
+              background: 'transparent',
+              color: copied ? colors.status.success : colors.neutral[400],
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'flex',
+            }}
+          >
+            <MdContentCopy size={16} />
+          </button>
+        </div>
         <FormInput
           {...register('password', {
             validate: (v) => !v || v.length >= 6 || 'At least 6 characters',
@@ -512,7 +619,7 @@ function EditCredentialModal({
           disabled={isSaving}
         />
         <p style={{ fontSize: '12px', color: colors.neutral[500], marginBottom: spacing.lg }}>
-          Currently logged-in staff continue their session until it expires. New logins require the updated password.
+          Staff already signed in stay signed in until their session expires. New logins need the updated password.
         </p>
         <Button type="submit" isLoading={isSaving} size="lg">
           Save Changes
@@ -536,13 +643,13 @@ function ConfirmDeleteModal({
   onConfirm: () => Promise<void>;
 }) {
   const title = branchName
-    ? `Delete ${roleLabel} credential for ${branchName}?`
-    : `Delete ${roleLabel} credential?`;
+    ? `Remove ${roleLabel} login for ${branchName}?`
+    : `Remove ${roleLabel} login?`;
 
   return (
     <ModalShell title={title} onClose={onCancel}>
       <p style={{ fontSize: '14px', color: colors.neutral[700], marginBottom: spacing.lg }}>
-        This will remove the {roleLabel.toLowerCase()} login{branchName ? ` for ${branchName}` : ''}. Staff currently signed in stay signed in until their session expires; after that, they can't log in with this cred anymore.
+        Staff currently signed in stay signed in until their session expires. After that, this login stops working — you can create a new one for {roleLabel.toLowerCase()}{branchName ? ` at ${branchName}` : ''} any time.
       </p>
       <div style={{ display: 'flex', gap: spacing.sm }}>
         <button
@@ -580,7 +687,7 @@ function ConfirmDeleteModal({
             opacity: isDeleting ? 0.6 : 1,
           }}
         >
-          {isDeleting ? 'Deleting…' : 'Delete'}
+          {isDeleting ? 'Removing…' : 'Remove'}
         </button>
       </div>
     </ModalShell>

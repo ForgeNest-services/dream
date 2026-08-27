@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/common/primitives";
 import { PaymentQrUploader } from "@/components/common/payment-qr-uploader";
+import { UsersSection } from "@/components/common/users-section";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -60,6 +61,7 @@ function SettingsPage() {
         <TabsList>
           <TabsTrigger value="company">Company</TabsTrigger>
           <TabsTrigger value="branches">Branches</TabsTrigger>
+          <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="fiscal">Fiscal years</TabsTrigger>
           <TabsTrigger value="units">Units &amp; brands</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
@@ -234,6 +236,10 @@ function SettingsPage() {
               </tbody>
             </table>
           </div>
+        </TabsContent>
+
+        <TabsContent value="users" className="mt-4">
+          <UsersSection />
         </TabsContent>
 
         <TabsContent value="units" className="mt-4">

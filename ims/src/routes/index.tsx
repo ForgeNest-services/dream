@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useApp } from "@/context/app-store";
-import { Boxes, LockKeyhole } from "lucide-react";
+import { LockKeyhole } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
@@ -57,12 +57,7 @@ function LoginPage() {
   return (
     <main className="grid min-h-screen lg:grid-cols-2">
       <div className="hidden flex-col justify-between bg-ink p-10 text-ink-foreground lg:flex">
-        <div className="flex items-center gap-2">
-          <span className="grid h-8 w-8 place-items-center rounded bg-primary text-xs font-semibold text-primary-foreground">
-            SR
-          </span>
-          <span className="font-medium">Srota Traders</span>
-        </div>
+        <img src="/white.png" alt="Srota" className="h-14 w-auto self-start" />
         <div className="max-w-md">
           <h1 className="text-3xl font-medium leading-tight tracking-tight">
             Inventory, stock movement and IRD billing — in one place.
@@ -71,27 +66,14 @@ function LoginPage() {
             Multi-branch stock, variant-level tracking, party ledgers, VAT and PAN invoicing, and a
             fast counter POS. Built for Bikram Sambat.
           </p>
-          <div className="mt-8 grid grid-cols-3 gap-4 text-sm">
-            {[
-              ["3", "Branches"],
-              ["BS/AD", "Date systems"],
-              ["13%", "VAT ready"],
-            ].map(([v, l]) => (
-              <div key={l}>
-                <p className="num text-xl font-medium text-primary">{v}</p>
-                <p className="text-xs text-ink-foreground/60">{l}</p>
-              </div>
-            ))}
-          </div>
         </div>
-        <p className="text-xs text-ink-foreground/40">Prototype with sample data</p>
+        <p className="text-xs text-ink-foreground/40">Source of Solutions</p>
       </div>
 
       <div className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-8 flex items-center gap-2 lg:hidden">
-            <Boxes className="h-5 w-5 text-primary" />
-            <span className="font-medium">Srota Traders</span>
+            <img src="/srota-ims-logo.png" alt="Srota IMS" className="h-8 w-auto" />
           </div>
           <h2 className="text-xl font-medium">Sign in</h2>
           <p className="mt-1 text-sm text-muted-foreground">

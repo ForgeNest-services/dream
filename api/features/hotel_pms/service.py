@@ -49,6 +49,15 @@ class HotelPMSCredentialService:
                 f"Hotel PMS credential created: {cred.id}",
                 extra={"tenant_id": tenant_id, "branch_id": branch_id, "role": role, "username": username},
             )
+            # First credential for this app starts its independent 30-day
+            # trial (see SubscriptionService.start_trial_if_needed) — a
+            # no-op if the tenant already has a subscription row for this
+            # app, so safe to call on every credential, not just the first.
+            try:
+                from features.subscriptions.service import SubscriptionService
+                SubscriptionService.start_trial_if_needed(db, tenant_id, "srota_pms")
+            except Exception as e:
+                logger.error(f"Failed to start PMS trial for tenant {tenant_id}: {e}")
             return {"success": True, "credential": cred}
         except IntegrityError:
             db.rollback()

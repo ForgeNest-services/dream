@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from core import storage
 from features.restro.branch_settings_repository import BranchSettingsRepository
 from features.branches.repository import BranchRepository
+from features.auth.repository import TenantRepository
 from utils.logger import logger
 
 
@@ -21,10 +22,18 @@ class BranchSettingsService:
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
         settings = BranchSettingsRepository.get(db, tenant_id, branch_id)
         if not settings:
-            settings = BranchSettingsRepository.create_default(db, tenant_id, branch_id)
+            # VAT can only ever start on for a tenant that's actually
+            # VAT-registered. A tenant that registers for VAT later gets a
+            # settings row here first (PAN-only), then flips vat_enabled on
+            # themselves via Settings once they are.
+            tenant = TenantRepository.get_by_id(db, tenant_id)
+            vat_enabled = bool(tenant and tenant.is_vat_registered)
+            settings = BranchSettingsRepository.create_default(
+                db, tenant_id, branch_id, vat_enabled=vat_enabled
+            )
             logger.info(
                 f"Auto-provisioned default settings for branch {branch_id}",
-                extra={"tenant_id": tenant_id, "branch_id": branch_id},
+                extra={"tenant_id": tenant_id, "branch_id": branch_id, "vat_enabled": vat_enabled},
             )
         return {"success": True, "settings": settings}
 
@@ -59,6 +68,14 @@ class BranchSettingsService:
 
         if vat_rate is not None and (vat_rate < 0 or vat_rate > 100):
             return {"success": False, "error_code": "INVALID_VAT_RATE"}
+
+        # Server-side enforcement, not just a disabled frontend toggle: VAT
+        # can never be turned on for a tenant that isn't actually
+        # VAT-registered, regardless of what the request asks for.
+        if vat_enabled:
+            tenant = TenantRepository.get_by_id(db, tenant_id)
+            if not tenant or not tenant.is_vat_registered:
+                return {"success": False, "error_code": "NOT_VAT_REGISTERED"}
 
         # Capture the pre-update QR URL so we can delete it from MinIO after
         # a successful DB update. We defer the storage call — DB integrity

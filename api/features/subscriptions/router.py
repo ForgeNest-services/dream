@@ -6,16 +6,20 @@ from utils.helpers import success_response, error_response
 from features.subscriptions.service import SubscriptionService
 from features.subscriptions.schemas import (
     SubscriptionData,
-    SubscriptionWithTenantData,
     PaymentData,
-    PaymentWithTenantData,
+    PaymentGroupData,
     PlanData,
+    BundleDiscountData,
+    PriceQuoteData,
+    PriceQuoteRequest,
     SubmitPaymentRequest,
     ConfirmPaymentRequest,
     ManuallyActivateRequest,
     ExtendTrialRequest,
     CreatePlanRequest,
     UpdatePlanRequest,
+    UpdateBundleDiscountRequest,
+    OwnerUserData,
 )
 
 router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
@@ -24,6 +28,7 @@ _ERROR_MAP = {
     "NOT_FOUND": ("NOT_FOUND", "Subscription not found.", 404),
     "APP_NOT_FOUND": ("APP_NOT_FOUND", "App not found.", 404),
     "INVALID_PLAN": ("INVALID_PLAN", "Plan must be monthly or yearly.", 422),
+    "NO_APPS_SELECTED": ("NO_APPS_SELECTED", "Select at least one app.", 422),
     "PLAN_NOT_CONFIGURED": ("PLAN_NOT_CONFIGURED", "No active pricing plan configured for this app and plan type.", 422),
     "PLAN_EXISTS": ("PLAN_EXISTS", "A plan with this app_code and plan type already exists.", 409),
     "PAYMENT_NOT_FOUND": ("PAYMENT_NOT_FOUND", "Payment not found.", 404),
@@ -42,6 +47,13 @@ def _require_superadmin(current_user: dict = Depends(get_current_user)):
     return current_user
 
 
+def _group_to_dict(g: dict) -> dict:
+    d = dict(g)
+    d["payments"] = [PaymentData.model_validate(p).model_dump(mode="json") for p in g["payments"]]
+    d["created_at"] = d["created_at"].isoformat() if hasattr(d["created_at"], "isoformat") else d["created_at"]
+    return d
+
+
 # ── Owner/Manager endpoints (platform JWT) ───────────────────────────────────
 
 
@@ -54,6 +66,30 @@ def list_plans(
     """Active pricing plans — owner calls this to show real prices in the pay modal."""
     plans = SubscriptionService.list_plans(db, app_code)
     return success_response(data=[PlanData.model_validate(p).model_dump(mode="json") for p in plans])
+
+
+@router.get("/bundle-discount")
+def get_bundle_discount(
+    current_user: dict = Depends(require_tenant_user),
+    db: Session = Depends(get_db),
+):
+    percent = SubscriptionService.get_bundle_discount_percent(db)
+    return success_response(data=BundleDiscountData(percent=percent).model_dump(mode="json"))
+
+
+@router.post("/quote")
+def quote_price(
+    data: PriceQuoteRequest,
+    current_user: dict = Depends(require_tenant_user),
+    db: Session = Depends(get_db),
+):
+    """Prices a selection of one or more apps for one billing cycle —
+    used to render the pay modal's total before the tenant submits a
+    payment request. See SubscriptionService.price_selection."""
+    result = SubscriptionService.price_selection(db, data.app_codes, data.plan)
+    if not result["success"]:
+        return _err(result["error_code"])
+    return success_response(data=PriceQuoteData(**result).model_dump(mode="json"))
 
 
 @router.get("/my")
@@ -86,11 +122,15 @@ def submit_payment(
     current_user: dict = Depends(require_tenant_user),
     db: Session = Depends(get_db),
 ):
+    """Submits a payment request for one or more apps at once (2+ apps =
+    a discounted bundle purchase, priced by price_selection). All apps in
+    one request share one billing cycle and one payment group — see
+    SubscriptionService.submit_payment."""
     tenant_id = current_user["user"].tenant_id
     result = SubscriptionService.submit_payment(
         db,
         tenant_id=tenant_id,
-        app_code=data.app_code,
+        app_codes=data.app_codes,
         plan=data.plan,
         payment_method=data.payment_method,
         notes=data.notes,
@@ -98,7 +138,10 @@ def submit_payment(
     if not result["success"]:
         return _err(result["error_code"])
     return success_response(
-        data=PaymentData.model_validate(result["payment"]).model_dump(mode="json"),
+        data={
+            "group_id": result["group_id"],
+            "payments": [PaymentData.model_validate(p).model_dump(mode="json") for p in result["payments"]],
+        },
         message="Payment request submitted. Our team will confirm it shortly.",
         status_code=201,
     )
@@ -145,6 +188,28 @@ def admin_update_plan(
     return success_response(data=PlanData.model_validate(result["plan"]).model_dump(mode="json"))
 
 
+@router.get("/admin/bundle-discount")
+def admin_get_bundle_discount(
+    _admin: dict = Depends(_require_superadmin),
+    db: Session = Depends(get_db),
+):
+    percent = SubscriptionService.get_bundle_discount_percent(db)
+    return success_response(data=BundleDiscountData(percent=percent).model_dump(mode="json"))
+
+
+@router.patch("/admin/bundle-discount")
+def admin_update_bundle_discount(
+    data: UpdateBundleDiscountRequest,
+    _admin: dict = Depends(_require_superadmin),
+    db: Session = Depends(get_db),
+):
+    percent = SubscriptionService.set_bundle_discount_percent(db, data.percent)
+    return success_response(
+        data=BundleDiscountData(percent=percent).model_dump(mode="json"),
+        message="Bundle discount updated.",
+    )
+
+
 # ── Superadmin: payment management ──────────────────────────────────────────
 
 
@@ -153,10 +218,8 @@ def list_pending_payments(
     _admin: dict = Depends(_require_superadmin),
     db: Session = Depends(get_db),
 ):
-    result = SubscriptionService.list_pending_payments(db)
-    return success_response(
-        data=[PaymentData.model_validate(p).model_dump(mode="json") for p in result["payments"]]
-    )
+    groups = SubscriptionService.list_pending_payment_groups(db)
+    return success_response(data=[_group_to_dict(g) for g in groups])
 
 
 @router.get("/admin/all-payments")
@@ -164,47 +227,42 @@ def list_all_payments(
     _admin: dict = Depends(_require_superadmin),
     db: Session = Depends(get_db),
 ):
-    rows = SubscriptionService.list_all_payments(db)
-    result = []
-    for row in rows:
-        d = PaymentData.model_validate(row["payment"]).model_dump(mode="json")
-        d["tenant_name"] = row["tenant_name"]
-        result.append(d)
-    return success_response(data=result)
+    groups = SubscriptionService.list_all_payment_groups(db)
+    return success_response(data=[_group_to_dict(g) for g in groups])
 
 
-@router.post("/admin/payments/{payment_id}/confirm")
-def confirm_payment(
-    payment_id: str,
+@router.post("/admin/payment-groups/{group_id}/confirm")
+def confirm_payment_group(
+    group_id: str,
     data: ConfirmPaymentRequest,
     admin: dict = Depends(_require_superadmin),
     db: Session = Depends(get_db),
 ):
     admin_id = admin["admin"].id
-    result = SubscriptionService.confirm_payment_and_activate(db, payment_id, admin_id, data.notes)
+    result = SubscriptionService.confirm_payment_group(db, group_id, admin_id, data.notes)
     if not result["success"]:
         return _err(result["error_code"])
     return success_response(
         data={
-            "subscription": SubscriptionData.model_validate(result["subscription"]).model_dump(mode="json"),
-            "payment": PaymentData.model_validate(result["payment"]).model_dump(mode="json"),
+            "subscriptions": [SubscriptionData.model_validate(s).model_dump(mode="json") for s in result["subscriptions"]],
+            "payments": [PaymentData.model_validate(p).model_dump(mode="json") for p in result["payments"]],
         },
-        message="Payment confirmed and subscription activated.",
+        message="Payment confirmed and subscription(s) activated.",
     )
 
 
-@router.post("/admin/payments/{payment_id}/reject")
-def reject_payment(
-    payment_id: str,
+@router.post("/admin/payment-groups/{group_id}/reject")
+def reject_payment_group(
+    group_id: str,
     data: ConfirmPaymentRequest,
     _admin: dict = Depends(_require_superadmin),
     db: Session = Depends(get_db),
 ):
-    result = SubscriptionService.reject_payment(db, payment_id, data.notes)
+    result = SubscriptionService.reject_payment_group(db, group_id, data.notes)
     if not result["success"]:
         return _err(result["error_code"])
     return success_response(
-        data=PaymentData.model_validate(result["payment"]).model_dump(mode="json"),
+        data=[PaymentData.model_validate(p).model_dump(mode="json") for p in result["payments"]],
         message="Payment rejected.",
     )
 
@@ -224,6 +282,38 @@ def list_all_subscriptions(
         d["tenant_name"] = row["tenant_name"]
         d["tenant_email"] = row["tenant_email"]
         result.append(d)
+    return success_response(data=result)
+
+
+# ── Superadmin: users ─────────────────────────────────────────────────────────
+
+
+@router.get("/admin/users")
+def list_all_owners(
+    _admin: dict = Depends(_require_superadmin),
+    db: Session = Depends(get_db),
+):
+    """Every owner account with their business info (if set up) and every
+    app subscription that business has — the superadmin Users page. Plan
+    changes for a listed user's subscription go through the existing
+    POST /admin/activate (same manual-activation path a payment
+    confirmation uses)."""
+    rows = SubscriptionService.list_all_owners(db)
+    result = []
+    for row in rows:
+        result.append(
+            OwnerUserData(
+                user_id=row["user"].id,
+                full_name=row["user"].full_name,
+                email=row["user"].email,
+                picture_url=row["user"].picture_url,
+                is_verified=row["user"].is_verified,
+                is_active=row["user"].is_active,
+                created_at=row["user"].created_at,
+                tenant=row["tenant"],
+                subscriptions=row["subscriptions"],
+            ).model_dump(mode="json")
+        )
     return success_response(data=result)
 
 

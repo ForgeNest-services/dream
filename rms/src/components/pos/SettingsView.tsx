@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { usePos } from "@/lib/pos/store";
 import { MenuQrPrintButton } from "./MenuQrPrint";
+import { UsersSection } from "./UsersSection";
 
 export function SettingsView() {
   const {
@@ -56,6 +57,9 @@ export function SettingsView() {
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
+      <div className="space-y-4 xl:col-span-2">
+        <UsersSection />
+      </div>
       <div className="pos-card p-5">
         <h2 className="font-display text-xl">Restaurant & branch</h2>
         <p className="text-sm text-muted-foreground">Viewing settings for {branch?.name ?? "—"}</p>
