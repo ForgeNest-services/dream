@@ -472,6 +472,14 @@ class InvoiceData(BaseModel):
     fiscal_year_id: str | None
     branch_id: str
     customer_id: str
+    # IRD seller snapshot
+    seller_name: str | None
+    seller_address: str | None
+    seller_pan: str | None
+    # IRD buyer snapshot
+    buyer_name: str | None
+    buyer_pan: str | None
+    buyer_address: str | None
     gross_amount: Decimal
     discount_amount: Decimal
     taxable_amount: Decimal
@@ -483,6 +491,14 @@ class InvoiceData(BaseModel):
     status: str
     note: str | None
     user_id: str
+    # IRD credit note / reprint fields
+    is_reprint: bool
+    reprint_of: str | None
+    reprint_number: int | None
+    is_credit_note: bool
+    original_invoice_id: str | None
+    note_reason: str | None
+    cbms_synced: bool
     created_at: datetime
     lines: list[InvoiceLineData]
 
@@ -523,6 +539,17 @@ class ConvertQuotationRequest(BaseModel):
     paid_amount: Decimal = Decimal(0)
     invoice_prefix: str = "INV"
     show_vat_breakdown: bool | None = None
+
+
+class IMSCreditNoteRequest(BaseModel):
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def reason_required(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Reason is required for credit notes")
+        return v.strip()
 
 
 class BranchSettingsData(BaseModel):

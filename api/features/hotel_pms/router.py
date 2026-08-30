@@ -1,5 +1,5 @@
 from datetime import date
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_hotel_pms_staff
@@ -23,6 +23,9 @@ from features.hotel_pms.schemas import (
     CreateBookingRequest,
     UpdateBookingRequest,
     BookingData,
+    InvoiceData,
+    CreditNoteRequest,
+    AuditLogData,
 )
 from features.hotel_pms.service import (
     HotelPMSCredentialService,
@@ -32,6 +35,8 @@ from features.hotel_pms.room_type_service import RoomTypeService
 from features.hotel_pms.room_service import RoomService
 from features.hotel_pms.guest_service import GuestService
 from features.hotel_pms.booking_service import BookingService
+from features.hotel_pms.invoice_service import InvoiceService
+from features.hotel_pms.audit_repository import AuditRepository
 
 
 router = APIRouter(prefix="/hotel-pms", tags=["hotel-pms"])
@@ -484,6 +489,7 @@ def create_guest(
         id_document_type=data.id_document_type,
         id_document_number=data.id_document_number,
         nationality=data.nationality,
+        pan=data.pan,
     )
 
     if not result["success"]:
@@ -513,6 +519,7 @@ def update_guest(
         id_document_type=data.id_document_type,
         id_document_number=data.id_document_number,
         nationality=data.nationality,
+        pan=data.pan,
     )
 
     if not result["success"]:
@@ -757,4 +764,199 @@ def booking_no_show(
     return success_response(
         data=BookingData.model_validate(result["booking"]).model_dump(mode="json"),
         message="Booking marked as no-show",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Invoices (IRD-compliant, append-only)
+# ---------------------------------------------------------------------------
+
+def _invoice_error(code: str):
+    mapping = {
+        "BOOKING_NOT_FOUND": ("BOOKING_NOT_FOUND", "Booking not found.", 404),
+        "INVOICE_NOT_FOUND": ("INVOICE_NOT_FOUND", "Invoice not found.", 404),
+        "BOOKING_NOT_ELIGIBLE": (
+            "BOOKING_NOT_ELIGIBLE",
+            "Invoice can only be issued for checked-in or checked-out bookings.",
+            409,
+        ),
+        "INVOICE_ALREADY_EXISTS": (
+            "INVOICE_ALREADY_EXISTS",
+            "An invoice has already been generated for this booking.",
+            409,
+        ),
+        "CANNOT_REPRINT_COPY": (
+            "CANNOT_REPRINT_COPY",
+            "Cannot reprint a copy — only original invoices can be reprinted.",
+            409,
+        ),
+        "NOT_A_REGULAR_INVOICE": (
+            "NOT_A_REGULAR_INVOICE",
+            "Credit notes can only be issued against original INV invoices.",
+            409,
+        ),
+    }
+    entry = mapping.get(code)
+    if not entry:
+        return error_response("UNKNOWN_ERROR", "Something went wrong.", 500)
+    c, m, s = entry
+    return error_response(c, m, s)
+
+
+def _client_ip(request) -> str | None:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return getattr(request.client, "host", None)
+
+
+@router.post("/bookings/{booking_id}/generate-invoice")
+def generate_invoice(
+    booking_id: str,
+    request: Request,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    result = InvoiceService.generate_from_booking(
+        db,
+        booking_id=booking_id,
+        tenant_id=staff["tenant_id"],
+        performed_by=staff.get("cred_id", "unknown"),
+        performer_type="staff",
+        terminal_ip=_client_ip(request),
+    )
+    if not result["success"]:
+        if result["error_code"] == "INVOICE_ALREADY_EXISTS":
+            return success_response(
+                data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
+                message="Invoice already exists for this booking",
+            )
+        return _invoice_error(result["error_code"])
+    return success_response(
+        data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
+        message="Invoice generated",
+        status_code=201,
+    )
+
+
+@router.get("/invoices/{invoice_id}")
+def get_invoice(
+    invoice_id: str,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    result = InvoiceService.get(db, invoice_id, staff["tenant_id"])
+    if not result["success"]:
+        return _invoice_error(result["error_code"])
+    return success_response(
+        data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json")
+    )
+
+
+@router.post("/invoices/{invoice_id}/reprint")
+def reprint_invoice(
+    invoice_id: str,
+    request: Request,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    result = InvoiceService.reprint(
+        db,
+        invoice_id=invoice_id,
+        tenant_id=staff["tenant_id"],
+        performed_by=staff.get("cred_id", "unknown"),
+        performer_type="staff",
+        terminal_ip=_client_ip(request),
+    )
+    if not result["success"]:
+        return _invoice_error(result["error_code"])
+    return success_response(
+        data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
+        message="Reprint copy created",
+        status_code=201,
+    )
+
+
+@router.post("/invoices/{invoice_id}/credit-note")
+def issue_credit_note(
+    invoice_id: str,
+    data: CreditNoteRequest,
+    request: Request,
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("app_owner", "manager"):
+        from fastapi import HTTPException
+        raise HTTPException(403, "Only Owner or Manager can issue credit notes")
+
+    result = InvoiceService.issue_credit_note(
+        db,
+        invoice_id=invoice_id,
+        tenant_id=staff["tenant_id"],
+        reason=data.reason,
+        performed_by=staff.get("cred_id", "unknown"),
+        performer_type="staff",
+        terminal_ip=_client_ip(request),
+    )
+    if not result["success"]:
+        return _invoice_error(result["error_code"])
+    return success_response(
+        data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
+        message="Credit note issued",
+        status_code=201,
+    )
+
+
+@router.get("/branches/{branch_id}/invoices")
+def list_invoices(
+    branch_id: str,
+    series: str | None = Query(None),
+    fiscal_year: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
+    staff: dict = Depends(require_hotel_pms_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    result = InvoiceService.list_for_branch(
+        db,
+        branch_id=branch_id,
+        tenant_id=staff["tenant_id"],
+        series=series,
+        fiscal_year=fiscal_year,
+        page=page,
+        per_page=per_page,
+    )
+    return success_response(
+        data=[InvoiceData.model_validate(inv).model_dump(mode="json") for inv in result["invoices"]],
+        meta=build_meta(result["total"], page, per_page),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Audit log (owner-only, IRD inspection)
+# ---------------------------------------------------------------------------
+
+@router.get("/audit-log", dependencies=owner_dep)
+def list_audit_log(
+    entity_type: str | None = Query(None),
+    entity_id: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    current_user: dict = Depends(require_role(["owner"])),
+    db: Session = Depends(get_db),
+):
+    user = current_user["user"]
+    offset = (page - 1) * per_page
+    rows, total = AuditRepository.list_for_entity(
+        db,
+        tenant_id=user.tenant_id,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        limit=per_page,
+        offset=offset,
+    )
+    return success_response(
+        data=[AuditLogData.model_validate(r).model_dump(mode="json") for r in rows],
+        meta=build_meta(total, page, per_page),
     )

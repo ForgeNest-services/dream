@@ -1,5 +1,5 @@
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Response
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_ims_staff
@@ -37,6 +37,7 @@ from features.ims.schemas import (
     InvoiceData,
     CreateInvoiceRequest,
     ConvertQuotationRequest,
+    IMSCreditNoteRequest,
     BranchSettingsData,
     UpdateBranchSettingsRequest,
     StockSummaryRow,
@@ -1160,6 +1161,9 @@ _INVOICE_ERROR_MAP = {
     "NOT_A_QUOTATION": ("NOT_A_QUOTATION", "This document is not a quotation.", 422),
     "CONVERSION_FAILED": ("CONVERSION_FAILED", "Failed to convert quotation.", 500),
     "INSUFFICIENT_STOCK": ("INSUFFICIENT_STOCK", "Not enough stock for one or more items.", 409),
+    "NOT_AN_INVOICE": ("NOT_AN_INVOICE", "Credit notes can only be issued against tax or abbreviated invoices.", 409),
+    "ALREADY_CREDIT_NOTE": ("ALREADY_CREDIT_NOTE", "This document is already a credit note.", 409),
+    "CN_FAILED": ("CN_FAILED", "Failed to issue credit note.", 500),
 }
 
 
@@ -1226,12 +1230,16 @@ def get_invoice(
 
 @router.post("/invoices")
 def create_invoice(
+    request: Request,
     data: CreateInvoiceRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager", "cashier"):
         raise HTTPException(403, "Not allowed to record sales")
+    client_ip = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip() or (
+        request.client.host if request.client else None
+    )
     result = IMSInvoiceService.create(
         db,
         tenant_id=staff["tenant_id"],
@@ -1246,6 +1254,7 @@ def create_invoice(
         invoice_prefix=data.invoice_prefix,
         is_quotation=data.is_quotation,
         show_vat_breakdown=data.show_vat_breakdown,
+        terminal_ip=client_ip,
     )
     if not result["success"]:
         return _invoice_error(result)
@@ -1258,6 +1267,7 @@ def create_invoice(
 
 @router.post("/invoices/{invoice_id}/convert")
 def convert_quotation(
+    request: Request,
     invoice_id: str,
     data: ConvertQuotationRequest,
     staff: dict = Depends(require_ims_staff()),
@@ -1265,6 +1275,9 @@ def convert_quotation(
 ):
     if staff["role"] not in ("owner", "manager", "cashier"):
         raise HTTPException(403, "Not allowed to convert quotations")
+    client_ip = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip() or (
+        request.client.host if request.client else None
+    )
     result = IMSInvoiceService.convert(
         db,
         tenant_id=staff["tenant_id"],
@@ -1274,12 +1287,43 @@ def convert_quotation(
         payment_method=data.payment_method,
         paid_amount=data.paid_amount,
         show_vat_breakdown=data.show_vat_breakdown,
+        terminal_ip=client_ip,
     )
     if not result["success"]:
         return _invoice_error(result)
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation converted to invoice",
+    )
+
+
+@router.post("/invoices/{invoice_id}/credit-note")
+def issue_credit_note(
+    request: Request,
+    invoice_id: str,
+    data: IMSCreditNoteRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can issue credit notes")
+    client_ip = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip() or (
+        request.client.host if request.client else None
+    )
+    result = IMSInvoiceService.issue_credit_note(
+        db,
+        tenant_id=staff["tenant_id"],
+        user_id=staff.get("cred_id") or "",
+        invoice_id=invoice_id,
+        reason=data.reason,
+        terminal_ip=client_ip,
+    )
+    if not result["success"]:
+        return _invoice_error(result)
+    return success_response(
+        data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
+        message="Credit note issued",
+        status_code=201,
     )
 
 

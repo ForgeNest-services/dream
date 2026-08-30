@@ -1,5 +1,5 @@
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_restro_staff
@@ -60,6 +60,7 @@ from features.restro.schemas import (
     ExpenseData,
     CreateExpenseRequest,
     UpdateExpenseRequest,
+    RMSCreditNoteRequest,
 )
 from shared_models import Tenant
 from features.restro.service import RestroCredentialService, RestroAuthService
@@ -1314,6 +1315,8 @@ _ORDER_ERROR_MAP = {
     ),
     "LINE_ADD_FAILED": ("LINE_ADD_FAILED", "Failed to add line.", 500),
     "CREATION_FAILED": ("CREATION_FAILED", "Failed to create order.", 500),
+    "ORDER_NOT_PAID": ("ORDER_NOT_PAID", "Only paid orders can have a credit note issued.", 409),
+    "ALREADY_CREDIT_NOTE": ("ALREADY_CREDIT_NOTE", "This order is already a credit note.", 409),
 }
 
 
@@ -1663,10 +1666,14 @@ def mark_order_paid(
     branch_id: str,
     order_id: str,
     data: MarkPaidRequest,
+    request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
     _assert_branch_scope(staff, branch_id)
+    forwarded = request.headers.get("X-Forwarded-For")
+    client_ip = (forwarded.split(",")[0].strip() if forwarded
+                 else getattr(request.client, "host", None))
     result = OrderService.mark_paid(
         db,
         tenant_id=staff["tenant_id"],
@@ -1674,6 +1681,9 @@ def mark_order_paid(
         order_id=order_id,
         payment_method=data.payment_method,
         customer_id=data.customer_id,
+        buyer_pan=data.buyer_pan,
+        terminal_ip=client_ip,
+        performed_by=staff.get("cred_id"),
     )
     if not result["success"]:
         return _order_error(result["error_code"])
@@ -1696,6 +1706,39 @@ def cancel_order(
         return _order_error(result["error_code"])
     order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
     return success_response(data=_order_payload(order), message="Order cancelled")
+
+
+@router.post("/branches/{branch_id}/orders/{order_id}/credit-note")
+def issue_order_credit_note(
+    request: Request,
+    branch_id: str,
+    order_id: str,
+    data: RMSCreditNoteRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can issue credit notes")
+    _assert_branch_scope(staff, branch_id)
+    forwarded = request.headers.get("X-Forwarded-For")
+    client_ip = (forwarded.split(",")[0].strip() if forwarded
+                 else getattr(request.client, "host", None))
+    result = OrderService.issue_credit_note(
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        reason=data.reason,
+        performed_by=staff.get("cred_id"),
+        terminal_ip=client_ip,
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    return success_response(
+        data=_order_payload(result["order"]),
+        message="Credit note issued",
+        status_code=201,
+    )
 
 
 @router.patch("/branches/{branch_id}/orders/{order_id}/delivery-status")

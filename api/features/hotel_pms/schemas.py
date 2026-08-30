@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 from pydantic import BaseModel, ConfigDict, field_validator
 from datetime import datetime, date
 from features.hotel_pms.roles import HotelPMSRole
@@ -199,6 +200,7 @@ class GuestData(BaseModel):
     id_document_type: str | None
     id_document_number: str | None
     nationality: str | None
+    pan: str | None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -211,6 +213,7 @@ class CreateGuestRequest(BaseModel):
     id_document_type: str | None = None
     id_document_number: str | None = None
     nationality: str | None = None
+    pan: str | None = None
 
     @field_validator("full_name")
     @classmethod
@@ -227,6 +230,7 @@ class UpdateGuestRequest(BaseModel):
     id_document_type: str | None = None
     id_document_number: str | None = None
     nationality: str | None = None
+    pan: str | None = None
 
 
 # -----------------------------------------------------------------------------
@@ -297,3 +301,76 @@ class UpdateBookingRequest(BaseModel):
     num_guests: int | None = None
     notes: str | None = None
     rate_per_night: Decimal | None = None
+
+
+# -----------------------------------------------------------------------------
+# Invoices
+# -----------------------------------------------------------------------------
+
+class InvoiceData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    branch_id: str
+    booking_id: str | None
+    series: str
+    invoice_number: str
+    fiscal_year: str
+    serial_number: int
+    seller_name: str
+    seller_address: str | None
+    seller_pan: str | None
+    seller_is_vat_registered: bool
+    buyer_name: str
+    buyer_pan: str | None
+    buyer_address: str | None
+    subtotal_amount: Decimal
+    taxable_amount: Decimal
+    vat_amount: Decimal
+    total_amount: Decimal
+    line_items: list[Any]
+    status: str
+    is_reprint: bool
+    reprint_of: str | None
+    reprint_number: int | None
+    original_invoice_id: str | None
+    note_reason: str | None
+    cbms_synced: bool
+    cbms_synced_at: datetime | None
+    issued_at: datetime
+    created_at: datetime
+
+
+class CreditNoteRequest(BaseModel):
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def reason_required(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Reason is required for credit notes")
+        return v.strip()
+
+
+# -----------------------------------------------------------------------------
+# Audit log
+# -----------------------------------------------------------------------------
+
+class AuditLogData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    app_code: str
+    entity_type: str
+    entity_id: str
+    action: str
+    performed_by: str
+    performer_type: str
+    before_state: dict | None
+    after_state: dict | None
+    reason: str | None
+    terminal_ip: str | None
+    mac_address: str | None
+    created_at: datetime

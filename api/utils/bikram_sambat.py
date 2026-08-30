@@ -128,6 +128,47 @@ def bs_iso_to_ad(bs_iso: str | None) -> date | None:
     return _ANCHOR + timedelta(days=diff)
 
 
+def fiscal_year_from_ad(g_or_dt: date | datetime | None) -> str | None:
+    """Return the BS fiscal year string (e.g. '2081-82') for a date.
+
+    The fiscal year runs Shrawan 1 (month 4) through Ashadh last day
+    (month 3 of the following BS year).  Returns None if out of range.
+    """
+    iso = to_bs_iso(g_or_dt)
+    if iso is None:
+        return None
+    y, m, _ = (int(x) for x in iso.split("-"))
+    if m >= 4:
+        fy_start = y
+    else:
+        fy_start = y - 1
+    return f"{fy_start}-{(fy_start + 1) % 100:02d}"
+
+
+def fiscal_year_prefix(fy: str) -> str:
+    """'2081-82' -> '81/82'  (used in IRD invoice number prefixes)."""
+    start, end = fy.split("-")
+    return f"{start[-2:]}/{end}"
+
+
+def next_fiscal_year_start_ad(fy: str) -> date | None:
+    """Return the AD date of Shrawan 1 that opens the NEXT fiscal year.
+
+    Used to know when the invoice serial counter must reset.
+    """
+    next_bs_year = int(fy.split("-")[0]) + 1
+    return bs_iso_to_ad(f"{next_bs_year:04d}-04-01")
+
+
+def format_invoice_number(series: str, fy: str, serial: int) -> str:
+    """Build an IRD-compliant invoice number.
+
+    >>> format_invoice_number("INV", "2081-82", 1)  -> 'INV-81/82-00001'
+    >>> format_invoice_number("CN",  "2081-82", 3)  -> 'CN-81/82-00003'
+    """
+    return f"{series}-{fiscal_year_prefix(fy)}-{serial:05d}"
+
+
 def format_bs_pretty(g_or_dt: date | datetime | None) -> str:
     """Human-readable BS date, e.g. "Bhadra 27, 2083 BS". Empty string on
     out-of-range or None input."""

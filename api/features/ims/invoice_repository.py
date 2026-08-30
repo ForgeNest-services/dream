@@ -1,8 +1,36 @@
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
-from shared_models import IMSInvoice, IMSInvoiceLine, IMSParty
+from shared_models import IMSInvoice, IMSInvoiceLine, IMSParty, IMSInvoiceSerial
 
 
 class IMSInvoiceRepository:
+    @staticmethod
+    def next_serial(db: Session, branch_id: str, fiscal_year: str, series: str = "INV") -> int:
+        """Atomically increment and return the next serial number for a
+        branch/fiscal-year/series combination using SELECT … FOR UPDATE."""
+        row = (
+            db.execute(
+                select(IMSInvoiceSerial)
+                .filter_by(branch_id=branch_id, fiscal_year=fiscal_year, series=series)
+                .with_for_update()
+            )
+            .scalars()
+            .first()
+        )
+        if row is None:
+            row = IMSInvoiceSerial(
+                branch_id=branch_id,
+                fiscal_year=fiscal_year,
+                series=series,
+                last_number=0,
+            )
+            db.add(row)
+            db.flush()
+
+        row.last_number += 1
+        db.flush()
+        return row.last_number
+
     @staticmethod
     def create(db: Session, tenant_id: str, **fields) -> IMSInvoice:
         invoice = IMSInvoice(tenant_id=tenant_id, **fields)
@@ -15,10 +43,6 @@ class IMSInvoiceRepository:
         line = IMSInvoiceLine(invoice_id=invoice_id, **fields)
         db.add(line)
         return line
-
-    @staticmethod
-    def count_for_tenant(db: Session, tenant_id: str) -> int:
-        return db.query(IMSInvoice).filter(IMSInvoice.tenant_id == tenant_id).count()
 
     @staticmethod
     def get_by_id(db: Session, tenant_id: str, invoice_id: str) -> IMSInvoice | None:

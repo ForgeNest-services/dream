@@ -1,8 +1,10 @@
 from sqlalchemy import (
     Column,
     String,
+    Boolean,
     Integer,
     Numeric,
+    Text,
     DateTime,
     ForeignKey,
     Index,
@@ -49,10 +51,10 @@ class RestroOrder(Base):
             "settled_at",
             postgresql_where=text("payment_method = 'khata'"),
         ),
-        # Sequential per-branch bill numbers — printed on the receipt as
-        # "Bill #123", populated by the repository via MAX(bill_number)+1.
-        # UNIQUE constraint catches concurrent-insert races (repo retries).
-        Index("uq_restro_order_bill_number", "branch_id", "bill_number", unique=True),
+        # Sequential per-branch-per-fiscal-year bill numbers (IRD requires
+        # reset to 1 at Shrawan 1 each year). Populated via SELECT FOR UPDATE
+        # on restro_invoice_serials; UNIQUE constraint catches any races.
+        Index("uq_restro_order_bill_number", "branch_id", "fiscal_year", "bill_number", unique=True),
         {"schema": "public"},
     )
 
@@ -66,6 +68,9 @@ class RestroOrder(Base):
     # See OrderRepository.create — computed under the same DB session so a
     # concurrent conflict on the UNIQUE index triggers a retry.
     bill_number = Column(Integer, nullable=False)
+    # Nepali fiscal year of this bill — e.g. "2081-82". Populated at create
+    # time; required for per-year serial reset (IRD requirement).
+    fiscal_year = Column(String(10), nullable=True)
     # Required for delivery orders (populated on create), and for orders
     # closed as payment_method='khata' (populated on mark-paid). Optional
     # for cash/qr dine-in.
@@ -89,8 +94,24 @@ class RestroOrder(Base):
     discount_type = Column(String(10), nullable=False, default="percent")  # percent|flat
     discount_value = Column(Numeric(10, 2), nullable=False, default=0)
 
+    # ── VAT breakdown (IRD: snapshotted at mark-paid time) ───────────────────
+    subtotal_amount = Column(Numeric(12, 2), nullable=True)  # before discount
+    taxable_amount = Column(Numeric(12, 2), nullable=True)   # after discount, VAT-applicable
+    exempt_amount = Column(Numeric(12, 2), nullable=True)    # non-taxable items
+    vat_amount = Column(Numeric(12, 2), nullable=True)       # 13% of taxable
+    total_amount = Column(Numeric(12, 2), nullable=True)     # grand total
+
     # cash|qr|khata — set on mark-paid.
     payment_method = Column(String(16), nullable=True)
+
+    # ── Seller snapshot (IRD: captured at bill-close time) ───────────────────
+    seller_name = Column(String(255), nullable=True)
+    seller_address = Column(Text, nullable=True)
+    seller_pan = Column(String(50), nullable=True)
+
+    # ── Buyer snapshot (IRD: buyer PAN mandatory for B2B VAT bills) ──────────
+    buyer_name = Column(String(200), nullable=True)
+    buyer_pan = Column(String(50), nullable=True)
 
     # Snapshot of the waiter who opened the order. `waiter_cred_id` is FK-lite
     # (no cascade) so credential deletion doesn't wipe history.
@@ -99,6 +120,20 @@ class RestroOrder(Base):
 
     # Delivery workflow status (only meaningful for type='delivery').
     delivery_status = Column(String(20), nullable=True)  # pending|out|delivered
+
+    # ── Reprint (IRD: new row per reprint, watermarked "Copy of Original") ────
+    is_reprint = Column(Boolean, nullable=False, default=False)
+    reprint_of = Column(String(36), ForeignKey("public.restro_orders.id"), nullable=True)
+    reprint_number = Column(Integer, nullable=True)
+
+    # ── Credit notes (IRD: reversal of a paid bill) ───────────────────────────
+    is_credit_note = Column(Boolean, nullable=False, default=False)
+    original_order_id = Column(String(36), ForeignKey("public.restro_orders.id"), nullable=True, index=True)
+    note_reason = Column(Text, nullable=True)
+
+    # ── CBMS (IRD Central Billing Monitoring System) ──────────────────────────
+    cbms_synced = Column(Boolean, nullable=False, default=False)
+    cbms_synced_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(

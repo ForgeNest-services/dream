@@ -20,6 +20,7 @@ class PMSGuest(Base):
     id_document_type = Column(String(50), nullable=True)
     id_document_number = Column(String(100), nullable=True)
     nationality = Column(String(100), nullable=True)
+    pan = Column(String(50), nullable=True)   # buyer PAN/VAT for B2B tax invoices
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(

@@ -39,6 +39,7 @@ class GuestService:
         id_document_type: str | None = None,
         id_document_number: str | None = None,
         nationality: str | None = None,
+        pan: str | None = None,
     ) -> dict:
         try:
             guest = GuestRepository.create(
@@ -50,6 +51,7 @@ class GuestService:
                 id_document_type=id_document_type,
                 id_document_number=id_document_number,
                 nationality=nationality,
+                pan=pan,
             )
             logger.info(
                 f"Guest created: {guest.id}",
@@ -72,6 +74,7 @@ class GuestService:
         id_document_type: str | None = None,
         id_document_number: str | None = None,
         nationality: str | None = None,
+        pan: str | None = None,
     ) -> dict:
         guest = GuestRepository.get_by_id(db, tenant_id, guest_id)
         if not guest:
@@ -87,6 +90,7 @@ class GuestService:
                 id_document_type=id_document_type,
                 id_document_number=id_document_number,
                 nationality=nationality,
+                pan=pan,
             )
             return {"success": True, "guest": updated}
         except Exception as e:

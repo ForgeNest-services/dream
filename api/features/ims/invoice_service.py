@@ -9,8 +9,10 @@ from features.ims.fiscal_year_repository import IMSFiscalYearRepository
 from features.ims.nepali_date import fiscal_year_start_for_bs_date
 from features.ims.branch_settings_service import IMSBranchSettingsService
 from features.branches.repository import BranchRepository
+from features.auth.repository import TenantRepository
 from features.ims import purchase_txn_helpers as txn
-from utils.bikram_sambat import to_bs_iso
+from features.hotel_pms.audit_repository import AuditRepository
+from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad, format_invoice_number
 from utils.logger import logger
 
 
@@ -140,10 +142,12 @@ class IMSInvoiceService:
         invoice_prefix: str,
         is_quotation: bool = False,
         show_vat_breakdown: bool | None = None,
+        terminal_ip: str | None = None,
     ) -> dict:
         if not BranchRepository.get_by_id(db, tenant_id, branch_id):
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
-        if not IMSPartyRepository.get_by_id(db, tenant_id, customer_id):
+        customer = IMSPartyRepository.get_by_id(db, tenant_id, customer_id)
+        if not customer:
             return {"success": False, "error_code": "CUSTOMER_NOT_FOUND"}
         if not lines:
             return {"success": False, "error_code": "NO_ITEMS"}
@@ -180,13 +184,34 @@ class IMSInvoiceService:
             if stock_error:
                 return stock_error
 
-        fy_result = IMSFiscalYearService.get_active(db, tenant_id)
-        start_year = fy_result["fiscal_year"].start_year if fy_result["success"] else datetime.now().year
+        date_bs = to_bs_iso(date) or ""
+        fy_str = fiscal_year_from_ad(date) or ""
 
         try:
-            seq = IMSInvoiceRepository.count_for_tenant(db, tenant_id) + 1
-            number = f"QT-{1000 + seq}" if is_quotation else f"{invoice_prefix}-{start_year}-{1000 + seq}"
-            date_bs = to_bs_iso(date) or ""
+            if is_quotation:
+                # Quotations use a simple sequential QT number — no IRD serial.
+                from sqlalchemy import func as _func
+                from shared_models import IMSInvoice as _IMSInvoice
+                seq = (
+                    db.query(_func.count(_IMSInvoice.id))
+                    .filter(
+                        _IMSInvoice.tenant_id == tenant_id,
+                        _IMSInvoice.kind == "quotation",
+                    )
+                    .scalar() or 0
+                ) + 1
+                number = f"QT-{seq:04d}"
+            else:
+                series = "INV"
+                serial = IMSInvoiceRepository.next_serial(db, branch_id, fy_str, series)
+                number = format_invoice_number(series, fy_str, serial)
+
+            # ── Seller snapshot (IRD: captured at issue time) ────────────────
+            tenant = TenantRepository.get_by_id(db, tenant_id)
+            branch = BranchRepository.get_by_id(db, tenant_id, branch_id)
+            seller_name = tenant.name if tenant else None
+            seller_address = branch.address if branch else None
+            seller_pan = tenant.pan if tenant else None
             kind = "quotation" if is_quotation else ("tax" if show_breakdown else "abbreviated")
             # Resolved from this invoice's OWN date, not the active fiscal
             # year — a backdated sale must land in the fiscal year its date
@@ -205,6 +230,12 @@ class IMSInvoiceService:
                 fiscal_year_id=fy.id,
                 branch_id=branch_id,
                 customer_id=customer_id,
+                seller_name=seller_name,
+                seller_address=seller_address,
+                seller_pan=seller_pan,
+                buyer_name=customer.name,
+                buyer_pan=customer.pan,
+                buyer_address=customer.address,
                 gross_amount=Decimal(0),
                 discount_amount=Decimal(0),
                 taxable_amount=Decimal(0),
@@ -321,6 +352,20 @@ class IMSInvoiceService:
             logger.error(f"IMS invoice creation failed: {str(e)}")
             return {"success": False, "error_code": "CREATION_FAILED"}
 
+        AuditRepository.write(
+            db,
+            tenant_id=tenant_id,
+            app_code="ims",
+            entity_type="invoice",
+            entity_id=invoice.id,
+            action="create",
+            performed_by=user_id,
+            performer_type="user",
+            after_state={"number": invoice.number, "total": float(invoice.total_amount)},
+            terminal_ip=terminal_ip,
+        )
+        db.commit()
+
         logger.info(f"IMS invoice created: {invoice.id}", extra={"tenant_id": tenant_id})
         return {"success": True, "invoice": IMSInvoiceRepository.get_by_id(db, tenant_id, invoice.id)}
 
@@ -334,6 +379,7 @@ class IMSInvoiceService:
         payment_method: str,
         paid_amount: Decimal,
         show_vat_breakdown: bool | None = None,
+        terminal_ip: str | None = None,
     ) -> dict:
         """Turns a quotation into a real invoice: re-numbers it, and applies
         the stock deduction + ledger posting that a quotation deliberately
@@ -363,9 +409,6 @@ class IMSInvoiceService:
         # "abbreviated" for display/printing.
         show_breakdown = vat_registered if show_vat_breakdown is None else show_vat_breakdown
 
-        fy_result = IMSFiscalYearService.get_active(db, tenant_id)
-        start_year = fy_result["fiscal_year"].start_year if fy_result["success"] else datetime.now().year
-
         # Same hard-block rule as create() — stock is only ever checked here
         # (not reserved at quote time), so re-validated fresh at conversion
         # since stock may have moved since the quote was made.
@@ -376,10 +419,20 @@ class IMSInvoiceService:
         if stock_error:
             return stock_error
 
+        fy_str = fiscal_year_from_ad(invoice.date) or ""
+
         try:
-            seq = IMSInvoiceRepository.count_for_tenant(db, tenant_id) + 1
-            number = f"{invoice_prefix}-{start_year}-{1000 + seq}"
+            series = "INV"
+            serial = IMSInvoiceRepository.next_serial(db, invoice.branch_id, fy_str, series)
+            number = format_invoice_number(series, fy_str, serial)
             kind = "tax" if show_breakdown else "abbreviated"
+
+            # Snapshot seller at conversion time (the actual sale moment).
+            tenant = TenantRepository.get_by_id(db, tenant_id)
+            branch = BranchRepository.get_by_id(db, tenant_id, invoice.branch_id)
+            invoice.seller_name = tenant.name if tenant else invoice.seller_name
+            invoice.seller_address = branch.address if branch else invoice.seller_address
+            invoice.seller_pan = tenant.pan if tenant else invoice.seller_pan
 
             lines_as_dicts = [
                 {
@@ -469,5 +522,118 @@ class IMSInvoiceService:
             logger.error(f"IMS quotation conversion failed: {str(e)}")
             return {"success": False, "error_code": "CONVERSION_FAILED"}
 
+        AuditRepository.write(
+            db,
+            tenant_id=tenant_id,
+            app_code="ims",
+            entity_type="invoice",
+            entity_id=invoice.id,
+            action="convert_quotation",
+            performed_by=user_id,
+            performer_type="user",
+            after_state={"number": invoice.number, "total": float(invoice.total_amount)},
+            terminal_ip=terminal_ip,
+        )
+        db.commit()
+
         logger.info(f"IMS quotation converted: {invoice_id} -> {invoice.number}", extra={"tenant_id": tenant_id})
         return {"success": True, "invoice": IMSInvoiceRepository.get_by_id(db, tenant_id, invoice.id)}
+
+    @staticmethod
+    def issue_credit_note(
+        db: Session,
+        tenant_id: str,
+        user_id: str,
+        invoice_id: str,
+        reason: str,
+        terminal_ip: str | None = None,
+    ) -> dict:
+        original = IMSInvoiceRepository.get_by_id(db, tenant_id, invoice_id)
+        if not original:
+            return {"success": False, "error_code": "INVOICE_NOT_FOUND"}
+        if original.kind not in ("tax", "abbreviated") or original.is_credit_note:
+            return {"success": False, "error_code": "NOT_A_REGULAR_INVOICE"}
+
+        fy_str = fiscal_year_from_ad(original.date) or ""
+
+        try:
+            serial = IMSInvoiceRepository.next_serial(db, original.branch_id, fy_str, "CN")
+            cn_number = format_invoice_number("CN", fy_str, serial)
+
+            cn = IMSInvoiceRepository.create(
+                db,
+                tenant_id=tenant_id,
+                number=cn_number,
+                kind=original.kind,
+                date=original.date,
+                date_bs=original.date_bs,
+                fiscal_year_id=original.fiscal_year_id,
+                branch_id=original.branch_id,
+                customer_id=original.customer_id,
+                seller_name=original.seller_name,
+                seller_address=original.seller_address,
+                seller_pan=original.seller_pan,
+                buyer_name=original.buyer_name,
+                buyer_pan=original.buyer_pan,
+                buyer_address=original.buyer_address,
+                gross_amount=-original.gross_amount,
+                discount_amount=-original.discount_amount,
+                taxable_amount=-original.taxable_amount,
+                exempt_amount=-original.exempt_amount,
+                vat_amount=-original.vat_amount,
+                total_amount=-original.total_amount,
+                payment_method=original.payment_method,
+                paid_amount=-original.paid_amount,
+                status="paid",
+                note=reason,
+                user_id=user_id,
+                is_credit_note=True,
+                original_invoice_id=original.id,
+                note_reason=reason,
+            )
+
+            # Reverse the ledger entries.
+            txn.create_ledger_entry(
+                db,
+                tenant_id=tenant_id,
+                party_id=original.customer_id,
+                date=original.date,
+                description=f"Credit note {cn_number} reversal of {original.number}",
+                reference=cn_number,
+                debit=Decimal(0),
+                credit=abs(original.total_amount),
+            )
+            if original.paid_amount > 0:
+                txn.create_ledger_entry(
+                    db,
+                    tenant_id=tenant_id,
+                    party_id=original.customer_id,
+                    date=original.date,
+                    description=f"Credit note refund ({original.payment_method})",
+                    reference=cn_number,
+                    debit=abs(original.paid_amount),
+                    credit=Decimal(0),
+                )
+
+            db.commit()
+            db.refresh(cn)
+        except Exception as e:
+            db.rollback()
+            logger.error(f"IMS credit note failed: {str(e)}")
+            return {"success": False, "error_code": "CREATION_FAILED"}
+
+        AuditRepository.write(
+            db,
+            tenant_id=tenant_id,
+            app_code="ims",
+            entity_type="invoice",
+            entity_id=original.id,
+            action="credit_note",
+            performed_by=user_id,
+            performer_type="user",
+            after_state={"credit_note_number": cn_number, "reason": reason},
+            terminal_ip=terminal_ip,
+        )
+        db.commit()
+
+        return {"success": True, "invoice": IMSInvoiceRepository.get_by_id(db, tenant_id, cn.id)}

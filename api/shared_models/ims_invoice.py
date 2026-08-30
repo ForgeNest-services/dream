@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, DateTime, ForeignKey, Index
+from sqlalchemy import Column, String, Boolean, Integer, Numeric, Text, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 import uuid
@@ -25,7 +25,7 @@ class IMSInvoice(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     tenant_id = Column(String(36), ForeignKey("public.tenants.id"), nullable=False, index=True)
     number = Column(String(50), nullable=False)
-    kind = Column(String(20), nullable=False)  # "tax" | "abbreviated"
+    kind = Column(String(20), nullable=False)  # "tax" | "abbreviated" | "quotation"
     date = Column(DateTime, nullable=False)
     date_bs = Column(String(10), nullable=False)
     # Resolved from the invoice's own date_bs (see
@@ -35,6 +35,16 @@ class IMSInvoice(Base):
     fiscal_year_id = Column(String(36), ForeignKey("public.ims_fiscal_years.id"), nullable=True)
     branch_id = Column(String(36), ForeignKey("public.branches.id"), nullable=False, index=True)
     customer_id = Column(String(36), ForeignKey("public.ims_parties.id"), nullable=False, index=True)
+
+    # ── Seller snapshot (IRD: snapshotted at issue time) ─────────────────────
+    seller_name = Column(String(255), nullable=True)
+    seller_address = Column(Text, nullable=True)
+    seller_pan = Column(String(50), nullable=True)
+
+    # ── Buyer snapshot (IRD: buyer PAN mandatory for B2B VAT bills) ──────────
+    buyer_name = Column(String(255), nullable=True)
+    buyer_pan = Column(String(50), nullable=True)
+    buyer_address = Column(Text, nullable=True)
 
     # Snapshotted totals (see lib/invoice.ts's computeTotals) — never
     # recomputed live, matching the project's snapshot convention for
@@ -51,6 +61,21 @@ class IMSInvoice(Base):
     status = Column(String(20), nullable=False)  # paid | partial | unpaid
     note = Column(String(1000), nullable=True)
     user_id = Column(String(36), nullable=False)
+
+    # ── Reprint (IRD: new row per reprint, watermarked "Copy of Original") ────
+    is_reprint = Column(Boolean, nullable=False, default=False)
+    reprint_of = Column(String(36), ForeignKey("public.ims_invoices.id"), nullable=True)
+    reprint_number = Column(Integer, nullable=True)
+
+    # ── Credit notes (IRD: own serial sequence, reverses original) ───────────
+    is_credit_note = Column(Boolean, nullable=False, default=False)
+    original_invoice_id = Column(String(36), ForeignKey("public.ims_invoices.id"), nullable=True, index=True)
+    note_reason = Column(Text, nullable=True)
+
+    # ── CBMS (IRD Central Billing Monitoring System) ──────────────────────────
+    cbms_synced = Column(Boolean, nullable=False, default=False)
+    cbms_synced_at = Column(DateTime(timezone=True), nullable=True)
+
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     lines = relationship(
