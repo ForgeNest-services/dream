@@ -6,7 +6,7 @@ from shared_models import AppSubscription, App
 from features.subscriptions.repository import SubscriptionRepository
 from utils.logger import logger
 
-TRIAL_DAYS = 30
+TRIAL_DAYS = 1  # TODO(testing): revert to 30 before real launch — shortened to test trial expiry end-to-end
 DEFAULT_BUNDLE_DISCOUNT_PERCENT = Decimal("20")
 
 
@@ -25,8 +25,9 @@ class SubscriptionService:
         """Call this from each app's credential-creation path (see
         HotelPMSCredentialService.create / RestroCredentialService.create /
         IMSCredentialService.create) right after a credential is created.
-        Starts that app's independent 30-day trial the first time the
-        tenant actually starts using it — not at signup, not on login.
+        Starts that app's independent trial (length: TRIAL_DAYS above) the
+        first time the tenant actually starts using it — not at signup,
+        not on login.
         Idempotent: a no-op if a subscription row already exists for this
         (tenant, app), so it's safe to call on every credential creation,
         not just the first."""
