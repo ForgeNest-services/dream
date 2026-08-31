@@ -25,11 +25,12 @@ from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad
 from utils.logger import logger
 
 
-# TODO(settings): once per-branch VAT settings persist (Phase C: Settings),
-# read from settings instead of these constants. Snapshot at mark-paid time so
-# a later VAT rate change doesn't restate historical orders.
-DEFAULT_VAT_ENABLED = True
-DEFAULT_VAT_RATE = Decimal("13")
+# TODO(vat): re-enable when RMS VAT is ready. VAT is intentionally disabled
+# for now — only PAN capture is required. To enable: flip DEFAULT_VAT_ENABLED
+# to True and ensure per-branch VAT settings are read from IMSBranchSettings
+# (or equivalent RMS settings) so the rate is configurable per tenant.
+DEFAULT_VAT_ENABLED = False  # ← set True when enabling VAT for RMS
+DEFAULT_VAT_RATE = Decimal("13")  # IRD standard rate — unchanged when re-enabling
 
 
 def compute_order_total(order) -> Decimal:
@@ -469,7 +470,10 @@ class OrderService:
         settled_at_value = None if payment_method == "khata" else now
         clear_settled = payment_method == "khata"
 
-        # ── IRD: snapshot VAT breakdown at close time ─────────────────────────
+        # ── IRD: PAN snapshot — seller and buyer ─────────────────────────────
+        # VAT computation is intentionally disabled for RMS (DEFAULT_VAT_ENABLED=False).
+        # When VAT is re-enabled, uncomment the taxable/vat/total block below
+        # and remove the simplified total line.
         subtotal = sum(
             (Decimal(line.price) * line.qty for line in order.lines if not line.is_voided),
             Decimal("0"),
@@ -478,27 +482,29 @@ class OrderService:
             discount = subtotal * Decimal(order.discount_value) / Decimal("100")
         else:
             discount = Decimal(order.discount_value)
-        taxable = max(Decimal("0"), subtotal - discount)
-        vat = (taxable * DEFAULT_VAT_RATE / Decimal("100")) if DEFAULT_VAT_ENABLED else Decimal("0")
-        total = (taxable + vat).quantize(Decimal("0.01"))
 
-        # ── IRD: seller snapshot ──────────────────────────────────────────────
+        # ── TODO(vat): uncomment when enabling VAT for RMS ────────────────────
+        # taxable = max(Decimal("0"), subtotal - discount)
+        # vat = (taxable * DEFAULT_VAT_RATE / Decimal("100")) if DEFAULT_VAT_ENABLED else Decimal("0")
+        # total = (taxable + vat).quantize(Decimal("0.01"))
+        # ─────────────────────────────────────────────────────────────────────
+        total = (subtotal - discount).quantize(Decimal("0.01"))
+
         tenant = TenantRepository.get_by_id(db, tenant_id)
         branch = BranchRepository.get_by_id(db, tenant_id, branch_id)
         order.seller_name = tenant.name if tenant else None
         order.seller_address = branch.address if branch else None
         order.seller_pan = tenant.pan if tenant else None
 
-        # ── IRD: buyer snapshot ───────────────────────────────────────────────
         if effective_customer_id:
             customer_obj = CustomerRepository.get_by_id(db, tenant_id, effective_customer_id)
             order.buyer_name = customer_obj.name if customer_obj else None
         order.buyer_pan = buyer_pan
 
         order.subtotal_amount = subtotal
-        order.taxable_amount = taxable
+        order.taxable_amount = Decimal("0")   # TODO(vat): set to (subtotal - discount) when VAT enabled
         order.exempt_amount = Decimal("0")
-        order.vat_amount = vat
+        order.vat_amount = Decimal("0")       # TODO(vat): compute from taxable * rate when VAT enabled
         order.total_amount = total
 
         # Auto-finish the kitchen ticket. Paying = the customer got the food,

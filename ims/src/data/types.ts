@@ -222,6 +222,24 @@ export interface Invoice {
   userId: string;
   note?: string | undefined;
   isCopy?: boolean | undefined;
+  // IRD Annex 5: seller snapshot (printed on the bill, snapshotted at issue time)
+  sellerName?: string | null;
+  sellerAddress?: string | null;
+  sellerPan?: string | null;
+  // IRD Annex 5: buyer snapshot
+  buyerName?: string | null;
+  buyerPan?: string | null;
+  buyerAddress?: string | null;
+  // IRD reprint fields
+  isReprint?: boolean;
+  reprintOf?: string | null;
+  reprintNumber?: number | null;
+  // IRD credit note fields
+  isCreditNote?: boolean;
+  originalInvoiceId?: string | null;
+  noteReason?: string | null;
+  // IRD CBMS sync status
+  cbmsSynced?: boolean;
 }
 
 export interface CompanyProfile {

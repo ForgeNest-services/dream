@@ -70,10 +70,6 @@ function PrintInvoicePage() {
   const t = computeStoredTotals(inv.lines);
   const date = new Date(inv.date);
   const isQuote = inv.kind === "quotation";
-  // Whether this invoice actually carries VAT is a property of the invoice
-  // itself (its stored lines), not today's live company.vatRegistered
-  // toggle — a bill made when VAT was off must always print as a plain
-  // invoice, even if the company later turns VAT on, and vice versa.
   const hasVat = t.vat > 0;
   const displayVatRate = inv.lines.find((l) => l.taxable !== false && l.taxRate)?.taxRate ?? c.vatRate;
   const docTitle = isQuote
@@ -84,6 +80,27 @@ function PrintInvoicePage() {
         : "Tax Invoice / कर बीजक"
       : "Invoice / बीजक";
   const isThermal = size === "thermal";
+
+  // IRD: use snapshotted seller info (captured at issue time) — the live
+  // company profile may have changed since, but the bill must reflect what
+  // was true when it was issued.
+  const sellerName = inv.sellerName ?? c.legalName;
+  const sellerAddress = inv.sellerAddress ?? c.address;
+  const sellerPan = inv.sellerPan ?? c.pan;
+
+  // IRD Annex 5: buyer PAN/name from snapshot. Prefer snapshot over live
+  // party data so a customer record update can't silently alter a filed bill.
+  const buyerName = inv.buyerName ?? cust?.name;
+  const buyerPan = inv.buyerPan ?? cust?.pan;
+
+  // IRD reprint watermark — driven by the stored is_reprint flag, not the
+  // client-side copy toggle. A reprint is a distinct legal document and must
+  // always display its reprint number.
+  const reprintLabel = inv.isReprint
+    ? `Copy of Original — Reprint #${inv.reprintNumber ?? 1}`
+    : copy === "original"
+      ? "Original Copy"
+      : "Copy of Original";
 
   return (
     <div className="min-h-screen bg-muted/40 py-6 print:bg-white print:py-0">
@@ -128,13 +145,13 @@ function PrintInvoicePage() {
         }`}
       >
         <div className={`border-b border-black/70 pb-3 ${isThermal ? "text-left" : "text-center"}`}>
-          <h1 className="text-lg font-semibold uppercase tracking-wide">{c.legalName}</h1>
-          <p>{c.address}</p>
+          <h1 className="text-lg font-semibold uppercase tracking-wide">{sellerName}</h1>
+          <p>{sellerAddress}</p>
           <p>
             Tel: {c.phone} · {c.email}
           </p>
           <p className="font-medium">
-            {hasVat ? "VAT No." : "PAN No."} {c.pan}
+            {hasVat ? "VAT No." : "PAN No."} {sellerPan}
           </p>
         </div>
 
@@ -142,21 +159,21 @@ function PrintInvoicePage() {
           <p className="inline-block border border-black/70 px-3 py-1 text-sm font-semibold uppercase">
             {docTitle}
           </p>
-          <p className="mt-1 text-xs uppercase tracking-widest">
-            {copy === "original" ? "Original Copy" : "Copy of Original"}
-          </p>
+          {inv.isCreditNote && (
+            <p className="mt-0.5 text-xs font-semibold uppercase text-red-700">Credit Note</p>
+          )}
+          <p className="mt-1 text-xs uppercase tracking-widest">{reprintLabel}</p>
         </div>
 
         <div className="grid gap-2 border-y border-black/30 py-2 text-xs sm:grid-cols-2">
           <div>
             <p>
-              <span className="font-medium">Buyer:</span> {cust?.name ?? "Walk-in customer"}
+              <span className="font-medium">Buyer:</span> {buyerName ?? "Walk-in customer"}
             </p>
-            <p>{cust?.address}</p>
-            {cust?.pan ? (
+            {inv.buyerAddress ? <p>{inv.buyerAddress}</p> : cust?.address ? <p>{cust.address}</p> : null}
+            {buyerPan ? (
               <p>
-                <span className="font-medium">{cust.isVatRegistered ? "VAT" : "PAN"}:</span>{" "}
-                {cust.pan}
+                <span className="font-medium">PAN:</span> {buyerPan}
               </p>
             ) : null}
             {cust?.phone ? <p>Tel: {cust.phone}</p> : null}
