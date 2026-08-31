@@ -11,6 +11,7 @@
     initFaqAccordion();
     initNewsletterForm();
     initContactForm();
+    initPricingToggle();
 
     // GSAP/ScrollTrigger load via <script async>, independently of this
     // file, so they may already be present, still in flight, or (rare
@@ -134,6 +135,48 @@
         }
       });
     });
+  }
+
+  // ---------------------------------------------------------------------
+  // Pricing monthly/yearly toggle — swaps [data-price-monthly] /
+  // [data-price-yearly] spans via the hidden attribute. Every pricing card
+  // on the page updates together from one toggle, driven by data-period on
+  // the clicked button rather than a per-card state.
+  // ---------------------------------------------------------------------
+  function initPricingToggle() {
+    var toggle = document.getElementById("pricing-toggle");
+    if (!toggle) return;
+
+    var buttons = toggle.querySelectorAll(".pricing-toggle-btn");
+    var monthlyEls = document.querySelectorAll("[data-price-monthly]");
+    var yearlyEls = document.querySelectorAll("[data-price-yearly]");
+
+    function setPeriod(period) {
+      var isYearly = period === "yearly";
+
+      monthlyEls.forEach(function (el) {
+        el.hidden = isYearly;
+      });
+      yearlyEls.forEach(function (el) {
+        el.hidden = !isYearly;
+      });
+
+      buttons.forEach(function (btn) {
+        var active = btn.getAttribute("data-period") === period;
+        btn.setAttribute("aria-selected", String(active));
+        btn.classList.toggle("bg-ink", active);
+        btn.classList.toggle("text-white", active);
+        btn.classList.toggle("text-ink/60", !active);
+      });
+    }
+
+    buttons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        setPeriod(btn.getAttribute("data-period"));
+      });
+    });
+
+    setPeriod("monthly");
   }
 
   // ---------------------------------------------------------------------

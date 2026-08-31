@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About Srota</title>
+    <meta
+      name="description"
+      content="Srota is a product of Forgenest Services Pvt. Ltd., built to help Nepali businesses run paperless. Read why we built it and what Srota means."
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="./public/favicons/favicon.svg"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="96x96"
+      href="./public/favicons/favicon-96x96.png"
+    />
+    <link rel="shortcut icon" href="./public/favicons/favicon.ico" />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="./public/favicons/apple-touch-icon.png"
+    />
+    <link rel="manifest" href="./public/favicons/site.webmanifest" />
+    <meta name="theme-color" content="#2563eb" />
+    <link rel="stylesheet" href="./dist/output.css" />
+  </head>
+  <body class="overflow-x-hidden bg-mist text-ink">
+    <!-- ============================= NAV ============================= -->
+    <header class="fixed inset-x-0 top-0 z-50">
+      <div class="mx-auto max-w-7xl px-6 lg:px-10">
+        <nav
+          id="site-nav"
+          class="mt-4 flex items-center justify-between gap-2 rounded-2xl border border-ink/10 bg-white/80 px-3 py-0.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-md transition-shadow sm:px-6"
+        >
+          <a
+            href="/"
+            class="flex min-w-0 shrink items-center"
+            aria-label="Srota home"
+          >
+            <img
+              src="./public/primary-logo.png"
+              alt="Srota, Source of Solutions"
+              class="h-9 w-auto sm:h-20"
+            />
+          </a>
+
+          <div class="hidden items-center gap-1 lg:flex">
+            <div class="group relative">
+              <button
+                class="flex items-center gap-1 rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:bg-ink/[0.04] hover:text-ink"
+              >
+                Solutions
+                <svg
+                  class="size-3.5 opacity-50 transition-transform group-hover:rotate-180"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                >
+                  <path
+                    d="M2.5 4.5L6 8l3.5-3.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div
+                class="invisible absolute left-1/2 top-full w-52 -translate-x-1/2 pt-2 opacity-0 transition-opacity duration-150 group-hover:visible group-hover:opacity-100"
+              >
+                <div
+                  class="rounded-xl border border-ink/10 bg-white p-1.5 shadow-lg shadow-ink/[0.08]"
+                >
+                  <a
+                    href="/rms"
+                    class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink"
+                    >Srota RMS</a
+                  >
+                  <a
+                    href="/ims"
+                    class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink"
+                    >Srota IMS</a
+                  >
+                </div>
+              </div>
+            </div>
+            <a
+              href="/pricing"
+              class="rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:bg-ink/[0.04] hover:text-ink"
+              >Pricing</a
+            >
+            <div class="group relative">
+              <button
+                class="flex items-center gap-1 rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:bg-ink/[0.04] hover:text-ink"
+              >
+                Resources
+                <svg
+                  class="size-3.5 opacity-50 transition-transform group-hover:rotate-180"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                >
+                  <path
+                    d="M2.5 4.5L6 8l3.5-3.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div
+                class="invisible absolute left-1/2 top-full w-48 -translate-x-1/2 pt-2 opacity-0 transition-opacity duration-150 group-hover:visible group-hover:opacity-100"
+              >
+                <div
+                  class="rounded-xl border border-ink/10 bg-white p-1.5 shadow-lg shadow-ink/[0.08]"
+                >
+                  <a
+                    href="/resources#guides"
+                    class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink"
+                    >Guides</a
+                  >
+                  <a
+                    href="/resources#tutorials"
+                    class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink"
+                    >Tutorials</a
+                  >
+                  <a
+                    href="/blog"
+                    class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink"
+                    >Blog</a
+                  >
+                </div>
+              </div>
+            </div>
+            <a
+              href="/about"
+              class="rounded-full bg-ink/[0.04] px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-ink/[0.06]"
+              >About</a
+            >
+            <a
+              href="/contact"
+              class="rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:bg-ink/[0.04] hover:text-ink"
+              >Contact</a
+            >
+          </div>
+
+          <div class="flex shrink-0 items-center gap-1 sm:gap-2">
+            <a
+              href="https://app.srotaapps.com"
+              target="_blank"
+              rel="noopener"
+              class="hidden rounded-full px-4 py-2.5 text-sm font-semibold text-ink/70 transition-colors hover:text-ink sm:inline-block"
+              >Sign in</a
+            >
+            <a
+              href="https://app.srotaapps.com"
+              target="_blank"
+              rel="noopener"
+              class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-ink px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-ocean sm:px-5 sm:py-2.5 sm:text-sm"
+            >
+              Start Free
+            </a>
+            <button
+              id="menu-toggle"
+              class="grid size-9 shrink-0 place-items-center rounded-full text-ink transition-colors hover:bg-ink/[0.04] sm:size-10 lg:hidden"
+              aria-label="Open menu"
+              aria-expanded="false"
+            >
+              <svg class="size-5" viewBox="0 0 20 20" fill="none">
+                <path
+                  d="M3 5.5h14M3 10h14M3 14.5h14"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </nav>
+
+        <!-- Mobile menu -->
+        <div
+          id="mobile-menu"
+          class="mt-2 hidden overflow-hidden rounded-2xl border border-ink/10 bg-white shadow-lg shadow-ink/[0.08] lg:hidden"
+        >
+          <div class="flex flex-col p-2">
+            <div class="mobile-accordion-item">
+              <button
+                class="mobile-accordion-trigger flex w-full items-center justify-between gap-2 rounded-xl px-4 py-3 text-left text-sm font-medium text-ink/80 hover:bg-mist"
+              >
+                Solutions
+                <svg
+                  class="mobile-accordion-icon size-3.5 shrink-0 text-slate transition-transform duration-200"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                >
+                  <path
+                    d="M2.5 4.5L6 8l3.5-3.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div
+                class="mobile-accordion-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-out"
+              >
+                <div class="overflow-hidden">
+                  <a
+                    href="/rms"
+                    class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist"
+                    >Srota RMS</a
+                  >
+                  <a
+                    href="/ims"
+                    class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist"
+                    >Srota IMS</a
+                  >
+                </div>
+              </div>
+            </div>
+
+            <a
+              href="/pricing"
+              class="rounded-xl px-4 py-3 text-sm font-medium text-ink/80 hover:bg-mist"
+              >Pricing</a
+            >
+
+            <div class="mobile-accordion-item">
+              <button
+                class="mobile-accordion-trigger flex w-full items-center justify-between gap-2 rounded-xl px-4 py-3 text-left text-sm font-medium text-ink/80 hover:bg-mist"
+              >
+                Resources
+                <svg
+                  class="mobile-accordion-icon size-3.5 shrink-0 text-slate transition-transform duration-200"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                >
+                  <path
+                    d="M2.5 4.5L6 8l3.5-3.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div
+                class="mobile-accordion-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-out"
+              >
+                <div class="overflow-hidden">
+                  <a
+                    href="/resources#guides"
+                    class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist"
+                    >Guides</a
+                  >
+                  <a
+                    href="/resources#tutorials"
+                    class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist"
+                    >Tutorials</a
+                  >
+                  <a
+                    href="/blog"
+                    class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist"
+                    >Blog</a
+                  >
+                </div>
+              </div>
+            </div>
+
+            <a
+              href="/about"
+              class="rounded-xl px-4 py-3 text-sm font-medium text-ocean"
+              >About</a
+            >
+            <a
+              href="/contact"
+              class="rounded-xl px-4 py-3 text-sm font-medium text-ink/80 hover:bg-mist"
+              >Contact</a
+            >
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <!-- ============================= PAGE HEADER ============================= -->
+      <section class="relative overflow-hidden px-6 pb-16 pt-40 sm:pt-48 lg:px-10">
+        <div
+          class="pointer-events-none absolute -left-32 top-0 -z-10 size-[26rem] rounded-full bg-ocean/15 blur-3xl"
+          aria-hidden="true"
+        ></div>
+        <div class="mx-auto max-w-3xl text-center">
+          <p
+            data-reveal
+            class="text-sm font-semibold uppercase tracking-[0.14em] text-ocean"
+          >
+            About us
+          </p>
+          <h1
+            data-reveal
+            class="mt-3 font-display text-4xl font-semibold leading-tight tracking-tight text-ink sm:text-6xl"
+          >
+            The source of solutions
+          </h1>
+          <p
+            data-reveal
+            class="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-slate"
+          >
+            Srota is a product of Forgenest Services Pvt. Ltd., built for
+            Nepali businesses that are ready to leave the notebook behind.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============================= CONTENT ============================= -->
+      <section class="px-6 pb-24 lg:px-10">
+        <div class="mx-auto max-w-2xl space-y-14">
+          <div data-reveal>
+            <h2 class="font-display text-2xl font-semibold text-ink">
+              Why we call it Srota
+            </h2>
+            <p class="mt-4 text-base leading-relaxed text-ink/85">
+              Srota is a Nepali word that means source, or origin. It's the
+              point where something begins to flow. We chose it because that's
+              what we wanted this platform to be: the source your business
+              works from. One place your bookings, your bills, your stock,
+              and your staff all flow through, instead of being scattered
+              across a notebook, a calculator, and a WhatsApp group.
+            </p>
+            <p class="mt-4 text-base leading-relaxed text-ink/85">
+              "The source of solutions" is our way of saying that whatever
+              problem your business runs into day to day, from a missing
+              stock count to a bill that has to be correct the first time,
+              there should be one place you can go to fix it.
+            </p>
+          </div>
+
+          <div data-reveal>
+            <h2 class="font-display text-2xl font-semibold text-ink">
+              Why we built this
+            </h2>
+            <p class="mt-4 text-base leading-relaxed text-ink/85">
+              Most software built for businesses in Nepal is either made for
+              a different country and adapted afterward, or built once and
+              left alone. Neither approach fits how a restaurant or a shop
+              here actually runs. Bills need to be in Bikram Sambat. VAT
+              rules follow the Electronic Billing Procedure. A khata is a
+              real payment method, not an edge case. We built Srota around
+              these details from day one instead of bolting them on later.
+            </p>
+            <p class="mt-4 text-base leading-relaxed text-ink/85">
+              Digital Nepal is a goal a lot of people talk about. To us, it
+              doesn't start with big infrastructure, it starts with small
+              businesses being able to run without paper. A restaurant that
+              can trust its bills. A shop that always knows what's in stock.
+              That's the part we're trying to build.
+            </p>
+          </div>
+
+          <div data-reveal>
+            <h2 class="font-display text-2xl font-semibold text-ink">
+              Why a business needs this
+            </h2>
+            <p class="mt-4 text-base leading-relaxed text-ink/85">
+              A notebook works until it doesn't. A missing page, a
+              handwriting nobody can read at month end, a stock count that
+              turns out to be wrong when a customer asks for something you
+              thought you had. These aren't rare problems, they're the daily
+              cost of running a business without proper tools. Srota exists
+              to remove that cost, not by making things more complicated, but
+              by making the correct way the easy way.
+            </p>
+          </div>
+
+          <div data-reveal>
+            <h2 class="font-display text-2xl font-semibold text-ink">
+              How we work on it
+            </h2>
+            <p class="mt-4 text-base leading-relaxed text-ink/85">
+              Our team ships small improvements constantly rather than
+              waiting for a big yearly release. Every question a business
+              owner asks us, every bug a waiter or a store keeper runs into
+              on a real shift, feeds directly back into what we build next.
+              Srota RMS and Srota IMS are both still growing, and we intend
+              to keep them that way.
+            </p>
+          </div>
+
+          <div
+            class="rounded-[1.75rem] border border-ink/10 bg-white p-8 sm:p-10"
+            data-reveal
+          >
+            <h2 class="font-display text-xl font-semibold text-ink">
+              A product of Forgenest
+            </h2>
+            <p class="mt-4 text-base leading-relaxed text-ink/85">
+              Srota is built and managed by Forgenest Services Pvt. Ltd. If
+              you'd like to know more about the company behind Srota, visit
+            </p>
+            <a
+              href="https://www.forgenestservices.com.np"
+              target="_blank"
+              rel="noopener"
+              class="mt-2 inline-flex items-center gap-1.5 text-base font-semibold text-ocean hover:text-ocean-dark"
+            >
+              www.forgenestservices.com.np
+              <svg class="size-3.5" viewBox="0 0 16 16" fill="none">
+                <path
+                  d="M3.5 8h9M8.5 4l4 4-4 4"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================= CTA ============================= -->
+      <section class="px-6 pb-24 sm:pb-28 lg:px-10">
+        <div class="mx-auto max-w-5xl">
+          <div
+            class="relative overflow-hidden rounded-[2.5rem] bg-ink px-8 py-16 text-center sm:px-16 sm:py-20"
+            data-reveal
+          >
+            <div class="pointer-events-none absolute -left-24 -top-24 size-72 rounded-full bg-ocean/25 blur-3xl" aria-hidden="true"></div>
+            <div class="pointer-events-none absolute -bottom-24 -right-24 size-72 rounded-full bg-teal/20 blur-3xl" aria-hidden="true"></div>
+            <p class="relative text-sm font-semibold uppercase tracking-[0.14em] text-teal">
+              Ready when you are
+            </p>
+            <h2 class="relative mx-auto mt-4 max-w-2xl font-display text-3xl font-semibold leading-tight tracking-tight text-white sm:text-5xl">
+              See Srota running your business
+            </h2>
+            <p class="relative mx-auto mt-4 max-w-xl text-lg leading-relaxed text-white/60">
+              No card required. Set up your business in minutes and see what
+              running paperless actually feels like.
+            </p>
+            <div class="relative mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <a
+                href="https://app.srotaapps.com"
+                target="_blank"
+                rel="noopener"
+                class="inline-flex w-full items-center justify-center gap-2 rounded-full bg-ocean px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-ocean/25 transition-all hover:-translate-y-0.5 hover:bg-ocean-dark hover:shadow-xl hover:shadow-ocean/30 sm:w-auto"
+              >
+                Start your free trial
+                <svg class="size-4" viewBox="0 0 16 16" fill="none">
+                  <path d="M3.5 8h9M8.5 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </a>
+              <a
+                href="/contact"
+                class="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-7 py-3.5 text-base font-semibold text-white transition-colors hover:bg-white/10 sm:w-auto"
+              >
+                Talk to us first
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ============================= FOOTER ============================= -->
+    <footer class="bg-ink px-6 pb-10 pt-16 lg:px-10">
+      <div class="mx-auto max-w-7xl">
+        <div class="grid gap-12 sm:grid-cols-2 lg:grid-cols-5">
+          <div class="lg:col-span-2">
+            <img
+              src="./public/primary-logo.png"
+              alt="Srota, Source of Solutions"
+              class="h-16 w-auto brightness-0 invert"
+            />
+            <p class="mt-5 max-w-xs text-sm leading-relaxed text-white/55">
+              Business software built for Nepal: one platform, every tool your
+              business needs to run without paper.
+            </p>
+          </div>
+
+          <div>
+            <p class="text-sm font-semibold text-white">Solutions</p>
+            <ul class="mt-4 space-y-3 text-sm text-white/55">
+              <li><a href="/rms" class="hover:text-teal">Srota RMS</a></li>
+              <li><a href="/ims" class="hover:text-teal">Srota IMS</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <p class="text-sm font-semibold text-white">Resources</p>
+            <ul class="mt-4 space-y-3 text-sm text-white/55">
+              <li><a href="/resources#guides" class="hover:text-teal">Guides</a></li>
+              <li><a href="/resources#tutorials" class="hover:text-teal">Tutorials</a></li>
+              <li><a href="/blog" class="hover:text-teal">Blog</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <p class="text-sm font-semibold text-white">Company</p>
+            <ul class="mt-4 space-y-3 text-sm text-white/55">
+              <li><a href="/about" class="hover:text-teal">About us</a></li>
+              <li><a href="/pricing" class="hover:text-teal">Pricing</a></li>
+              <li><a href="/contact" class="hover:text-teal">Contact</a></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="mt-14 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-8 sm:flex-row">
+          <p class="text-xs text-white/45">
+            &copy; <span id="footer-year">2026</span> Srota. All rights reserved.
+          </p>
+          <p class="text-xs text-white/45">Made in Nepal, for Nepal.</p>
+        </div>
+      </div>
+    </footer>
+
+    <script src="./dist/index.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js" async></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js"
+      async
+      onload="window.__gsapReady = true; window.dispatchEvent(new Event('gsap:ready'))"
+    ></script>
+  </body>
+</html>
