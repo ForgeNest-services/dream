@@ -12,6 +12,7 @@ from core.seed import (
     seed_apps,
     seed_subscription_plans,
     seed_app_icons,
+    seed_menu_seed_images,
     ensure_ims_products_schema,
     ensure_ims_parties_schema,
     ensure_ims_bs_date_schema,
@@ -183,6 +184,19 @@ async def lifespan(app: FastAPI):
         logger.info("App icon seeding completed")
     except Exception as e:
         logger.error(f"Failed to seed app icons: {type(e).__name__}: {str(e)}")
+
+    # RMS default-menu images: upload the shared, fixed image set to MinIO
+    # ONCE here rather than per-branch — see seed_menu_seed_images' docstring
+    # for why (this is what made a brand-new RMS account's menu take
+    # 10-15s to appear: 19 sequential per-branch MinIO uploads on first
+    # request instead of zero). Non-fatal — a missing image just means that
+    # seeded item has no picture, not a broken signup.
+    try:
+        logger.info("Seeding RMS menu images...")
+        seed_menu_seed_images()
+        logger.info("RMS menu image seeding completed")
+    except Exception as e:
+        logger.error(f"Failed to seed RMS menu images: {type(e).__name__}: {str(e)}")
 
     yield
 

@@ -5,7 +5,7 @@ from sqlalchemy import text
 from core.database import SessionLocal
 from core.configs import settings
 from core.security import hash_password
-from core.storage import upload_file_at_key, build_public_url
+from core.storage import upload_file_at_key, build_public_url, object_exists
 from shared_models import PlatformAdmin, App
 from utils.bikram_sambat import to_bs_iso
 from utils.logger import logger
@@ -714,3 +714,76 @@ def seed_app_icons():
         # Frontend falls back to the react-icons `icon` field when icon_url is null.
     finally:
         db.close()
+
+
+# Path to Zestro/RMS's default-menu seed images. Same "images are bundled
+# assets, not DB rows" pattern as _ASSETS_DIR, just a different directory —
+# these are per-feature (features/restro/) rather than platform-wide.
+_RMS_MENU_SEED_IMAGES_DIR = (
+    Path(__file__).resolve().parent.parent / "features" / "restro" / "menu_seed_images"
+)
+_RMS_MENU_SEED_IMAGE_PREFIX = "platform/menu-seed-images"
+
+_MENU_SEED_IMAGE_MIME = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+
+
+def seed_menu_seed_images() -> None:
+    """Uploads every image under features/restro/menu_seed_images/ to MinIO
+    ONCE at a stable, shared key (platform/menu-seed-images/{relative-path})
+    — not per-tenant, not per-branch. Every new RMS branch's default-menu
+    seed then just builds the URL for these pre-uploaded images instead of
+    re-uploading identical bytes on every signup.
+
+    Why this exists: menu_seeder.py used to call storage.upload_file() once
+    per seeded item (19 items) synchronously inside the request that seeds a
+    fresh branch's menu — 19 sequential MinIO round-trips under a Postgres
+    advisory lock, which is what was making a brand-new RMS account's menu
+    take 10-15s to appear. Uploading the (fixed, shared) image set once at
+    API startup instead makes the per-branch seed a pure DB write — fast
+    enough to finish inside the request that triggers it.
+
+    Idempotent via object_exists() — skips any image already in MinIO, so
+    a normal restart does zero uploads. Never raises: a missing MinIO or a
+    partial image set shouldn't block API startup; menu_seeder.py falls
+    back to seeding the item without an image if its key isn't present."""
+    if not _RMS_MENU_SEED_IMAGES_DIR.exists():
+        return
+
+    uploaded = 0
+    skipped = 0
+    for path in sorted(_RMS_MENU_SEED_IMAGES_DIR.rglob("*")):
+        if not path.is_file() or path.name.lower() == "readme.md":
+            continue
+        rel_path = path.relative_to(_RMS_MENU_SEED_IMAGES_DIR).as_posix()
+        key = f"{_RMS_MENU_SEED_IMAGE_PREFIX}/{rel_path}"
+
+        try:
+            if object_exists(key):
+                skipped += 1
+                continue
+            mime = _MENU_SEED_IMAGE_MIME.get(path.suffix.lower())
+            if not mime:
+                logger.warning(f"Menu seed image has unsupported extension, skipping: {rel_path}")
+                continue
+            with path.open("rb") as fp:
+                content = fp.read()
+            upload_file_at_key(key, content, mime)
+            uploaded += 1
+        except Exception as e:
+            logger.error(f"Failed to seed menu image {rel_path}: {type(e).__name__}: {str(e)}")
+            # Keep going — one bad image shouldn't block the rest or API startup.
+
+    if uploaded:
+        logger.info(f"Menu seed images uploaded: {uploaded} (already present: {skipped})")
+
+
+def menu_seed_image_url(relative_path: str) -> str:
+    """Public URL for a pre-uploaded menu seed image (see
+    seed_menu_seed_images). Pure string-building — no I/O — safe to call
+    per seeded item without a network round-trip."""
+    return build_public_url(f"{_RMS_MENU_SEED_IMAGE_PREFIX}/{relative_path}")

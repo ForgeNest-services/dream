@@ -4,16 +4,21 @@ Runs automatically once per branch — triggered from CategoryService right
 after the default categories are provisioned. Idempotent: does nothing if
 any menu item already exists for the branch.
 
-Images referenced by seed rows are read from ./menu_seed_images/ and
-uploaded to MinIO under the branch's normal menu-items prefix, so seeded
-items look identical to items uploaded through the UI.
+Images referenced by seed rows point at a shared, pre-uploaded copy in MinIO
+(platform/menu-seed-images/..., uploaded once at API startup — see
+core.seed.seed_menu_seed_images) rather than being uploaded per-branch here.
+Every tenant's seeded items share the same image bytes/URL; this used to
+re-upload the same ~19 images to MinIO on every single new branch, which was
+19 sequential network round-trips inside the request that seeds a fresh
+branch — the actual cause of a brand-new branch's menu taking 10-15s to
+appear. Building a URL is now pure string formatting, no I/O.
 """
 
 from pathlib import Path
 from decimal import Decimal
 from sqlalchemy.orm import Session
 
-from core import storage
+from core.seed import menu_seed_image_url
 from features.restro.menu_item_repository import MenuItemRepository
 from features.restro.category_repository import CategoryRepository
 from features.restro.menu_seed_data import DEFAULT_MENU
@@ -22,17 +27,11 @@ from utils.logger import logger
 
 SEED_IMAGES_DIR = Path(__file__).parent / "menu_seed_images"
 
-_MIME_BY_EXT = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".webp": "image/webp",
-}
 
-
-def _upload_seed_image(tenant_id: str, branch_id: str, filename: str) -> str | None:
-    """Best-effort upload — missing file or unknown extension returns None
-    and the item just gets created without an image. Never raises."""
+def _seed_image_url(filename: str) -> str | None:
+    """URL for a pre-uploaded seed image, or None if the file isn't present
+    on disk (so seed_menu_seed_images wouldn't have uploaded it either) —
+    the item is created without an image rather than pointing at a 404."""
     if not filename:
         return None
     path = SEED_IMAGES_DIR / filename
@@ -41,21 +40,7 @@ def _upload_seed_image(tenant_id: str, branch_id: str, filename: str) -> str | N
             f"Seed image not found: {filename} — item will be created without an image"
         )
         return None
-    mime = _MIME_BY_EXT.get(path.suffix.lower())
-    if not mime:
-        logger.warning(
-            f"Seed image has unsupported extension: {filename} — item will be created without an image"
-        )
-        return None
-    try:
-        with open(path, "rb") as f:
-            content = f.read()
-        prefix = f"restro/{tenant_id}/{branch_id}/menu-items"
-        return storage.upload_file(prefix, path.name, content, mime)
-    except Exception as e:
-        # Upload fails shouldn't block the whole seed run — log and continue.
-        logger.error(f"Failed to upload seed image {filename}: {e}")
-        return None
+    return menu_seed_image_url(filename)
 
 
 def seed_default_menu_items(db: Session, tenant_id: str, branch_id: str) -> int:
@@ -98,7 +83,7 @@ def seed_default_menu_items(db: Session, tenant_id: str, branch_id: str) -> int:
             )
             continue
 
-        image_url = _upload_seed_image(tenant_id, branch_id, row.get("image", ""))
+        image_url = _seed_image_url(row.get("image", ""))
 
         try:
             MenuItemRepository.create(

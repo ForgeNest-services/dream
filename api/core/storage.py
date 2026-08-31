@@ -75,6 +75,17 @@ def delete_file(key: str) -> None:
     _client.delete_object(Bucket=settings.S3_BUCKET, Key=key)
 
 
+def object_exists(key: str) -> bool:
+    """Checks whether an object already exists at `key` — used to skip a
+    re-upload of stable, content-addressed seed assets (see
+    core/seed.py's seed_menu_seed_images)."""
+    try:
+        _client.head_object(Bucket=settings.S3_BUCKET, Key=key.strip("/"))
+        return True
+    except ClientError:
+        return False
+
+
 def build_public_url(key: str) -> str:
     return f"{settings.S3_PUBLIC_URL}/{settings.S3_BUCKET}/{key}"
 
