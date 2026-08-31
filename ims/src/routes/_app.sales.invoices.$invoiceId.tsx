@@ -16,7 +16,7 @@ import { computeStoredTotals, invoiceDue } from "@/lib/invoice";
 import { invoicesApi, type InvoiceDto } from "@/lib/invoices-api";
 import type { Invoice, InvoiceLine } from "@/data/types";
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
-import { ArrowLeft, FileX2, Printer, RefreshCw } from "lucide-react";
+import { ArrowLeft, FileX2, Printer, RefreshCw, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -81,6 +81,7 @@ function InvoiceDetailPage() {
   const [showCnDialog, setShowCnDialog] = useState(false);
   const [cnReason, setCnReason] = useState("");
   const [isIssuingCn, setIsIssuingCn] = useState(false);
+  const [isSyncingCbms, setIsSyncingCbms] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -133,6 +134,25 @@ function InvoiceDetailPage() {
     }
   }
 
+  async function handleCbmsSync() {
+    setIsSyncingCbms(true);
+    try {
+      const res = await invoicesApi.cbmsSync(invoiceId);
+      if (!res.success || !res.data) {
+        toast.error((res as { message?: string }).message ?? "Failed to sync to CBMS");
+        return;
+      }
+      toast.success(res.data.message ?? "Invoice synced to IRD CBMS");
+      if (invoice) {
+        setInvoice({ ...invoice, cbmsSynced: true });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to sync to CBMS");
+    } finally {
+      setIsSyncingCbms(false);
+    }
+  }
+
   const backButton = (
     <Button asChild variant="ghost" size="sm">
       <Link to="/sales/invoices">
@@ -170,6 +190,11 @@ function InvoiceDetailPage() {
     invoice.kind !== "quotation" &&
     ["owner", "manager"].includes(app.effectiveRole ?? "");
 
+  const canSyncCbms =
+    invoice.kind !== "quotation" &&
+    invoice.cbmsSynced === false &&
+    ["owner", "manager"].includes(app.effectiveRole ?? "");
+
   return (
     <>
     <div className="mx-auto max-w-4xl">
@@ -197,6 +222,17 @@ function InvoiceDetailPage() {
                 onClick={() => setShowCnDialog(true)}
               >
                 <FileX2 className="mr-1.5 h-4 w-4" /> Credit Note
+              </Button>
+            )}
+            {canSyncCbms && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isSyncingCbms}
+                onClick={handleCbmsSync}
+              >
+                <Upload className="mr-1.5 h-4 w-4" />
+                {isSyncingCbms ? "Syncing…" : "Sync to CBMS"}
               </Button>
             )}
             <Button asChild variant="outline" size="sm">

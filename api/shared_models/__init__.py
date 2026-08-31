@@ -48,6 +48,7 @@ from .restro_invoice_serial import RestroInvoiceSerial
 from .app import App
 from .subscription import AppSubscription, SubscriptionPayment
 from .subscription_plan import SubscriptionPlan, PlatformSetting
+from .ims_cbms_credential import IMSCbmsCredential
 
 __all__ = [
     "Tenant",
@@ -102,4 +103,5 @@ __all__ = [
     "SubscriptionPayment",
     "SubscriptionPlan",
     "PlatformSetting",
+    "IMSCbmsCredential",
 ]

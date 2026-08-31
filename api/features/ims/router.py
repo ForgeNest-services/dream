@@ -38,6 +38,7 @@ from features.ims.schemas import (
     CreateInvoiceRequest,
     ConvertQuotationRequest,
     IMSCreditNoteRequest,
+    IMSCbmsCredentialRequest,
     BranchSettingsData,
     UpdateBranchSettingsRequest,
     StockSummaryRow,
@@ -45,6 +46,7 @@ from features.ims.schemas import (
     PartyStatementRow,
     DashboardData,
 )
+from features.ims.cbms_service import CBMSService
 from features.ims.service import IMSCredentialService, IMSAuthService
 from features.ims.category_service import IMSCategoryService
 from features.ims.brand_service import IMSBrandService
@@ -1333,72 +1335,61 @@ def get_cbms_payload(
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
 ):
-    """Return this invoice formatted as an IRD CBMS JSON payload.
-
-    The Central Billing Monitoring System (CBMS) accepts a specific JSON shape
-    per the Electronic Billing Procedure 2074. This endpoint serializes a
-    stored invoice into that shape so the client (or a future webhook job) can
-    push it to IRD's real-time API without any further transformation.
-    Only the IMS owner/manager can request this — the payload contains PAN data.
-    """
-    if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only owner or manager can access CBMS payloads")
-    result = IMSInvoiceService.get(db, staff["tenant_id"], invoice_id)
+    inv = IMSInvoiceRepository.get_by_id(db, staff["tenant_id"], invoice_id)
+    if not inv:
+        return error_response("NOT_FOUND", "Invoice not found", 404)
+    if inv.kind not in ("tax", "abbreviated"):
+        return error_response("NOT_AN_INVOICE", "Only tax/abbreviated invoices can be submitted to CBMS", 400)
+    result = CBMSService.get_payload(db, inv, staff["tenant_id"])
     if not result["success"]:
-        return _invoice_error(result)
-    inv = result["invoice"]
+        return error_response(result["error_code"], "CBMS credentials not configured for this tenant", 400)
+    return success_response(data=result["payload"])
 
-    # Serialize line items into the IRD-expected shape.
-    items = [
-        {
-            "description": line.description,
-            "qty": str(line.qty),
-            "unit_price": str(line.rate),
-            "discount": str(line.discount),
-            "taxable": line.taxable,
-            "tax_rate": str(line.tax_rate),
-            "vat_amount": str(line.vat_amount),
-            "gross": str((line.rate - line.discount) * line.qty + line.vat_amount),
-        }
-        for line in inv.lines
-    ]
 
-    payload = {
-        "system": "SROTA IMS",
-        "invoice_number": inv.number,
-        "fiscal_year": inv.date_bs[:7] if inv.date_bs else None,  # e.g. "2082-05"
-        "date_bs": inv.date_bs,
-        "date_ad": inv.date.strftime("%Y-%m-%d") if inv.date else None,
-        "kind": inv.kind,
-        "seller": {
-            "name": inv.seller_name,
-            "pan": inv.seller_pan,
-            "address": inv.seller_address,
-        },
-        "buyer": {
-            "name": inv.buyer_name,
-            "pan": inv.buyer_pan,
-            "address": inv.buyer_address,
-        },
-        "items": items,
-        "amounts": {
-            "gross": str(inv.gross_amount),
-            "discount": str(inv.discount_amount),
-            "taxable_amount": str(inv.taxable_amount),
-            "exempt_amount": str(inv.exempt_amount),
-            "vat_amount": str(inv.vat_amount),
-            "total": str(inv.total_amount),
-        },
-        "payment_method": inv.payment_method,
-        "paid_amount": str(inv.paid_amount),
-        "is_credit_note": inv.is_credit_note,
-        "original_invoice_id": inv.original_invoice_id,
-        "is_reprint": inv.is_reprint,
-        "reprint_number": inv.reprint_number,
-        "cbms_synced": inv.cbms_synced,
-    }
+@router.post("/invoices/{invoice_id}/cbms-sync")
+def sync_to_cbms(
+    invoice_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can sync invoices to CBMS")
+    inv = IMSInvoiceRepository.get_by_id(db, staff["tenant_id"], invoice_id)
+    if not inv:
+        return error_response("NOT_FOUND", "Invoice not found", 404)
+    if inv.kind not in ("tax", "abbreviated"):
+        return error_response("NOT_AN_INVOICE", "Only tax/abbreviated invoices can be submitted to CBMS", 400)
+    result = CBMSService.sync_invoice(db, inv, staff["tenant_id"])
+    if not result["success"]:
+        return error_response(result["error_code"], result.get("detail", "CBMS sync failed"), 400)
+    return success_response(data={"synced": True, "message": "Invoice submitted to IRD CBMS successfully"})
 
-    return success_response(data=payload)
+
+@router.get("/cbms-credentials")
+def get_cbms_credentials(
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can view CBMS credentials")
+    result = CBMSService.get_credentials(db, staff["tenant_id"])
+    if not result["success"] and result["error_code"] == "CBMS_NOT_CONFIGURED":
+        return success_response(data={"configured": False})
+    return success_response(data={"configured": True, **result.get("credentials", {})})
+
+
+@router.put("/cbms-credentials")
+def save_cbms_credentials(
+    body: IMSCbmsCredentialRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] != "owner":
+        raise HTTPException(403, "Only the owner can configure CBMS credentials")
+    result = CBMSService.save_credentials(db, staff["tenant_id"], body.ird_username, body.ird_password)
+    if not result["success"]:
+        return error_response(result["error_code"], "Failed to save CBMS credentials", 400)
+    return success_response(data={"saved": True})
 
 
 # ---------------------------------------------------------------------------

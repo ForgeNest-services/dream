@@ -658,3 +658,15 @@ class DashboardData(BaseModel):
     top_sellers: list[TopSellerRow]
     low_stock_alerts: list[LowStockAlertRow]
     recent_movements: list[RecentMovementRow]
+
+
+class IMSCbmsCredentialRequest(BaseModel):
+    ird_username: str
+    ird_password: str
+
+    @field_validator("ird_username", "ird_password")
+    @classmethod
+    def not_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("cannot be blank")
+        return v.strip()

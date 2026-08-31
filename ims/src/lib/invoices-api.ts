@@ -136,4 +136,21 @@ export const invoicesApi = {
   cbmsPayload(invoiceId: string) {
     return apiClient.get<Record<string, unknown>>(`/ims/invoices/${invoiceId}/cbms-payload`);
   },
+  async cbmsSync(invoiceId: string) {
+    return apiClient.post<{ synced: boolean; message: string }>(
+      `/ims/invoices/${invoiceId}/cbms-sync`,
+      {},
+    );
+  },
+  async getCbmsCredentials() {
+    return apiClient.get<{ configured: boolean; ird_username?: string }>(
+      `/ims/cbms-credentials`,
+    );
+  },
+  async saveCbmsCredentials(username: string, password: string) {
+    return apiClient.put<{ saved: boolean }>(`/ims/cbms-credentials`, {
+      ird_username: username,
+      ird_password: password,
+    });
+  },
 };
