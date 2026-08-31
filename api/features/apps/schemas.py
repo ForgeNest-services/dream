@@ -12,5 +12,6 @@ class AppData(BaseModel):
     description: str | None = None
     icon: str | None = None
     icon_url: str | None = None
+    thumbnail_url: str | None = None
     url: str
     is_active: bool

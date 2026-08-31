@@ -1,10 +1,9 @@
 """Read-only aggregations for the RMS dashboard and reports screens.
 
 All queries scope by tenant_id + branch_id; BS date range filters hit the
-(branch_id, placed_at_bs) composite index. Numeric totals that involve the
-discount+VAT formula are computed in Python by callers via
-`compute_order_total`, since the formula (percent-or-flat discount, then
-VAT on the taxable base) doesn't translate cleanly to SQL.
+(branch_id, placed_at_bs) composite index. Numeric totals are summed in
+Python from each order's snapshotted total_amount (set once at mark-paid
+time) rather than recomputed from lines — see reports_service.py.
 """
 
 from decimal import Decimal
@@ -24,8 +23,8 @@ from shared_models import (
 
 class ReportsRepository:
     # ------------------------------------------------------------------
-    # Orders — fetched with lines eagerly loaded so callers can call
-    # compute_order_total() without triggering per-row selects.
+    # Orders — fetched with lines eagerly loaded (line_count needs them)
+    # without triggering per-row selects.
     # ------------------------------------------------------------------
 
     @staticmethod

@@ -73,7 +73,7 @@ from features.restro.inventory_service import InventoryService
 from features.restro.employee_service import EmployeeService
 from features.restro.customer_service import CustomerService
 from features.restro.customer_repository import CustomerRepository
-from features.restro.order_service import compute_order_total
+from features.restro.order_service import compute_order_total, order_vat_settings
 from features.restro.khata_settlement_repository import KhataSettlementRepository
 from features.restro.branch_settings_service import BranchSettingsService
 from features.restro.expense_service import ExpenseService
@@ -2253,13 +2253,15 @@ def khata_history(
 
     orders = CustomerRepository.list_khata_orders(db, tenant_id, customer_id)
     settlements = KhataSettlementRepository.list_for_customer(db, tenant_id, customer_id)
+    # Khata orders are always paid (khata is only set at mark-paid time), so
+    # total_amount is always a real snapshot — never recompute live here.
     order_entries = [
         KhataOrderEntry(
             id=o.id,
             type=o.type,
             placed_at=o.placed_at,
             placed_at_bs=o.placed_at_bs,
-            total=compute_order_total(o),
+            total=Decimal(o.total_amount or 0),
             line_count=sum(1 for l in o.lines if not l.is_voided),
         )
         for o in orders
@@ -2298,6 +2300,10 @@ def customer_history(
         return error_response("CUSTOMER_NOT_FOUND", "Customer not found.", 404)
 
     orders = CustomerRepository.list_all_orders(db, tenant_id, customer_id)
+    # Paid/cancelled orders already have a snapshotted total_amount from
+    # mark-paid time — use it as-is. Draft orders have none yet (still being
+    # built), so compute a live preview from current branch VAT settings.
+    vat_enabled, vat_rate = order_vat_settings(db, tenant_id, branch_id)
     entries = [
         CustomerOrderEntry(
             id=o.id,
@@ -2307,7 +2313,11 @@ def customer_history(
             payment_method=o.payment_method,
             placed_at=o.placed_at,
             placed_at_bs=o.placed_at_bs,
-            total=compute_order_total(o),
+            total=(
+                Decimal(o.total_amount or 0)
+                if o.status != "draft"
+                else compute_order_total(o, vat_enabled, vat_rate)
+            ),
             line_count=sum(1 for l in o.lines if not l.is_voided),
         )
         for o in orders

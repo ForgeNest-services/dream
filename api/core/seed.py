@@ -17,35 +17,15 @@ _ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 
 
 def _app_catalog() -> list[dict]:
-    """The `icon_asset` key names a PNG in api/assets/ that gets uploaded to
-    MinIO on startup (see seed_app_icons). It's NOT persisted to the DB — the
-    resulting public URL lands in the app row's `icon_url` column."""
+    """The `icon_asset`/`thumbnail_asset` keys name PNGs in api/assets/ that
+    get uploaded to MinIO on startup (see seed_app_icons). Neither is
+    persisted to the DB — the resulting public URLs land in the app row's
+    `icon_url`/`thumbnail_url` columns.
+
+    Srota PMS is deliberately left out of the catalog for now — we're only
+    working with RMS and IMS. Re-add it here (with icon_asset: "PMS.png",
+    already on disk) when PMS work resumes."""
     return [
-        {
-            "code": "srota_pms",
-            "slug": "srota-pms",
-            "name": "Srota PMS",
-            "tagline": "Run your hotel from one calm dashboard.",
-            "description": (
-                "Property management for hotels: bookings, check-in/out, folios, "
-                "VAT invoices, housekeeping, guest profiles, and payments — "
-                "unified across every property you manage."
-            ),
-            "icon": "Hotel",
-            "icon_asset": "PMS.png",
-            "url": "https://pms.srotaapps.com",
-            "screenshots": [],
-            "features": [
-                "Booking calendar with walk-in and advance reservations",
-                "Check-in / check-out workflow with folio tracking",
-                "Fiscal-year invoicing with VAT breakdown",
-                "Housekeeping status per room",
-                "Multi-property support",
-            ],
-            "display_order": 1,
-            "is_active": True,
-            "is_public": True,
-        },
         {
             "code": "srota_rms",
             "slug": "srota-rms",
@@ -58,6 +38,7 @@ def _app_catalog() -> list[dict]:
             ),
             "icon": "Restaurant",
             "icon_asset": "RMS.png",
+            "thumbnail_asset": "rms-thumbnail.png",
             "url": "https://rms.srotaapps.com",
             "screenshots": [],
             "features": [
@@ -68,7 +49,7 @@ def _app_catalog() -> list[dict]:
                 "Manual inventory with stock movement history",
                 "Sales, category and staff performance reports",
             ],
-            "display_order": 2,
+            "display_order": 1,
             "is_active": True,
             "is_public": True,
         },
@@ -84,6 +65,7 @@ def _app_catalog() -> list[dict]:
             ),
             "icon": "Inventory",
             "icon_asset": "IMS.png",
+            "thumbnail_asset": "ims-thumbnail.png",
             "url": "https://ims.srotaapps.com",
             "screenshots": [],
             "features": [
@@ -93,7 +75,7 @@ def _app_catalog() -> list[dict]:
                 "Movement audit trail with actor snapshot",
                 "Multi-branch stock visibility",
             ],
-            "display_order": 3,
+            "display_order": 2,
             "is_active": True,
             "is_public": True,
         },
@@ -144,6 +126,10 @@ def _ensure_apps_schema(db) -> None:
     db.execute(text(
         "ALTER TABLE public.apps "
         "ADD COLUMN IF NOT EXISTS icon_url VARCHAR(500)"
+    ))
+    db.execute(text(
+        "ALTER TABLE public.apps "
+        "ADD COLUMN IF NOT EXISTS thumbnail_url VARCHAR(500)"
     ))
     db.commit()
 
@@ -597,8 +583,12 @@ def seed_apps():
     try:
         _ensure_apps_schema(db)
         for entry in _app_catalog():
-            # icon_asset is a seed-time hint, not a DB column — strip before insert.
-            db_entry = {k: v for k, v in entry.items() if k != "icon_asset"}
+            # icon_asset/thumbnail_asset are seed-time hints, not DB columns —
+            # strip before insert.
+            db_entry = {
+                k: v for k, v in entry.items()
+                if k not in ("icon_asset", "thumbnail_asset")
+            }
             existing = db.query(App).filter(App.code == entry["code"]).first()
             if existing:
                 logger.info(f"App exists: {entry['code']}")
@@ -667,45 +657,55 @@ def seed_subscription_plans():
         db.close()
 
 
-def seed_app_icons():
-    """Uploads each app's icon PNG from api/assets/ to MinIO at a stable key
-    (platform/app-icons/{code}.png) and stores the resulting URL on the app
-    row's `icon_url` column.
+def _seed_app_asset(db, entry: dict, asset_key: str, url_column: str, key_prefix: str) -> None:
+    """Shared upload logic for one app-catalog asset (icon or thumbnail).
+    Uploads api/assets/{entry[asset_key]} to MinIO at a stable key
+    ({key_prefix}/{code}.png) and stores the resulting URL on the app row's
+    `url_column`. Idempotent — skips when the row already points at the
+    current public URL; re-uploads on a missing/stale URL."""
+    asset_name = entry.get(asset_key)
+    if not asset_name:
+        return
+    asset_path = _ASSETS_DIR / asset_name
+    if not asset_path.exists():
+        logger.warning(f"App asset missing on disk ({asset_key}): {asset_path}")
+        return
 
-    Idempotent: skips upload when the app already has an `icon_url` pointing
-    at our current public URL. Re-uploads if the URL is missing, points at a
-    stale bucket/host (env change), or the asset is present but the DB row
-    isn't tracking it yet."""
+    app_row = db.query(App).filter(App.code == entry["code"]).first()
+    if not app_row:
+        logger.warning(f"App row not found for asset seed: {entry['code']}")
+        return
+
+    key = f"{key_prefix}/{entry['code']}.png"
+    expected_url = build_public_url(key)
+
+    if getattr(app_row, url_column) == expected_url:
+        logger.info(f"App {asset_key} up to date: {entry['code']}")
+        return
+
+    with asset_path.open("rb") as fp:
+        content = fp.read()
+    uploaded_url = upload_file_at_key(key, content, "image/png")
+    setattr(app_row, url_column, uploaded_url)
+    db.commit()
+    logger.info(f"App {asset_key} uploaded: {entry['code']} → {uploaded_url}")
+
+
+def seed_app_icons():
+    """Uploads each app's icon and thumbnail PNGs from api/assets/ to MinIO
+    (platform/app-icons/{code}.png, platform/app-thumbnails/{code}.png) and
+    stores the resulting URLs on the app row's `icon_url`/`thumbnail_url`
+    columns.
+
+    Idempotent: skips upload when the app already has a URL pointing at our
+    current public URL. Re-uploads if the URL is missing, points at a stale
+    bucket/host (env change), or the asset is present but the DB row isn't
+    tracking it yet."""
     db = SessionLocal()
     try:
-        current_prefix = f"{settings.S3_PUBLIC_URL}/{settings.S3_BUCKET}/"
         for entry in _app_catalog():
-            asset_name = entry.get("icon_asset")
-            if not asset_name:
-                continue
-            asset_path = _ASSETS_DIR / asset_name
-            if not asset_path.exists():
-                logger.warning(f"App icon asset missing on disk: {asset_path}")
-                continue
-
-            app_row = db.query(App).filter(App.code == entry["code"]).first()
-            if not app_row:
-                logger.warning(f"App row not found for icon seed: {entry['code']}")
-                continue
-
-            key = f"platform/app-icons/{entry['code']}.png"
-            expected_url = build_public_url(key)
-
-            if app_row.icon_url == expected_url:
-                logger.info(f"App icon up to date: {entry['code']}")
-                continue
-
-            with asset_path.open("rb") as fp:
-                content = fp.read()
-            uploaded_url = upload_file_at_key(key, content, "image/png")
-            app_row.icon_url = uploaded_url
-            db.commit()
-            logger.info(f"App icon uploaded: {entry['code']} → {uploaded_url}")
+            _seed_app_asset(db, entry, "icon_asset", "icon_url", "platform/app-icons")
+            _seed_app_asset(db, entry, "thumbnail_asset", "thumbnail_url", "platform/app-thumbnails")
 
     except Exception as e:
         db.rollback()

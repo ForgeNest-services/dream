@@ -1,14 +1,17 @@
-"""Reports/dashboard orchestration. Combines per-order totals (computed in
-Python via compute_order_total so discount+VAT match the receipt) with SQL
+"""Reports/dashboard orchestration. Combines per-order totals with SQL
 breakdowns (categories, expenses, top items). All money returned as Decimal
-and serialized as strings by the router — never float."""
+and serialized as strings by the router — never float.
+
+Report totals are summed from each paid order's snapshotted total_amount
+(set once at mark-paid time), never recomputed live — a bill's VAT is fixed
+at the moment it was issued, so a report over past orders must match what
+the customer was actually billed even if branch VAT settings changed since."""
 
 from datetime import timedelta
 from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from features.restro.reports_repository import ReportsRepository
-from features.restro.order_service import compute_order_total
 from features.branches.repository import BranchRepository
 from utils.bikram_sambat import to_bs_iso, bs_iso_to_ad
 
@@ -17,8 +20,12 @@ def _assert_branch(db: Session, tenant_id: str, branch_id: str) -> bool:
     return BranchRepository.get_by_id(db, tenant_id, branch_id) is not None
 
 
+def _order_total(order) -> Decimal:
+    return Decimal(order.total_amount or 0)
+
+
 def _sum_totals(orders) -> Decimal:
-    return sum((compute_order_total(o) for o in orders), Decimal("0"))
+    return sum((_order_total(o) for o in orders), Decimal("0"))
 
 
 def _by_payment_method(orders) -> dict:
@@ -31,7 +38,7 @@ def _by_payment_method(orders) -> dict:
         if method not in buckets:
             buckets[method] = Decimal("0")
             counts[method] = 0
-        buckets[method] += compute_order_total(o)
+        buckets[method] += _order_total(o)
         counts[method] += 1
     return {
         "cash": {"amount": buckets["cash"], "count": counts["cash"]},
@@ -148,7 +155,7 @@ class ReportsService:
         count_by_day: dict[str, int] = {}
         for o in paid:
             day = o.placed_at_bs
-            sales_by_day[day] = sales_by_day.get(day, Decimal("0")) + compute_order_total(o)
+            sales_by_day[day] = sales_by_day.get(day, Decimal("0")) + _order_total(o)
             count_by_day[day] = count_by_day.get(day, 0) + 1
 
         # Expenses need their own bucket keyed by spent_at_bs.
