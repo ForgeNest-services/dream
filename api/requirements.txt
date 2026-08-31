@@ -18,3 +18,4 @@ jinja2
 boto3
 openpyxl
 reportlab
+httpx

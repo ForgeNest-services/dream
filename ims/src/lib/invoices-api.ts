@@ -27,6 +27,14 @@ export interface InvoiceDto {
   fiscal_year_id: string | null;
   branch_id: string;
   customer_id: string;
+  // IRD Annex 5: seller snapshot (captured at invoice-issue time)
+  seller_name: string | null;
+  seller_address: string | null;
+  seller_pan: string | null;
+  // IRD Annex 5: buyer snapshot
+  buyer_name: string | null;
+  buyer_pan: string | null;
+  buyer_address: string | null;
   gross_amount: number | string;
   discount_amount: number | string;
   taxable_amount: number | string;
@@ -38,6 +46,16 @@ export interface InvoiceDto {
   status: "paid" | "partial" | "unpaid";
   note: string | null;
   user_id: string;
+  // IRD reprint fields
+  is_reprint: boolean;
+  reprint_of: string | null;
+  reprint_number: number | null;
+  // IRD credit note fields
+  is_credit_note: boolean;
+  original_invoice_id: string | null;
+  note_reason: string | null;
+  // IRD CBMS sync status
+  cbms_synced: boolean;
   created_at: string;
   lines: InvoiceLineDto[];
 }
@@ -111,5 +129,28 @@ export const invoicesApi = {
   },
   convert(invoiceId: string, payload: ConvertQuotationPayload) {
     return apiClient.post<InvoiceDto>(`/ims/invoices/${invoiceId}/convert`, payload);
+  },
+  creditNote(invoiceId: string, reason: string) {
+    return apiClient.post<InvoiceDto>(`/ims/invoices/${invoiceId}/credit-note`, { reason });
+  },
+  cbmsPayload(invoiceId: string) {
+    return apiClient.get<Record<string, unknown>>(`/ims/invoices/${invoiceId}/cbms-payload`);
+  },
+  async cbmsSync(invoiceId: string) {
+    return apiClient.post<{ synced: boolean; message: string }>(
+      `/ims/invoices/${invoiceId}/cbms-sync`,
+      {},
+    );
+  },
+  async getCbmsCredentials() {
+    return apiClient.get<{ configured: boolean; ird_username?: string }>(
+      `/ims/cbms-credentials`,
+    );
+  },
+  async saveCbmsCredentials(username: string, password: string) {
+    return apiClient.put<{ saved: boolean }>(`/ims/cbms-credentials`, {
+      ird_username: username,
+      ird_password: password,
+    });
   },
 };

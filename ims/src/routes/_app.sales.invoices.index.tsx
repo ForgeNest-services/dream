@@ -98,6 +98,13 @@ function dtoToInvoice(i: InvoiceDto): Invoice {
     status: i.status,
     userId: i.user_id,
     note: i.note ?? undefined,
+    sellerPan: i.seller_pan,
+    buyerPan: i.buyer_pan,
+    isReprint: i.is_reprint,
+    reprintNumber: i.reprint_number,
+    isCreditNote: i.is_credit_note,
+    originalInvoiceId: i.original_invoice_id,
+    cbmsSynced: i.cbms_synced,
   };
 }
 
@@ -236,16 +243,28 @@ function InvoicesPage() {
                 return (
                   <tr key={r.inv.id} className="border-b last:border-0 hover:bg-accent/40">
                     <td className="num px-3 py-2.5">
-                      <Link
-                        to="/sales/invoices/$invoiceId"
-                        params={{ invoiceId: r.inv.id }}
-                        className="hover:underline"
-                      >
-                        {r.inv.number}
-                      </Link>
-                      <span className="ml-1.5 text-xs capitalize text-muted-foreground">
-                        {r.inv.kind}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Link
+                          to="/sales/invoices/$invoiceId"
+                          params={{ invoiceId: r.inv.id }}
+                          className="hover:underline"
+                        >
+                          {r.inv.number}
+                        </Link>
+                        <span className="text-xs capitalize text-muted-foreground">
+                          {r.inv.kind}
+                        </span>
+                        {r.inv.isCreditNote && (
+                          <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
+                            CN
+                          </span>
+                        )}
+                        {r.inv.isReprint && (
+                          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                            Reprint #{r.inv.reprintNumber}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2.5">
                       <DateText value={r.inv.date} />

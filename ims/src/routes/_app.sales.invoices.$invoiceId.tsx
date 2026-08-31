@@ -1,11 +1,22 @@
 import { EmptyState, Money, PageHeader, StatusPill, DateText } from "@/components/common/primitives";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/context/app-store";
 import { computeStoredTotals, invoiceDue } from "@/lib/invoice";
 import { invoicesApi, type InvoiceDto } from "@/lib/invoices-api";
 import type { Invoice, InvoiceLine } from "@/data/types";
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
-import { ArrowLeft, Printer } from "lucide-react";
+import { ArrowLeft, FileX2, Printer, RefreshCw, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -45,6 +56,19 @@ function dtoToInvoice(i: InvoiceDto): Invoice {
     status: i.status,
     userId: i.user_id,
     note: i.note ?? undefined,
+    sellerName: i.seller_name,
+    sellerAddress: i.seller_address,
+    sellerPan: i.seller_pan,
+    buyerName: i.buyer_name,
+    buyerPan: i.buyer_pan,
+    buyerAddress: i.buyer_address,
+    isReprint: i.is_reprint,
+    reprintOf: i.reprint_of,
+    reprintNumber: i.reprint_number,
+    isCreditNote: i.is_credit_note,
+    originalInvoiceId: i.original_invoice_id,
+    noteReason: i.note_reason,
+    cbmsSynced: i.cbms_synced,
   };
 }
 
@@ -54,6 +78,10 @@ function InvoiceDetailPage() {
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [showCnDialog, setShowCnDialog] = useState(false);
+  const [cnReason, setCnReason] = useState("");
+  const [isIssuingCn, setIsIssuingCn] = useState(false);
+  const [isSyncingCbms, setIsSyncingCbms] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +109,49 @@ function InvoiceDetailPage() {
       cancelled = true;
     };
   }, [invoiceId]);
+
+  async function handleIssueCreditNote() {
+    if (!cnReason.trim()) {
+      toast.error("Please enter a reason for the credit note");
+      return;
+    }
+    setIsIssuingCn(true);
+    try {
+      const res = await invoicesApi.creditNote(invoiceId, cnReason.trim());
+      if (!res.success || !res.data) {
+        toast.error((res as { message?: string }).message ?? "Failed to issue credit note");
+        return;
+      }
+      toast.success(`Credit note ${res.data.number} issued`);
+      setShowCnDialog(false);
+      setCnReason("");
+      // Reload this page's invoice to reflect the cancelled/credited state
+      setInvoice(dtoToInvoice(res.data));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to issue credit note");
+    } finally {
+      setIsIssuingCn(false);
+    }
+  }
+
+  async function handleCbmsSync() {
+    setIsSyncingCbms(true);
+    try {
+      const res = await invoicesApi.cbmsSync(invoiceId);
+      if (!res.success || !res.data) {
+        toast.error((res as { message?: string }).message ?? "Failed to sync to CBMS");
+        return;
+      }
+      toast.success(res.data.message ?? "Invoice synced to IRD CBMS");
+      if (invoice) {
+        setInvoice({ ...invoice, cbmsSynced: true });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to sync to CBMS");
+    } finally {
+      setIsSyncingCbms(false);
+    }
+  }
 
   const backButton = (
     <Button asChild variant="ghost" size="sm">
@@ -114,8 +185,18 @@ function InvoiceDetailPage() {
   const branch = app.branches.find((b) => b.id === invoice.branchId);
   const totals = computeStoredTotals(invoice.lines);
   const due = invoiceDue(invoice, totals.total);
+  const canIssueCn =
+    !invoice.isCreditNote &&
+    invoice.kind !== "quotation" &&
+    ["owner", "manager"].includes(app.effectiveRole ?? "");
+
+  const canSyncCbms =
+    invoice.kind !== "quotation" &&
+    invoice.cbmsSynced === false &&
+    ["owner", "manager"].includes(app.effectiveRole ?? "");
 
   return (
+    <>
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title={invoice.number}
@@ -123,6 +204,37 @@ function InvoiceDetailPage() {
         actions={
           <div className="flex items-center gap-2">
             {backButton}
+            {invoice.isReprint && (
+              <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                <RefreshCw className="h-3 w-3" /> Reprint #{invoice.reprintNumber}
+              </span>
+            )}
+            {invoice.isCreditNote && (
+              <span className="flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                <FileX2 className="h-3 w-3" /> Credit Note
+              </span>
+            )}
+            {canIssueCn && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={() => setShowCnDialog(true)}
+              >
+                <FileX2 className="mr-1.5 h-4 w-4" /> Credit Note
+              </Button>
+            )}
+            {canSyncCbms && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isSyncingCbms}
+                onClick={handleCbmsSync}
+              >
+                <Upload className="mr-1.5 h-4 w-4" />
+                {isSyncingCbms ? "Syncing…" : "Sync to CBMS"}
+              </Button>
+            )}
             <Button asChild variant="outline" size="sm">
               <Link to="/print/$invoiceId" params={{ invoiceId: invoice.id }}>
                 <Printer className="mr-1.5 h-4 w-4" /> Print
@@ -262,6 +374,55 @@ function InvoiceDetailPage() {
           <p className="mt-1">{invoice.note}</p>
         </div>
       )}
+
+      {invoice.isCreditNote && invoice.noteReason && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-red-700">
+            Credit Note Reason
+          </h2>
+          <p className="mt-1 text-red-900">{invoice.noteReason}</p>
+        </div>
+      )}
+
+      {invoice.cbmsSynced === false && invoice.kind !== "quotation" && (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          This invoice has not yet been synced to the IRD CBMS system.
+        </div>
+      )}
     </div>
+
+    <AlertDialog open={showCnDialog} onOpenChange={setShowCnDialog}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Issue Credit Note</AlertDialogTitle>
+          <AlertDialogDescription>
+            A credit note will be issued for <strong>{invoice.number}</strong> and a new document
+            with negated amounts will be created. This cannot be undone. Enter the reason as
+            required by IRD.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <Textarea
+          className="mt-2"
+          placeholder="Reason for credit note (required by IRD)…"
+          rows={3}
+          value={cnReason}
+          onChange={(e) => setCnReason(e.target.value)}
+        />
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isIssuingCn}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            disabled={isIssuingCn || !cnReason.trim()}
+            onClick={(e) => {
+              e.preventDefault();
+              handleIssueCreditNote();
+            }}
+          >
+            {isIssuingCn ? "Issuing…" : "Issue Credit Note"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

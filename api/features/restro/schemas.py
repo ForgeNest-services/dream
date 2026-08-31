@@ -493,6 +493,8 @@ class MarkPaidRequest(BaseModel):
     # Required when payment_method == 'khata' and the order doesn't already
     # have customer_id attached (delivery orders do). Ignored for cash/qr.
     customer_id: str | None = None
+    # IRD: buyer PAN for B2B VAT bills (optional for walk-in consumers)
+    buyer_pan: str | None = None
 
     @field_validator("payment_method")
     @classmethod
@@ -875,3 +877,14 @@ class UpdateCustomerRequest(BaseModel):
         if v is not None and not v.strip():
             raise ValueError("Customer name is required")
         return v
+
+
+class RMSCreditNoteRequest(BaseModel):
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def reason_required(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Reason is required for credit notes")
+        return v.strip()

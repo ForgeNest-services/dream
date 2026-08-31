@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 from decimal import Decimal
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from shared_models import RestroOrder, RestroOrderLine, RestroTable, RestroCustomer
-from utils.bikram_sambat import to_bs_iso
+from shared_models import RestroOrder, RestroOrderLine, RestroTable, RestroCustomer, RestroInvoiceSerial
+from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad
 
 
 ORDER_TYPES = {"dine-in", "delivery"}
@@ -27,6 +27,32 @@ class OrderRepository:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _next_bill_number(db: Session, branch_id: str, fiscal_year: str) -> int:
+        """Atomically increment the per-branch/fiscal-year bill counter using
+        SELECT … FOR UPDATE so concurrent orders never share a number (IRD
+        gapless serial requirement)."""
+        row = (
+            db.execute(
+                select(RestroInvoiceSerial)
+                .filter_by(branch_id=branch_id, fiscal_year=fiscal_year)
+                .with_for_update()
+            )
+            .scalars()
+            .first()
+        )
+        if row is None:
+            row = RestroInvoiceSerial(
+                branch_id=branch_id,
+                fiscal_year=fiscal_year,
+                last_number=0,
+            )
+            db.add(row)
+            db.flush()
+        row.last_number += 1
+        db.flush()
+        return row.last_number
+
+    @staticmethod
     def create(
         db: Session,
         tenant_id: str,
@@ -42,50 +68,29 @@ class OrderRepository:
         # agree on the exact same moment — the default runs at flush, which
         # would compute BS from a slightly earlier `now()`.
         now = datetime.now(timezone.utc)
+        fy = fiscal_year_from_ad(now) or ""
+        bill_num = OrderRepository._next_bill_number(db, branch_id, fy)
 
-        # Bill numbers are branch-scoped sequential integers. Concurrent
-        # inserts on the same branch could both read the same MAX and try
-        # to insert the same next number; the UNIQUE index catches that and
-        # we retry with a fresh MAX. Bounded to a handful of retries — under
-        # steady contention something's wrong upstream.
-        for attempt in range(5):
-            next_num = OrderRepository._next_bill_number(db, branch_id)
-            order = RestroOrder(
-                tenant_id=tenant_id,
-                branch_id=branch_id,
-                type=type,
-                status="draft",
-                kitchen_status="new",
-                table_id=table_id,
-                customer_id=customer_id,
-                bill_number=next_num,
-                placed_at=now,
-                placed_at_bs=to_bs_iso(now) or "",
-                waiter_name=waiter_name,
-                waiter_cred_id=waiter_cred_id,
-                delivery_status="pending" if type == "delivery" else None,
-            )
-            db.add(order)
-            try:
-                db.commit()
-                db.refresh(order)
-                return order
-            except IntegrityError as e:
-                db.rollback()
-                # Only retry on bill-number collisions; anything else (e.g.
-                # the one-draft-per-table partial unique) bubbles up.
-                if "uq_restro_order_bill_number" not in str(e.orig):
-                    raise
-        raise RuntimeError(f"Could not allocate bill_number for branch {branch_id} after 5 retries")
-
-    @staticmethod
-    def _next_bill_number(db: Session, branch_id: str) -> int:
-        current_max = (
-            db.query(func.coalesce(func.max(RestroOrder.bill_number), 0))
-            .filter(RestroOrder.branch_id == branch_id)
-            .scalar()
+        order = RestroOrder(
+            tenant_id=tenant_id,
+            branch_id=branch_id,
+            type=type,
+            status="draft",
+            kitchen_status="new",
+            table_id=table_id,
+            customer_id=customer_id,
+            bill_number=bill_num,
+            fiscal_year=fy,
+            placed_at=now,
+            placed_at_bs=to_bs_iso(now) or "",
+            waiter_name=waiter_name,
+            waiter_cred_id=waiter_cred_id,
+            delivery_status="pending" if type == "delivery" else None,
         )
-        return int(current_max) + 1
+        db.add(order)
+        db.commit()
+        db.refresh(order)
+        return order
 
     @staticmethod
     def get_by_id(db: Session, tenant_id: str, order_id: str) -> RestroOrder | None:

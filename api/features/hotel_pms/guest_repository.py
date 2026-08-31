@@ -21,6 +21,7 @@ class GuestRepository:
         id_document_type: str | None,
         id_document_number: str | None,
         nationality: str | None,
+        pan: str | None = None,
     ) -> PMSGuest:
         guest = PMSGuest(
             tenant_id=tenant_id,
@@ -30,6 +31,7 @@ class GuestRepository:
             id_document_type=_normalize(id_document_type),
             id_document_number=_normalize(id_document_number),
             nationality=_normalize(nationality),
+            pan=_normalize(pan.upper() if pan else None),
         )
         db.add(guest)
         db.commit()
@@ -96,6 +98,7 @@ class GuestRepository:
         id_document_type: str | None = None,
         id_document_number: str | None = None,
         nationality: str | None = None,
+        pan: str | None = None,
         is_active: bool | None = None,
     ) -> PMSGuest:
         if full_name is not None:
@@ -110,6 +113,8 @@ class GuestRepository:
             guest.id_document_number = _normalize(id_document_number)
         if nationality is not None:
             guest.nationality = _normalize(nationality)
+        if pan is not None:
+            guest.pan = _normalize(pan.upper())
         if is_active is not None:
             guest.is_active = is_active
         db.commit()

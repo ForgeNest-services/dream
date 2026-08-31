@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useApp } from "@/context/app-store";
+import { invoicesApi } from "@/lib/invoices-api";
 import { createFileRoute } from "@tanstack/react-router";
 import { Check, Info, Lock, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -65,6 +66,7 @@ function SettingsPage() {
           <TabsTrigger value="fiscal">Fiscal years</TabsTrigger>
           <TabsTrigger value="units">Units &amp; brands</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
+          <TabsTrigger value="ird">IRD / CBMS</TabsTrigger>
         </TabsList>
 
         <TabsContent value="company" className="mt-4 space-y-4">
@@ -297,6 +299,10 @@ function SettingsPage() {
             ) : null}
           </div>
         </TabsContent>
+
+        <TabsContent value="ird" className="mt-4">
+          <CbmsCredentialsCard />
+        </TabsContent>
       </Tabs>
 
       <AlertDialog open={deleteFyId !== null} onOpenChange={(o) => !o && setDeleteFyId(null)}>
@@ -334,6 +340,129 @@ function SettingsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+function CbmsCredentialsCard() {
+  const app = useApp();
+  const isOwner = app.effectiveRole === "owner";
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [currentUsername, setCurrentUsername] = useState<string | undefined>(undefined);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!["owner", "manager"].includes(app.effectiveRole ?? "")) return;
+    invoicesApi
+      .getCbmsCredentials()
+      .then((res) => {
+        if (res.success && res.data) {
+          setConfigured(res.data.configured);
+          setCurrentUsername(res.data.ird_username);
+        }
+      })
+      .catch(() => {
+        // silently ignore — not critical
+      });
+  }, [app.effectiveRole]);
+
+  async function handleSave() {
+    if (!username.trim() || !password.trim()) {
+      toast.error("Username and password are required");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await invoicesApi.saveCbmsCredentials(username.trim(), password.trim());
+      if (!res.success) {
+        toast.error("Failed to save CBMS credentials");
+        return;
+      }
+      toast.success("CBMS credentials saved");
+      setConfigured(true);
+      setCurrentUsername(username.trim());
+      setUsername("");
+      setPassword("");
+    } catch {
+      toast.error("Failed to save CBMS credentials");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="max-w-md space-y-4">
+      <div className="rounded-lg border bg-card p-5">
+        <p className="text-sm font-medium">IRD CBMS Integration</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Central Billing Monitoring System credentials issued by Inland Revenue Department Nepal.
+          Required to sync invoices to IRD in real time (Electronic Billing Procedure 2074).
+        </p>
+
+        <div className="mt-4 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+          <span className="font-medium">Status: </span>
+          {configured === null ? (
+            <span className="text-muted-foreground">Loading…</span>
+          ) : configured ? (
+            <span className="text-success font-medium">
+              Configured{currentUsername ? ` · ${currentUsername}` : ""}
+            </span>
+          ) : (
+            <span className="text-amber-600 font-medium">Not configured</span>
+          )}
+        </div>
+
+        {isOwner && (
+          <div className="mt-4 space-y-3">
+            <p className="text-xs font-medium text-muted-foreground">
+              {configured ? "Update credentials" : "Enter IRD credentials"}
+            </p>
+            <div>
+              <Label className="text-xs">IRD Username</Label>
+              <Input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="IRD_USERNAME"
+                className="num mt-1"
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">IRD Password</Label>
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="mt-1"
+                autoComplete="new-password"
+              />
+            </div>
+            <Button onClick={handleSave} disabled={saving} size="sm">
+              {saving ? "Saving…" : "Save credentials"}
+            </Button>
+          </div>
+        )}
+
+        {!isOwner && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Only the owner can update IRD credentials.
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-lg border bg-card p-5">
+        <p className="text-sm font-medium">IRD CBMS endpoint</p>
+        <p className="mt-1 font-mono text-xs text-muted-foreground break-all">
+          http://202.166.207.75:9050/api/bill
+        </p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Configurable via <span className="font-mono">IRD_CBMS_URL</span> environment variable on
+          the API server.
+        </p>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Response
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_ims_staff
@@ -37,6 +37,8 @@ from features.ims.schemas import (
     InvoiceData,
     CreateInvoiceRequest,
     ConvertQuotationRequest,
+    IMSCreditNoteRequest,
+    IMSCbmsCredentialRequest,
     BranchSettingsData,
     UpdateBranchSettingsRequest,
     StockSummaryRow,
@@ -44,6 +46,7 @@ from features.ims.schemas import (
     PartyStatementRow,
     DashboardData,
 )
+from features.ims.cbms_service import CBMSService
 from features.ims.service import IMSCredentialService, IMSAuthService
 from features.ims.category_service import IMSCategoryService
 from features.ims.brand_service import IMSBrandService
@@ -1160,6 +1163,9 @@ _INVOICE_ERROR_MAP = {
     "NOT_A_QUOTATION": ("NOT_A_QUOTATION", "This document is not a quotation.", 422),
     "CONVERSION_FAILED": ("CONVERSION_FAILED", "Failed to convert quotation.", 500),
     "INSUFFICIENT_STOCK": ("INSUFFICIENT_STOCK", "Not enough stock for one or more items.", 409),
+    "NOT_AN_INVOICE": ("NOT_AN_INVOICE", "Credit notes can only be issued against tax or abbreviated invoices.", 409),
+    "ALREADY_CREDIT_NOTE": ("ALREADY_CREDIT_NOTE", "This document is already a credit note.", 409),
+    "CN_FAILED": ("CN_FAILED", "Failed to issue credit note.", 500),
 }
 
 
@@ -1226,12 +1232,16 @@ def get_invoice(
 
 @router.post("/invoices")
 def create_invoice(
+    request: Request,
     data: CreateInvoiceRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager", "cashier"):
         raise HTTPException(403, "Not allowed to record sales")
+    client_ip = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip() or (
+        request.client.host if request.client else None
+    )
     result = IMSInvoiceService.create(
         db,
         tenant_id=staff["tenant_id"],
@@ -1246,6 +1256,7 @@ def create_invoice(
         invoice_prefix=data.invoice_prefix,
         is_quotation=data.is_quotation,
         show_vat_breakdown=data.show_vat_breakdown,
+        terminal_ip=client_ip,
     )
     if not result["success"]:
         return _invoice_error(result)
@@ -1258,6 +1269,7 @@ def create_invoice(
 
 @router.post("/invoices/{invoice_id}/convert")
 def convert_quotation(
+    request: Request,
     invoice_id: str,
     data: ConvertQuotationRequest,
     staff: dict = Depends(require_ims_staff()),
@@ -1265,6 +1277,9 @@ def convert_quotation(
 ):
     if staff["role"] not in ("owner", "manager", "cashier"):
         raise HTTPException(403, "Not allowed to convert quotations")
+    client_ip = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip() or (
+        request.client.host if request.client else None
+    )
     result = IMSInvoiceService.convert(
         db,
         tenant_id=staff["tenant_id"],
@@ -1274,6 +1289,7 @@ def convert_quotation(
         payment_method=data.payment_method,
         paid_amount=data.paid_amount,
         show_vat_breakdown=data.show_vat_breakdown,
+        terminal_ip=client_ip,
     )
     if not result["success"]:
         return _invoice_error(result)
@@ -1281,6 +1297,99 @@ def convert_quotation(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation converted to invoice",
     )
+
+
+@router.post("/invoices/{invoice_id}/credit-note")
+def issue_credit_note(
+    request: Request,
+    invoice_id: str,
+    data: IMSCreditNoteRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can issue credit notes")
+    client_ip = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip() or (
+        request.client.host if request.client else None
+    )
+    result = IMSInvoiceService.issue_credit_note(
+        db,
+        tenant_id=staff["tenant_id"],
+        user_id=staff.get("cred_id") or "",
+        invoice_id=invoice_id,
+        reason=data.reason,
+        terminal_ip=client_ip,
+    )
+    if not result["success"]:
+        return _invoice_error(result)
+    return success_response(
+        data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
+        message="Credit note issued",
+        status_code=201,
+    )
+
+
+@router.get("/invoices/{invoice_id}/cbms-payload")
+def get_cbms_payload(
+    invoice_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    inv = IMSInvoiceRepository.get_by_id(db, staff["tenant_id"], invoice_id)
+    if not inv:
+        return error_response("NOT_FOUND", "Invoice not found", 404)
+    if inv.kind not in ("tax", "abbreviated"):
+        return error_response("NOT_AN_INVOICE", "Only tax/abbreviated invoices can be submitted to CBMS", 400)
+    result = CBMSService.get_payload(db, inv, staff["tenant_id"])
+    if not result["success"]:
+        return error_response(result["error_code"], "CBMS credentials not configured for this tenant", 400)
+    return success_response(data=result["payload"])
+
+
+@router.post("/invoices/{invoice_id}/cbms-sync")
+def sync_to_cbms(
+    invoice_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can sync invoices to CBMS")
+    inv = IMSInvoiceRepository.get_by_id(db, staff["tenant_id"], invoice_id)
+    if not inv:
+        return error_response("NOT_FOUND", "Invoice not found", 404)
+    if inv.kind not in ("tax", "abbreviated"):
+        return error_response("NOT_AN_INVOICE", "Only tax/abbreviated invoices can be submitted to CBMS", 400)
+    result = CBMSService.sync_invoice(db, inv, staff["tenant_id"])
+    if not result["success"]:
+        return error_response(result["error_code"], result.get("detail", "CBMS sync failed"), 400)
+    return success_response(data={"synced": True, "message": "Invoice submitted to IRD CBMS successfully"})
+
+
+@router.get("/cbms-credentials")
+def get_cbms_credentials(
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can view CBMS credentials")
+    result = CBMSService.get_credentials(db, staff["tenant_id"])
+    if not result["success"] and result["error_code"] == "CBMS_NOT_CONFIGURED":
+        return success_response(data={"configured": False})
+    return success_response(data={"configured": True, **result.get("credentials", {})})
+
+
+@router.put("/cbms-credentials")
+def save_cbms_credentials(
+    body: IMSCbmsCredentialRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] != "owner":
+        raise HTTPException(403, "Only the owner can configure CBMS credentials")
+    result = CBMSService.save_credentials(db, staff["tenant_id"], body.ird_username, body.ird_password)
+    if not result["success"]:
+        return error_response(result["error_code"], "Failed to save CBMS credentials", 400)
+    return success_response(data={"saved": True})
 
 
 # ---------------------------------------------------------------------------

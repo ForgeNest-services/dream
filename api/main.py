@@ -22,6 +22,8 @@ from core.seed import (
     backfill_branch_settings_vat_mismatch,
     ensure_tenants_free_app_schema,
     ensure_subscription_payments_group_schema,
+    ensure_ird_schema,
+    ensure_ims_cbms_schema,
 )
 from core.storage import ensure_bucket
 import shared_models
@@ -123,6 +125,22 @@ async def lifespan(app: FastAPI):
         logger.info("subscription_payments group schema backfill completed")
     except Exception as e:
         logger.error(f"Failed to backfill subscription_payments group schema: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Backfilling IRD schema (restro_orders + ims_invoices)...")
+        ensure_ird_schema()
+        logger.info("IRD schema backfill completed")
+    except Exception as e:
+        logger.error(f"Failed to backfill IRD schema: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Ensuring IMS CBMS credentials schema...")
+        ensure_ims_cbms_schema()
+        logger.info("IMS CBMS credentials schema ready")
+    except Exception as e:
+        logger.error(f"Failed to ensure IMS CBMS credentials schema: {type(e).__name__}: {str(e)}")
         raise
 
     try:

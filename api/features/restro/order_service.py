@@ -18,14 +18,19 @@ from features.restro.menu_item_service import combo_note_from_components
 from features.restro.customer_repository import CustomerRepository
 from features.restro.khata_settlement_repository import KhataSettlementRepository
 from features.branches.repository import BranchRepository
+from features.auth.repository import TenantRepository
+from features.hotel_pms.audit_repository import AuditRepository
+from shared_models import RestroOrder
+from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad
 from utils.logger import logger
 
 
-# TODO(settings): once per-branch VAT settings persist (Phase C: Settings),
-# read from settings instead of these constants. Snapshot at mark-paid time so
-# a later VAT rate change doesn't restate historical orders.
-DEFAULT_VAT_ENABLED = True
-DEFAULT_VAT_RATE = Decimal("13")
+# TODO(vat): re-enable when RMS VAT is ready. VAT is intentionally disabled
+# for now — only PAN capture is required. To enable: flip DEFAULT_VAT_ENABLED
+# to True and ensure per-branch VAT settings are read from IMSBranchSettings
+# (or equivalent RMS settings) so the rate is configurable per tenant.
+DEFAULT_VAT_ENABLED = False  # ← set True when enabling VAT for RMS
+DEFAULT_VAT_RATE = Decimal("13")  # IRD standard rate — unchanged when re-enabling
 
 
 def compute_order_total(order) -> Decimal:
@@ -435,6 +440,9 @@ class OrderService:
         order_id: str,
         payment_method: str,
         customer_id: str | None = None,
+        buyer_pan: str | None = None,
+        terminal_ip: str | None = None,
+        performed_by: str | None = None,
     ) -> dict:
         if payment_method not in PAYMENT_METHODS:
             return {"success": False, "error_code": "INVALID_PAYMENT_METHOD"}
@@ -462,6 +470,43 @@ class OrderService:
         settled_at_value = None if payment_method == "khata" else now
         clear_settled = payment_method == "khata"
 
+        # ── IRD: PAN snapshot — seller and buyer ─────────────────────────────
+        # VAT computation is intentionally disabled for RMS (DEFAULT_VAT_ENABLED=False).
+        # When VAT is re-enabled, uncomment the taxable/vat/total block below
+        # and remove the simplified total line.
+        subtotal = sum(
+            (Decimal(line.price) * line.qty for line in order.lines if not line.is_voided),
+            Decimal("0"),
+        )
+        if order.discount_type == "percent":
+            discount = subtotal * Decimal(order.discount_value) / Decimal("100")
+        else:
+            discount = Decimal(order.discount_value)
+
+        # ── TODO(vat): uncomment when enabling VAT for RMS ────────────────────
+        # taxable = max(Decimal("0"), subtotal - discount)
+        # vat = (taxable * DEFAULT_VAT_RATE / Decimal("100")) if DEFAULT_VAT_ENABLED else Decimal("0")
+        # total = (taxable + vat).quantize(Decimal("0.01"))
+        # ─────────────────────────────────────────────────────────────────────
+        total = (subtotal - discount).quantize(Decimal("0.01"))
+
+        tenant = TenantRepository.get_by_id(db, tenant_id)
+        branch = BranchRepository.get_by_id(db, tenant_id, branch_id)
+        order.seller_name = tenant.name if tenant else None
+        order.seller_address = branch.address if branch else None
+        order.seller_pan = tenant.pan if tenant else None
+
+        if effective_customer_id:
+            customer_obj = CustomerRepository.get_by_id(db, tenant_id, effective_customer_id)
+            order.buyer_name = customer_obj.name if customer_obj else None
+        order.buyer_pan = buyer_pan
+
+        order.subtotal_amount = subtotal
+        order.taxable_amount = Decimal("0")   # TODO(vat): set to (subtotal - discount) when VAT enabled
+        order.exempt_amount = Decimal("0")
+        order.vat_amount = Decimal("0")       # TODO(vat): compute from taxable * rate when VAT enabled
+        order.total_amount = total
+
         # Auto-finish the kitchen ticket. Paying = the customer got the food,
         # so the kitchen has no more work to do on it. Prevents a paid order
         # from lingering on the Kitchen Display board in "new"/"cooking"
@@ -484,6 +529,25 @@ class OrderService:
         # Free the dine-in table (whole merge group).
         if order.type == "dine-in" and order.table_id:
             OrderService._set_group_status(db, tenant_id, order.table_id, "empty")
+
+        AuditRepository.write(
+            db,
+            tenant_id=tenant_id,
+            app_code="restro",
+            entity_type="order",
+            entity_id=order.id,
+            action="mark_paid",
+            performed_by=performed_by or "unknown",
+            performer_type="staff",
+            after_state={
+                "bill_number": order.bill_number,
+                "payment_method": payment_method,
+                "total": float(total),
+            },
+            terminal_ip=terminal_ip,
+        )
+        db.commit()
+
         logger.info(
             f"Order paid: {order.id} via {payment_method}",
             extra={"tenant_id": tenant_id, "customer_id": effective_customer_id},
@@ -618,6 +682,83 @@ class OrderService:
             return {"success": False, "error_code": "NOT_A_DELIVERY_ORDER"}
         updated = OrderRepository.set_delivery_status(db, order, delivery_status)
         return {"success": True, "order": updated}
+
+    @staticmethod
+    def issue_credit_note(
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        order_id: str,
+        reason: str,
+        performed_by: str | None = None,
+        terminal_ip: str | None = None,
+    ) -> dict:
+        original = OrderRepository.get_by_id(db, tenant_id, order_id)
+        if not original or original.branch_id != branch_id:
+            return {"success": False, "error_code": "ORDER_NOT_FOUND"}
+        if original.status != "paid":
+            return {"success": False, "error_code": "ORDER_NOT_PAID"}
+        if original.is_credit_note:
+            return {"success": False, "error_code": "ALREADY_CREDIT_NOTE"}
+
+        now = datetime.now(timezone.utc)
+        fy = fiscal_year_from_ad(now) or ""
+        bill_num = OrderRepository._next_bill_number(db, branch_id, fy)
+
+        cn = RestroOrder(
+            tenant_id=tenant_id,
+            branch_id=branch_id,
+            table_id=None,
+            bill_number=bill_num,
+            fiscal_year=fy,
+            customer_id=original.customer_id,
+            type=original.type,
+            status="paid",
+            kitchen_status="served",
+            placed_at=now,
+            paid_at=now,
+            placed_at_bs=to_bs_iso(now) or "",
+            paid_at_bs=to_bs_iso(now),
+            discount_type=original.discount_type,
+            discount_value=Decimal("0"),
+            subtotal_amount=-(original.subtotal_amount or Decimal("0")),
+            taxable_amount=-(original.taxable_amount or Decimal("0")),
+            exempt_amount=-(original.exempt_amount or Decimal("0")),
+            vat_amount=-(original.vat_amount or Decimal("0")),
+            total_amount=-(original.total_amount or Decimal("0")),
+            payment_method=original.payment_method,
+            seller_name=original.seller_name,
+            seller_address=original.seller_address,
+            seller_pan=original.seller_pan,
+            buyer_name=original.buyer_name,
+            buyer_pan=original.buyer_pan,
+            waiter_name="system",
+            waiter_cred_id=performed_by,
+            is_credit_note=True,
+            original_order_id=original.id,
+            note_reason=reason,
+        )
+        db.add(cn)
+        db.flush()
+
+        AuditRepository.write(
+            db,
+            tenant_id=tenant_id,
+            app_code="restro",
+            entity_type="order",
+            entity_id=original.id,
+            action="credit_note",
+            performed_by=performed_by or "unknown",
+            performer_type="staff",
+            after_state={"credit_note_id": cn.id, "bill_number": bill_num, "reason": reason},
+            terminal_ip=terminal_ip,
+        )
+        db.commit()
+        db.refresh(cn)
+
+        logger.info(f"Credit note issued for order {original.id}: CN bill#{bill_num}",
+                    extra={"tenant_id": tenant_id})
+        return {"success": True, "order": cn}
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -500,6 +500,98 @@ def ensure_subscription_payments_group_schema() -> None:
         db.close()
 
 
+def ensure_ird_schema() -> None:
+    """Adds all IRD Electronic Billing Procedure 2074 columns to restro_orders
+    and ims_invoices. Safe to run repeatedly — uses ADD COLUMN IF NOT EXISTS."""
+    db = SessionLocal()
+    try:
+        # ── restro_orders ────────────────────────────────────────────────────
+        restro_cols = [
+            ("fiscal_year", "VARCHAR"),
+            ("subtotal_amount", "NUMERIC(12,2) DEFAULT 0"),
+            ("taxable_amount", "NUMERIC(12,2) DEFAULT 0"),
+            ("exempt_amount", "NUMERIC(12,2) DEFAULT 0"),
+            ("vat_amount", "NUMERIC(12,2) DEFAULT 0"),
+            ("total_amount", "NUMERIC(12,2) DEFAULT 0"),
+            ("seller_name", "VARCHAR"),
+            ("seller_address", "VARCHAR"),
+            ("seller_pan", "VARCHAR"),
+            ("buyer_name", "VARCHAR"),
+            ("buyer_pan", "VARCHAR"),
+            ("is_reprint", "BOOLEAN DEFAULT FALSE"),
+            ("reprint_of", "VARCHAR"),
+            ("reprint_number", "INTEGER"),
+            ("is_credit_note", "BOOLEAN DEFAULT FALSE"),
+            ("original_order_id", "VARCHAR"),
+            ("note_reason", "TEXT"),
+            ("cbms_synced", "BOOLEAN DEFAULT FALSE"),
+            ("cbms_synced_at", "TIMESTAMP"),
+        ]
+        for col, col_type in restro_cols:
+            db.execute(text(
+                f"ALTER TABLE public.restro_orders ADD COLUMN IF NOT EXISTS {col} {col_type}"
+            ))
+
+        # ── ims_invoices ─────────────────────────────────────────────────────
+        ims_cols = [
+            ("seller_name", "VARCHAR"),
+            ("seller_address", "VARCHAR"),
+            ("seller_pan", "VARCHAR"),
+            ("buyer_name", "VARCHAR"),
+            ("buyer_pan", "VARCHAR"),
+            ("buyer_address", "VARCHAR"),
+            ("is_reprint", "BOOLEAN DEFAULT FALSE"),
+            ("reprint_of", "VARCHAR"),
+            ("reprint_number", "INTEGER"),
+            ("is_credit_note", "BOOLEAN DEFAULT FALSE"),
+            ("original_invoice_id", "VARCHAR"),
+            ("note_reason", "TEXT"),
+            ("cbms_synced", "BOOLEAN DEFAULT FALSE"),
+            ("cbms_synced_at", "TIMESTAMP"),
+        ]
+        for col, col_type in ims_cols:
+            db.execute(text(
+                f"ALTER TABLE public.ims_invoices ADD COLUMN IF NOT EXISTS {col} {col_type}"
+            ))
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill IRD schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
+def ensure_ims_cbms_schema() -> None:
+    """Creates ims_cbms_credentials table if it doesn't exist (CREATE TABLE IF NOT EXISTS).
+    Also adds cbms_synced_at to ims_invoices if missing."""
+    db = SessionLocal()
+    try:
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS public.ims_cbms_credentials (
+                id VARCHAR(36) PRIMARY KEY,
+                tenant_id VARCHAR(36) NOT NULL UNIQUE,
+                ird_username VARCHAR(255) NOT NULL,
+                ird_password VARCHAR(255) NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            )
+        """))
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_ims_cbms_credentials_tenant "
+            "ON public.ims_cbms_credentials (tenant_id)"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to ensure ims_cbms_credentials schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
 def seed_apps():
     db = SessionLocal()
     try:
