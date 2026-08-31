@@ -29,19 +29,6 @@ const ICON_MAP: Record<string, IconType> = {
   Pool: MdOutlinePool,
 };
 
-const APP_PALETTE = [
-  { bg: '#E8EDF2', fg: colors.primary[800] },
-  { bg: colors.accent[50], fg: colors.accent[700] },
-  { bg: '#EAF6EE', fg: '#1E7A44' },
-  { bg: '#F3ECFB', fg: '#6D3FBF' },
-];
-
-function paletteFor(code: string) {
-  let hash = 0;
-  for (let i = 0; i < code.length; i++) hash = (hash * 31 + code.charCodeAt(i)) >>> 0;
-  return APP_PALETTE[hash % APP_PALETTE.length];
-}
-
 function daysUntil(iso: string | null): number | null {
   if (!iso) return null;
   return Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
@@ -107,7 +94,6 @@ function SubBadge({ sub }: { sub: AppSubscription | null }) {
 
 function AppTile({ app, sub }: { app: App; sub: AppSubscription | null }) {
   const Icon = (app.icon && ICON_MAP[app.icon]) || MdOutlineApps;
-  const palette = paletteFor(app.code);
   const accessible = isAccessible(sub);
 
   return (
@@ -116,10 +102,9 @@ function AppTile({ app, sub }: { app: App; sub: AppSubscription | null }) {
         backgroundColor: colors.neutral[0],
         border: `1px solid ${colors.primary[200]}`,
         borderRadius: radius.lg,
-        padding: spacing.lg,
+        overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        gap: spacing.lg,
         transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s',
       }}
       onMouseEnter={(e) => {
@@ -133,142 +118,197 @@ function AppTile({ app, sub }: { app: App; sub: AppSubscription | null }) {
         e.currentTarget.style.transform = 'translateY(0)';
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md }}>
+      {app.thumbnail_url && (
         <div
           style={{
-            width: '52px',
-            height: '52px',
-            borderRadius: radius.md,
-            backgroundColor: palette.bg,
-            color: palette.fg,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
+            position: 'relative',
+            width: '100%',
+            aspectRatio: '1200 / 630',
+            backgroundColor: colors.neutral[0],
             overflow: 'hidden',
+            borderBottom: `1px solid ${colors.neutral[100]}`,
           }}
         >
-          {app.icon_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={app.icon_url} alt={`${app.name} logo`} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-          ) : (
-            <Icon size={26} />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={app.thumbnail_url}
+            alt={`${app.name} preview`}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }}
+          />
+
+          {/* Icon badge, floating over the top-left corner of the preview */}
+          <div
+            style={{
+              position: 'absolute',
+              top: spacing.md,
+              left: spacing.md,
+              width: '40px',
+              height: '40px',
+              borderRadius: radius.md,
+              backgroundColor: 'rgba(255, 255, 255, 0.92)',
+              backdropFilter: 'blur(4px)',
+              boxShadow: '0 2px 10px rgba(10, 41, 71, 0.14)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              overflow: 'hidden',
+            }}
+          >
+            {app.icon_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={app.icon_url} alt={`${app.name} logo`} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '5px' }} />
+            ) : (
+              <Icon size={20} color={colors.primary[800]} />
+            )}
+          </div>
+
+          {sub && (
+            <div style={{ position: 'absolute', top: spacing.md, right: spacing.md }}>
+              <SubBadge sub={sub} />
+            </div>
           )}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px', flexShrink: 0 }}>
-          <SubBadge sub={sub} />
+      )}
+
+      <div style={{ padding: spacing.lg, display: 'flex', flexDirection: 'column', gap: spacing.lg, flex: 1 }}>
+        {!app.thumbnail_url && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md }}>
+            <div
+              style={{
+                width: '52px',
+                height: '52px',
+                borderRadius: radius.md,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                overflow: 'hidden',
+              }}
+            >
+              {app.icon_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={app.icon_url} alt={`${app.name} logo`} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              ) : (
+                <Icon size={26} color={colors.primary[800]} />
+              )}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px', flexShrink: 0 }}>
+              <SubBadge sub={sub} />
+            </div>
+          </div>
+        )}
+
+        <div style={{ flex: 1 }}>
+          <h3
+            style={{
+              fontSize: '17px',
+              fontWeight: '700',
+              color: colors.neutral[900],
+              margin: 0,
+              fontFamily: 'var(--font-playfair)',
+            }}
+          >
+            {app.name}
+          </h3>
+          {app.description && (
+            <p
+              style={{
+                fontSize: '13px',
+                color: colors.neutral[600],
+                lineHeight: '1.55',
+                margin: 0,
+                marginTop: spacing.xs,
+              }}
+            >
+              {app.description}
+            </p>
+          )}
+        </div>
+
+          <div style={{ display: 'flex', gap: spacing.sm }}>
+            <Link
+              href={`/dashboard/apps/${app.slug}`}
+              style={{
+                flex: 1,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: spacing.xs,
+                padding: `${spacing.sm} ${spacing.md}`,
+                borderRadius: radius.full,
+                border: `1px solid ${colors.neutral[300]}`,
+                backgroundColor: colors.neutral[0],
+                color: colors.neutral[800],
+                fontSize: '13px',
+                fontWeight: '600',
+                textDecoration: 'none',
+                transition: 'background-color 0.15s',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = colors.neutral[50])}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = colors.neutral[0])}
+            >
+              <MdOutlineSettings size={15} />
+              Manage
+            </Link>
+            {accessible ? (
+              <a
+                href={app.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  flex: 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: spacing.xs,
+                  padding: `${spacing.sm} ${spacing.md}`,
+                  borderRadius: radius.full,
+                  border: `1px solid ${colors.primary[800]}`,
+                  backgroundColor: colors.primary[800],
+                  color: colors.neutral[0],
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  textDecoration: 'none',
+                  transition: 'background-color 0.15s',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = colors.primary[700])}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = colors.primary[800])}
+              >
+                Open
+                <MdOutlineArrowOutward size={15} />
+              </a>
+            ) : (
+              <a
+                href={WHATSAPP_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  flex: 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: spacing.xs,
+                  padding: `${spacing.sm} ${spacing.md}`,
+                  borderRadius: radius.full,
+                  border: '1px solid #16A34A',
+                  backgroundColor: '#16A34A',
+                  color: '#fff',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  textDecoration: 'none',
+                  transition: 'background-color 0.15s',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#15803D')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#16A34A')}
+              >
+                Upgrade
+                <MdOutlineArrowOutward size={15} />
+              </a>
+            )}
+          </div>
         </div>
       </div>
-
-      <div style={{ flex: 1 }}>
-        <h3
-          style={{
-            fontSize: '17px',
-            fontWeight: '700',
-            color: colors.neutral[900],
-            margin: 0,
-            fontFamily: 'var(--font-playfair)',
-          }}
-        >
-          {app.name}
-        </h3>
-        {app.description && (
-          <p
-            style={{
-              fontSize: '13px',
-              color: colors.neutral[600],
-              lineHeight: '1.55',
-              margin: 0,
-              marginTop: spacing.xs,
-            }}
-          >
-            {app.description}
-          </p>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', gap: spacing.sm }}>
-        <Link
-          href={`/dashboard/apps/${app.slug}`}
-          style={{
-            flex: 1,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: spacing.xs,
-            padding: `${spacing.sm} ${spacing.md}`,
-            borderRadius: radius.full,
-            border: `1px solid ${colors.neutral[300]}`,
-            backgroundColor: colors.neutral[0],
-            color: colors.neutral[800],
-            fontSize: '13px',
-            fontWeight: '600',
-            textDecoration: 'none',
-            transition: 'background-color 0.15s',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = colors.neutral[50])}
-          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = colors.neutral[0])}
-        >
-          <MdOutlineSettings size={15} />
-          Manage
-        </Link>
-        {accessible ? (
-          <a
-            href={app.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              flex: 1,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: spacing.xs,
-              padding: `${spacing.sm} ${spacing.md}`,
-              borderRadius: radius.full,
-              border: `1px solid ${colors.primary[800]}`,
-              backgroundColor: colors.primary[800],
-              color: colors.neutral[0],
-              fontSize: '13px',
-              fontWeight: '600',
-              textDecoration: 'none',
-              transition: 'background-color 0.15s',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = colors.primary[700])}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = colors.primary[800])}
-          >
-            Open
-            <MdOutlineArrowOutward size={15} />
-          </a>
-        ) : (
-          <a
-            href={WHATSAPP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              flex: 1,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: spacing.xs,
-              padding: `${spacing.sm} ${spacing.md}`,
-              borderRadius: radius.full,
-              border: '1px solid #16A34A',
-              backgroundColor: '#16A34A',
-              color: '#fff',
-              fontSize: '13px',
-              fontWeight: '600',
-              textDecoration: 'none',
-              transition: 'background-color 0.15s',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#15803D')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#16A34A')}
-          >
-            Upgrade
-            <MdOutlineArrowOutward size={15} />
-          </a>
-        )}
-      </div>
-    </div>
   );
 }
 
