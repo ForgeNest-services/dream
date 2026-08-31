@@ -8,6 +8,7 @@ RUN npm install
 COPY src ./src
 COPY fonts ./fonts
 COPY *.html ./
+COPY solutions ./solutions
 COPY public ./public
 
 RUN npx @tailwindcss/cli -i ./src/input.css -o ./dist/output.css --minify
@@ -23,6 +24,7 @@ COPY dist/index.js /usr/share/nginx/html/dist/index.js
 COPY public /usr/share/nginx/html/public
 COPY fonts /usr/share/nginx/html/fonts
 COPY *.html /usr/share/nginx/html/
+COPY solutions /usr/share/nginx/html/solutions
 
 # CSS built in the previous stage — always fresh, never stale
 COPY --from=build /app/dist/output.css /usr/share/nginx/html/dist/output.css

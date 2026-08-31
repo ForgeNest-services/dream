@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pricing — Srota business apps for Nepal</title>
+    <meta
+      name="description"
+      content="Srota PMS, RMS and IMS: Rs 2,999/month or Rs 11,999/year each. Run two or more apps together and save 20% on the combined total. 30-day free trial on every app, no card required."
+    />
+    <link rel="icon" type="image/svg+xml" href="./public/favicons/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="96x96" href="./public/favicons/favicon-96x96.png" />
+    <link rel="shortcut icon" href="./public/favicons/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./public/favicons/apple-touch-icon.png" />
+    <link rel="manifest" href="./public/favicons/site.webmanifest" />
+    <meta name="theme-color" content="#2563eb" />
+    <link rel="stylesheet" href="./dist/output.css" />
+  </head>
+  <body class="overflow-x-hidden bg-mist text-ink">
+    <!-- ============================= NAV ============================= -->
+    <header class="fixed inset-x-0 top-0 z-50">
+      <div class="mx-auto max-w-7xl px-6 lg:px-10">
+        <nav
+          id="site-nav"
+          class="mt-4 flex items-center justify-between gap-2 rounded-2xl border border-ink/10 bg-white/80 px-3 py-0.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)] backdrop-blur-md transition-shadow sm:px-6"
+        >
+          <a href="/" class="flex min-w-0 shrink items-center" aria-label="Srota home">
+            <img src="./public/primary-logo.png" alt="Srota, Source of Solutions" class="h-9 w-auto sm:h-20" />
+          </a>
+
+          <div class="hidden items-center gap-1 lg:flex">
+            <div class="group relative">
+              <button class="flex items-center gap-1 rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:bg-ink/[0.04] hover:text-ink">
+                Solutions
+                <svg class="size-3.5 opacity-50 transition-transform group-hover:rotate-180" viewBox="0 0 12 12" fill="none">
+                  <path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <div class="invisible absolute left-1/2 top-full w-52 -translate-x-1/2 translate-y-2 rounded-xl border border-ink/10 bg-white p-1.5 opacity-0 shadow-lg shadow-ink/[0.08] transition-all duration-150 group-hover:visible group-hover:translate-y-3 group-hover:opacity-100">
+                <a href="/solutions/pms" class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink">Srota PMS</a>
+                <a href="/solutions/rms" class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink">Srota RMS</a>
+                <a href="/solutions/ims" class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink">Srota IMS</a>
+                <div class="my-1 border-t border-ink/5"></div>
+                <a href="/solutions" class="block rounded-lg px-3 py-2 text-sm font-medium text-ocean hover:bg-mist">All products</a>
+              </div>
+            </div>
+            <a href="/pricing" class="rounded-full px-4 py-2 text-sm font-medium text-ocean">Pricing</a>
+            <div class="group relative">
+              <button class="flex items-center gap-1 rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:bg-ink/[0.04] hover:text-ink">
+                Resources
+                <svg class="size-3.5 opacity-50 transition-transform group-hover:rotate-180" viewBox="0 0 12 12" fill="none">
+                  <path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <div class="invisible absolute left-1/2 top-full w-48 -translate-x-1/2 translate-y-2 rounded-xl border border-ink/10 bg-white p-1.5 opacity-0 shadow-lg shadow-ink/[0.08] transition-all duration-150 group-hover:visible group-hover:translate-y-3 group-hover:opacity-100">
+                <a href="/resources#guides" class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink">Guides</a>
+                <a href="/resources#tutorials" class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink">Tutorials</a>
+                <a href="/blog" class="block rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-mist hover:text-ink">Blog</a>
+              </div>
+            </div>
+            <a href="/about" class="rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:bg-ink/[0.04] hover:text-ink">About</a>
+            <a href="/contact" class="rounded-full px-4 py-2 text-sm font-medium text-ink/70 transition-colors hover:bg-ink/[0.04] hover:text-ink">Contact</a>
+          </div>
+
+          <div class="flex shrink-0 items-center gap-1 sm:gap-2">
+            <a href="https://app.srotaapps.com" target="_blank" rel="noopener" class="hidden rounded-full px-4 py-2.5 text-sm font-semibold text-ink/70 transition-colors hover:text-ink sm:inline-block">Sign in</a>
+            <a href="https://app.srotaapps.com" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-ink px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-ocean sm:px-5 sm:py-2.5 sm:text-sm">Start Free</a>
+            <button id="menu-toggle" class="grid size-9 shrink-0 place-items-center rounded-full text-ink transition-colors hover:bg-ink/[0.04] sm:size-10 lg:hidden" aria-label="Open menu" aria-expanded="false">
+              <svg class="size-5" viewBox="0 0 20 20" fill="none">
+                <path d="M3 5.5h14M3 10h14M3 14.5h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+            </button>
+          </div>
+        </nav>
+
+        <!-- Mobile menu -->
+        <div id="mobile-menu" class="mt-2 hidden overflow-hidden rounded-2xl border border-ink/10 bg-white shadow-lg shadow-ink/[0.08] lg:hidden">
+          <div class="flex flex-col p-2">
+            <div class="mobile-accordion-item">
+              <button class="mobile-accordion-trigger flex w-full items-center justify-between gap-2 rounded-xl px-4 py-3 text-left text-sm font-medium text-ink/80 hover:bg-mist">
+                Solutions
+                <svg class="mobile-accordion-icon size-3.5 shrink-0 text-slate transition-transform duration-200" viewBox="0 0 12 12" fill="none">
+                  <path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <div class="mobile-accordion-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-out">
+                <div class="overflow-hidden">
+                  <a href="/solutions/pms" class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist">Srota PMS</a>
+                  <a href="/solutions/rms" class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist">Srota RMS</a>
+                  <a href="/solutions/ims" class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist">Srota IMS</a>
+                  <a href="/solutions" class="block rounded-xl px-6 py-2.5 text-sm font-medium text-ocean hover:bg-mist">All products</a>
+                </div>
+              </div>
+            </div>
+
+            <a href="/pricing" class="rounded-xl px-4 py-3 text-sm font-medium text-ink/80 hover:bg-mist">Pricing</a>
+
+            <div class="mobile-accordion-item">
+              <button class="mobile-accordion-trigger flex w-full items-center justify-between gap-2 rounded-xl px-4 py-3 text-left text-sm font-medium text-ink/80 hover:bg-mist">
+                Resources
+                <svg class="mobile-accordion-icon size-3.5 shrink-0 text-slate transition-transform duration-200" viewBox="0 0 12 12" fill="none">
+                  <path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <div class="mobile-accordion-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-out">
+                <div class="overflow-hidden">
+                  <a href="/resources#guides" class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist">Guides</a>
+                  <a href="/resources#tutorials" class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist">Tutorials</a>
+                  <a href="/blog" class="block rounded-xl px-6 py-2.5 text-sm text-ink/65 hover:bg-mist">Blog</a>
+                </div>
+              </div>
+            </div>
+
+            <a href="/about" class="rounded-xl px-4 py-3 text-sm font-medium text-ink/80 hover:bg-mist">About</a>
+            <a href="/contact" class="rounded-xl px-4 py-3 text-sm font-medium text-ink/80 hover:bg-mist">Contact</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <!-- ============================= HERO ============================= -->
+      <section class="px-6 pb-16 pt-40 sm:pb-20 sm:pt-48 lg:px-10">
+        <div class="mx-auto max-w-2xl text-center">
+          <p class="text-sm font-semibold uppercase tracking-[0.14em] text-ocean">Pricing</p>
+          <h1 class="mt-3 font-display text-4xl font-semibold leading-[1.1] tracking-tight text-ink sm:text-6xl">
+            Simple, per app. Cheaper together.
+          </h1>
+          <p class="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-slate">
+            Every app costs the same on its own, and every app starts with 30 days
+            free — no card required. Run two or more together and the combined bill
+            drops by 20%.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============================= PER-APP PRICING ============================= -->
+      <section class="px-6 pb-8 lg:px-10">
+        <div class="mx-auto max-w-6xl">
+          <div class="grid gap-6 lg:grid-cols-3" data-reveal>
+            <!-- PMS -->
+            <div class="rounded-3xl border border-ink/10 bg-white p-8">
+              <img src="./public/logos/PMS.png" alt="Srota PMS" class="h-6 w-auto" />
+              <p class="mt-6 font-display text-4xl font-semibold text-ink">
+                Rs 2,999<span class="text-lg font-medium text-slate">/mo</span>
+              </p>
+              <p class="mt-1 text-sm text-slate">or Rs 11,999/year — 2 months free</p>
+              <a
+                href="https://app.srotaapps.com"
+                target="_blank"
+                rel="noopener"
+                class="mt-6 block rounded-full border border-ink/20 py-3 text-center text-sm font-semibold text-ink transition-colors hover:border-ocean hover:text-ocean"
+                >Start free trial</a
+              >
+              <a href="/solutions/pms" class="mt-3 block text-center text-xs font-semibold text-slate hover:text-ink">What's included →</a>
+            </div>
+
+            <!-- RMS -->
+            <div class="rounded-3xl border border-ink/10 bg-white p-8">
+              <img src="./public/logos/RMS.png" alt="Srota RMS" class="h-6 w-auto" />
+              <p class="mt-6 font-display text-4xl font-semibold text-ink">
+                Rs 1,299<span class="text-lg font-medium text-slate">/mo</span>
+              </p>
+              <p class="mt-1 text-sm text-slate">or Rs 6,999/year — 2 months free</p>
+              <a
+                href="https://app.srotaapps.com"
+                target="_blank"
+                rel="noopener"
+                class="mt-6 block rounded-full border border-ink/20 py-3 text-center text-sm font-semibold text-ink transition-colors hover:border-teal hover:text-teal"
+                >Start free trial</a
+              >
+              <a href="/solutions/rms" class="mt-3 block text-center text-xs font-semibold text-slate hover:text-ink">What's included →</a>
+            </div>
+
+            <!-- IMS -->
+            <div class="rounded-3xl border border-ink/10 bg-white p-8">
+              <img src="./public/logos/IMS.png" alt="Srota IMS" class="h-6 w-auto" />
+              <p class="mt-6 font-display text-4xl font-semibold text-ink">
+                Rs 1,299<span class="text-lg font-medium text-slate">/mo</span>
+              </p>
+              <p class="mt-1 text-sm text-slate">or Rs 6,999/year — 2 months free</p>
+              <a
+                href="https://app.srotaapps.com"
+                target="_blank"
+                rel="noopener"
+                class="mt-6 block rounded-full border border-ink/20 py-3 text-center text-sm font-semibold text-ink transition-colors hover:border-ocean hover:text-ocean"
+                >Start free trial</a
+              >
+              <a href="/solutions/ims" class="mt-3 block text-center text-xs font-semibold text-slate hover:text-ink">What's included →</a>
+            </div>
+          </div>
+
+          <p class="mx-auto mt-6 max-w-2xl text-center text-sm text-slate">
+            Every plan includes unlimited staff logins per branch and support for as
+            many branches as your business has.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============================= BUNDLE ============================= -->
+      <section class="px-6 py-20 sm:py-24 lg:px-10">
+        <div class="mx-auto max-w-4xl">
+          <div class="relative overflow-hidden rounded-[2rem] bg-ink px-8 py-12 text-white sm:px-14 sm:py-14" data-reveal>
+            <div class="pointer-events-none absolute -right-16 -top-16 size-64 rounded-full bg-ocean/25 blur-3xl" aria-hidden="true"></div>
+            <div class="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <span class="inline-flex rounded-full bg-teal px-3 py-1 text-xs font-semibold text-ink">Run more than one app</span>
+                <h2 class="mt-4 font-display text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
+                  Get 20% off when you combine apps
+                </h2>
+                <p class="mt-3 max-w-md text-white/60">
+                  There's no separate bundle to buy. Pick any two or three apps, pay
+                  them together, and the combined total drops by 20% automatically —
+                  the more you run, the more you save.
+                </p>
+              </div>
+              <a
+                href="https://app.srotaapps.com"
+                target="_blank"
+                rel="noopener"
+                class="inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-white px-7 py-3.5 text-base font-semibold text-ink transition-colors hover:bg-white/90"
+              >
+                Start a trial
+              </a>
+            </div>
+          </div>
+
+          <div class="mt-6 overflow-hidden rounded-2xl border border-ink/10 bg-white" data-reveal>
+            <table class="w-full text-left text-sm">
+              <thead class="border-b border-ink/10 bg-mist/60 text-xs uppercase tracking-wide text-slate">
+                <tr>
+                  <th class="px-6 py-3.5 font-semibold">Apps</th>
+                  <th class="px-6 py-3.5 font-semibold">Monthly, separately</th>
+                  <th class="px-6 py-3.5 font-semibold">Monthly, combined (20% off)</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-ink/10">
+                <tr>
+                  <td class="px-6 py-4 font-medium text-ink">PMS + RMS</td>
+                  <td class="px-6 py-4 text-slate">Rs 4,298</td>
+                  <td class="px-6 py-4 font-semibold text-ocean">Rs 3,438.40</td>
+                </tr>
+                <tr>
+                  <td class="px-6 py-4 font-medium text-ink">RMS + IMS</td>
+                  <td class="px-6 py-4 text-slate">Rs 2,598</td>
+                  <td class="px-6 py-4 font-semibold text-ocean">Rs 2,078.40</td>
+                </tr>
+                <tr>
+                  <td class="px-6 py-4 font-medium text-ink">PMS + RMS + IMS</td>
+                  <td class="px-6 py-4 text-slate">Rs 5,597</td>
+                  <td class="px-6 py-4 font-semibold text-ocean">Rs 4,477.60</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="mt-3 text-center text-xs text-slate">
+            Yearly plans combine the same way. The 20% discount is applied to
+            whichever apps you choose — there's no fixed-price package to pick from.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============================= HOW BILLING WORKS ============================= -->
+      <section class="px-6 py-20 sm:py-24 lg:px-10">
+        <div class="mx-auto max-w-4xl">
+          <div class="text-center" data-reveal>
+            <p class="text-sm font-semibold uppercase tracking-[0.14em] text-ocean">How it actually works</p>
+            <h2 class="mt-3 font-display text-3xl font-semibold tracking-tight text-ink sm:text-5xl">Billing, the honest version</h2>
+          </div>
+
+          <div class="mt-14 grid gap-8 sm:grid-cols-3" data-reveal>
+            <div>
+              <p class="font-display text-2xl font-semibold text-ocean">1</p>
+              <h3 class="mt-3 font-display text-lg font-semibold text-ink">Try free for 30 days</h3>
+              <p class="mt-2 text-sm leading-relaxed text-slate">
+                Each app's trial starts the moment you create your first staff login
+                for it — not the day you sign up. Try one app today, another next month.
+              </p>
+            </div>
+            <div>
+              <p class="font-display text-2xl font-semibold text-ocean">2</p>
+              <h3 class="mt-3 font-display text-lg font-semibold text-ink">Pay however you already do</h3>
+              <p class="mt-2 text-sm leading-relaxed text-slate">
+                Nepal doesn't have reliable auto-recurring card billing yet, so we
+                don't pretend to. Pay by the methods you already use, and send us
+                confirmation — no card on file, ever.
+              </p>
+            </div>
+            <div>
+              <p class="font-display text-2xl font-semibold text-ocean">3</p>
+              <h3 class="mt-3 font-display text-lg font-semibold text-ink">We confirm, you're live</h3>
+              <p class="mt-2 text-sm leading-relaxed text-slate">
+                Our team confirms your payment and activates the app, usually the
+                same day. If your trial runs out before you've paid, the app locks
+                until it's sorted — nothing is ever deleted.
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-12 flex justify-center" data-reveal>
+            <a
+              href="https://wa.me/9779868211546?text=Hi%2C%20I%27d%20like%20to%20ask%20about%20Srota%20pricing."
+              target="_blank"
+              rel="noopener"
+              class="inline-flex items-center gap-2 rounded-full bg-teal px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-teal/25 transition-all hover:-translate-y-0.5 hover:shadow-xl hover:shadow-teal/30"
+            >
+              Ask us on WhatsApp
+              <svg class="size-4" viewBox="0 0 16 16" fill="none">
+                <path d="M3.5 8h9M8.5 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================= FAQ ============================= -->
+      <section id="faq" class="scroll-mt-24 bg-white/60 px-6 py-24 sm:py-28 lg:px-10">
+        <div class="mx-auto max-w-3xl">
+          <div class="text-center" data-reveal>
+            <p class="text-sm font-semibold uppercase tracking-[0.14em] text-ocean">FAQ</p>
+            <h2 class="mt-3 font-display text-3xl font-semibold tracking-tight text-ink sm:text-5xl">Pricing questions</h2>
+          </div>
+
+          <div class="mt-12 divide-y divide-ink/10 rounded-3xl border border-ink/10 bg-white" data-reveal>
+            <div class="faq-item">
+              <button class="faq-trigger flex w-full items-center justify-between gap-4 px-6 py-5 text-left sm:px-8">
+                <span class="font-display text-base font-medium text-ink">What happens when my trial runs out?</span>
+                <svg class="faq-icon size-5 shrink-0 text-slate transition-transform duration-300" viewBox="0 0 20 20" fill="none">
+                  <path d="M5 8l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
+                <div class="overflow-hidden">
+                  <p class="px-6 pb-5 text-sm leading-relaxed text-slate sm:px-8">
+                    Your data stays exactly where it is — nothing is deleted. Once the
+                    30 days end, that app becomes read-only until you activate a plan;
+                    logging in still works, but the day-to-day screens are locked. Sort
+                    payment and you're straight back in, with everything as you left it.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-trigger flex w-full items-center justify-between gap-4 px-6 py-5 text-left sm:px-8">
+                <span class="font-display text-base font-medium text-ink">Can I use just one app, not all three?</span>
+                <svg class="faq-icon size-5 shrink-0 text-slate transition-transform duration-300" viewBox="0 0 20 20" fill="none">
+                  <path d="M5 8l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
+                <div class="overflow-hidden">
+                  <p class="px-6 pb-5 text-sm leading-relaxed text-slate sm:px-8">
+                    Yes. Each app is priced and billed on its own. A standalone
+                    restaurant can run Srota RMS and never touch PMS or IMS, and vice
+                    versa. The 20% discount only applies once you pay for two or more
+                    together.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-trigger flex w-full items-center justify-between gap-4 px-6 py-5 text-left sm:px-8">
+                <span class="font-display text-base font-medium text-ink">How do payments actually work in Nepal?</span>
+                <svg class="faq-icon size-5 shrink-0 text-slate transition-transform duration-300" viewBox="0 0 20 20" fill="none">
+                  <path d="M5 8l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
+                <div class="overflow-hidden">
+                  <p class="px-6 pb-5 text-sm leading-relaxed text-slate sm:px-8">
+                    Auto-recurring card billing isn't reliable in Nepal yet, so payments
+                    are confirmed manually. You pay by whatever method works for you,
+                    let us know, and our team activates your plan — usually the same
+                    day.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-trigger flex w-full items-center justify-between gap-4 px-6 py-5 text-left sm:px-8">
+                <span class="font-display text-base font-medium text-ink">Do you support multiple branches?</span>
+                <svg class="faq-icon size-5 shrink-0 text-slate transition-transform duration-300" viewBox="0 0 20 20" fill="none">
+                  <path d="M5 8l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
+                <div class="overflow-hidden">
+                  <p class="px-6 pb-5 text-sm leading-relaxed text-slate sm:px-8">
+                    Yes, every plan supports multiple branches under one business
+                    account, each with its own staff logins and its own view of the
+                    data. Branches are shared across every Srota app you run — set a
+                    branch up once, not once per app.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="faq-item">
+              <button class="faq-trigger flex w-full items-center justify-between gap-4 px-6 py-5 text-left sm:px-8">
+                <span class="font-display text-base font-medium text-ink">Is there a setup fee, or a contract?</span>
+                <svg class="faq-icon size-5 shrink-0 text-slate transition-transform duration-300" viewBox="0 0 20 20" fill="none">
+                  <path d="M5 8l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <div class="faq-panel grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-out">
+                <div class="overflow-hidden">
+                  <p class="px-6 pb-5 text-sm leading-relaxed text-slate sm:px-8">
+                    No setup fee, and no long-term lock-in. Pay monthly or yearly (yearly
+                    works out to about 2 months free), and stop whenever you like.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ============================= FOOTER ============================= -->
+    <footer class="bg-ink px-6 pb-10 pt-16 lg:px-10">
+      <div class="mx-auto max-w-7xl">
+        <div class="grid gap-12 sm:grid-cols-2 lg:grid-cols-5">
+          <div class="lg:col-span-2">
+            <img src="./public/primary-logo.png" alt="Srota, Source of Solutions" class="h-16 w-auto brightness-0 invert" />
+            <p class="mt-5 max-w-xs text-sm leading-relaxed text-white/55">
+              Business software built for Nepal: one platform, every tool your business
+              needs to run without paper.
+            </p>
+          </div>
+
+          <div>
+            <p class="text-sm font-semibold text-white">Solutions</p>
+            <ul class="mt-4 space-y-3 text-sm text-white/55">
+              <li><a href="/solutions/pms" class="hover:text-teal">Srota PMS</a></li>
+              <li><a href="/solutions/rms" class="hover:text-teal">Srota RMS</a></li>
+              <li><a href="/solutions/ims" class="hover:text-teal">Srota IMS</a></li>
+              <li><a href="/solutions" class="hover:text-teal">All products</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <p class="text-sm font-semibold text-white">Resources</p>
+            <ul class="mt-4 space-y-3 text-sm text-white/55">
+              <li><a href="/resources#guides" class="hover:text-teal">Guides</a></li>
+              <li><a href="/resources#tutorials" class="hover:text-teal">Tutorials</a></li>
+              <li><a href="/blog" class="hover:text-teal">Blog</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <p class="text-sm font-semibold text-white">Company</p>
+            <ul class="mt-4 space-y-3 text-sm text-white/55">
+              <li><a href="/about" class="hover:text-teal">About us</a></li>
+              <li><a href="/pricing" class="hover:text-teal">Pricing</a></li>
+              <li><a href="/contact" class="hover:text-teal">Contact</a></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="mt-14 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-8 sm:flex-row">
+          <p class="text-xs text-white/45">&copy; <span id="footer-year">2026</span> Srota. All rights reserved.</p>
+          <p class="text-xs text-white/45">Made in Nepal, for Nepal.</p>
+        </div>
+      </div>
+    </footer>
+
+    <script src="./dist/index.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js" async></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js"
+      async
+      onload="window.__gsapReady = true; window.dispatchEvent(new Event('gsap:ready'))"
+    ></script>
+  </body>
+</html>
