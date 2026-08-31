@@ -17,6 +17,7 @@ from features.restro.menu_item_repository import MenuItemRepository
 from features.restro.menu_item_service import combo_note_from_components
 from features.restro.customer_repository import CustomerRepository
 from features.restro.khata_settlement_repository import KhataSettlementRepository
+from features.restro.branch_settings_repository import BranchSettingsRepository
 from features.branches.repository import BranchRepository
 from features.auth.repository import TenantRepository
 from features.hotel_pms.audit_repository import AuditRepository
@@ -25,20 +26,26 @@ from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad
 from utils.logger import logger
 
 
-# TODO(vat): re-enable when RMS VAT is ready. VAT is intentionally disabled
-# for now — only PAN capture is required. To enable: flip DEFAULT_VAT_ENABLED
-# to True and ensure per-branch VAT settings are read from IMSBranchSettings
-# (or equivalent RMS settings) so the rate is configurable per tenant.
-DEFAULT_VAT_ENABLED = False  # ← set True when enabling VAT for RMS
-DEFAULT_VAT_RATE = Decimal("13")  # IRD standard rate — unchanged when re-enabling
+def order_vat_settings(db: Session, tenant_id: str, branch_id: str) -> tuple[bool, Decimal]:
+    """Reads the branch's real VAT config (RestroBranchSettings), which is
+    itself gated server-side on tenant.is_vat_registered — never a hardcoded
+    default. Falls back to VAT-off if the branch has no settings row yet
+    (auto-provisioning only happens through BranchSettingsService.get_or_create,
+    which order flows don't call)."""
+    settings = BranchSettingsRepository.get(db, tenant_id, branch_id)
+    if not settings:
+        return False, Decimal("13")
+    return bool(settings.vat_enabled), Decimal(settings.vat_rate)
 
 
-def compute_order_total(order) -> Decimal:
+def compute_order_total(order, vat_enabled: bool = False, vat_rate: Decimal = Decimal("13")) -> Decimal:
     """Mirrors the frontend billTotals(): subtotal from non-voided lines,
     discount (percent or flat), then VAT applied to the taxable amount.
     Used server-side both for reports and for the khata outstanding-balance
     calculation, so the number always matches what the customer was shown at
-    bill time."""
+    bill time. vat_enabled/vat_rate come from the order's branch settings —
+    callers iterating orders across branches must pass the right pair per
+    order (see khata_orders_total)."""
     subtotal = sum(
         (Decimal(line.price) * line.qty for line in order.lines if not line.is_voided),
         Decimal("0"),
@@ -48,7 +55,7 @@ def compute_order_total(order) -> Decimal:
     else:
         discount = Decimal(order.discount_value)
     taxable = max(Decimal("0"), subtotal - discount)
-    vat = (taxable * DEFAULT_VAT_RATE / Decimal("100")) if DEFAULT_VAT_ENABLED else Decimal("0")
+    vat = (taxable * vat_rate / Decimal("100")) if vat_enabled else Decimal("0")
     return (taxable + vat).quantize(Decimal("0.01"))
 
 
@@ -471,9 +478,8 @@ class OrderService:
         clear_settled = payment_method == "khata"
 
         # ── IRD: PAN snapshot — seller and buyer ─────────────────────────────
-        # VAT computation is intentionally disabled for RMS (DEFAULT_VAT_ENABLED=False).
-        # When VAT is re-enabled, uncomment the taxable/vat/total block below
-        # and remove the simplified total line.
+        vat_enabled, vat_rate = order_vat_settings(db, tenant_id, branch_id)
+
         subtotal = sum(
             (Decimal(line.price) * line.qty for line in order.lines if not line.is_voided),
             Decimal("0"),
@@ -483,12 +489,9 @@ class OrderService:
         else:
             discount = Decimal(order.discount_value)
 
-        # ── TODO(vat): uncomment when enabling VAT for RMS ────────────────────
-        # taxable = max(Decimal("0"), subtotal - discount)
-        # vat = (taxable * DEFAULT_VAT_RATE / Decimal("100")) if DEFAULT_VAT_ENABLED else Decimal("0")
-        # total = (taxable + vat).quantize(Decimal("0.01"))
-        # ─────────────────────────────────────────────────────────────────────
-        total = (subtotal - discount).quantize(Decimal("0.01"))
+        taxable_and_vat = max(Decimal("0"), subtotal - discount)
+        vat = (taxable_and_vat * vat_rate / Decimal("100")) if vat_enabled else Decimal("0")
+        total = (taxable_and_vat + vat).quantize(Decimal("0.01"))
 
         tenant = TenantRepository.get_by_id(db, tenant_id)
         branch = BranchRepository.get_by_id(db, tenant_id, branch_id)
@@ -502,9 +505,9 @@ class OrderService:
         order.buyer_pan = buyer_pan
 
         order.subtotal_amount = subtotal
-        order.taxable_amount = Decimal("0")   # TODO(vat): set to (subtotal - discount) when VAT enabled
-        order.exempt_amount = Decimal("0")
-        order.vat_amount = Decimal("0")       # TODO(vat): compute from taxable * rate when VAT enabled
+        order.taxable_amount = taxable_and_vat if vat_enabled else Decimal("0")
+        order.exempt_amount = Decimal("0") if vat_enabled else taxable_and_vat
+        order.vat_amount = vat
         order.total_amount = total
 
         # Auto-finish the kitchen ticket. Paying = the customer got the food,
@@ -587,9 +590,12 @@ class OrderService:
     def khata_orders_total(db: Session, tenant_id: str, customer_id: str) -> Decimal:
         """Sum of every khata order total for a customer (the debit side of
         the ledger). Does NOT subtract settlements — that's the caller's job
-        via outstanding_balance()."""
+        via outstanding_balance(). Uses each order's snapshotted total_amount
+        (set once at mark-paid time) rather than recomputing live — branch
+        VAT settings can change after the bill was issued, and the ledger
+        must match what the customer was actually billed, not today's rate."""
         orders = OrderRepository.list_khata_orders_for_customer(db, tenant_id, customer_id)
-        return sum((compute_order_total(o) for o in orders), Decimal("0"))
+        return sum((Decimal(o.total_amount or 0) for o in orders), Decimal("0"))
 
     @staticmethod
     def outstanding_balance(db: Session, tenant_id: str, customer_id: str) -> Decimal:

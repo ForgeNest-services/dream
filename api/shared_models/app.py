@@ -19,6 +19,10 @@ class App(Base):
     # on startup via seed_app_icons(). Frontend prefers this over the
     # react-icons `icon` field when both are present.
     icon_url = Column(String(500), nullable=True)
+    # Public MinIO URL of the app's larger preview/thumbnail PNG (e.g. for a
+    # catalog card image). Seeded the same way as icon_url, from a separate
+    # thumbnail_asset PNG in api/assets/.
+    thumbnail_url = Column(String(500), nullable=True)
     url = Column(String(500), nullable=False)
     screenshots = Column(JSON, nullable=True)
     features = Column(JSON, nullable=True)

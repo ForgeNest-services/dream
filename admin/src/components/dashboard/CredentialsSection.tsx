@@ -12,6 +12,7 @@ import {
   MdOutlineVpnKey,
   MdCheckCircle,
   MdContentCopy,
+  MdExpandMore,
 } from 'react-icons/md';
 import { useCredentials } from '@/hooks/useCredentials';
 import { AppCredential, Branch, APP_CODE_TO_ROLES, BRANCH_SCOPED_ROLES } from '@/types/apps';
@@ -76,9 +77,17 @@ export function CredentialsSection({ appCode, branches, branchesLoading }: Props
   const [addingSlot, setAddingSlot] = useState<Slot | null>(null);
   const [editingCred, setEditingCred] = useState<AppCredential | null>(null);
   const [confirmDeleteCred, setConfirmDeleteCred] = useState<AppCredential | null>(null);
+  const [staffExpanded, setStaffExpanded] = useState(false);
 
   const roles = APP_CODE_TO_ROLES[appCode] || [];
   const roleLabel = (code: string) => roles.find((r) => r.code === code)?.label || code.replace('_', ' ');
+
+  // Only the tenant-wide role (App Owner / Owner — the one that isn't
+  // branch-scoped) is created directly on this page. Every other role's
+  // login is staff-only and kept behind an expander so it isn't presented
+  // as an "account" alongside the Owner's.
+  const ownerRoles = roles.filter((r) => !BRANCH_SCOPED_ROLES.has(r.code));
+  const staffRoles = roles.filter((r) => BRANCH_SCOPED_ROLES.has(r.code));
 
   if (credsLoading || branchesLoading) {
     return (
@@ -105,89 +114,99 @@ export function CredentialsSection({ appCode, branches, branchesLoading }: Props
     );
   }
 
+  const buildSlots = (roleCode: string, scoped: boolean): Slot[] =>
+    scoped
+      ? branches.map((b) => ({
+          role: roleCode,
+          branchId: b.id,
+          branchName: b.name,
+          cred: credentials.find((c) => c.role === roleCode && c.branch_id === b.id) || null,
+        }))
+      : [
+          {
+            role: roleCode,
+            branchId: null,
+            branchName: null,
+            cred: credentials.find((c) => c.role === roleCode) || null,
+          },
+        ];
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg }}>
-      {roles.map((r) => {
-        const scoped = BRANCH_SCOPED_ROLES.has(r.code);
-        const roleSlots: Slot[] = scoped
-          ? branches.map((b) => ({
-              role: r.code,
-              branchId: b.id,
-              branchName: b.name,
-              cred: credentials.find((c) => c.role === r.code && c.branch_id === b.id) || null,
-            }))
-          : [
-              {
-                role: r.code,
-                branchId: null,
-                branchName: null,
-                cred: credentials.find((c) => c.role === r.code) || null,
-              },
-            ];
-        const filledCount = roleSlots.filter((s) => s.cred).length;
+      {ownerRoles.map((r) => (
+        <RoleCard
+          key={r.code}
+          role={r}
+          appCode={appCode}
+          scoped={false}
+          slots={buildSlots(r.code, false)}
+          onAdd={setAddingSlot}
+          onEdit={(cred) => setEditingCred(cred)}
+          onDelete={(cred) => setConfirmDeleteCred(cred)}
+        />
+      ))}
 
-        return (
-          <div
-            key={r.code}
+      {staffRoles.length > 0 && (
+        <div
+          style={{
+            border: `1px solid ${colors.neutral[200]}`,
+            borderRadius: '14px',
+            overflow: 'hidden',
+          }}
+        >
+          <button
+            onClick={() => setStaffExpanded((v) => !v)}
             style={{
-              backgroundColor: colors.neutral[0],
-              border: `1px solid ${colors.neutral[200]}`,
-              borderRadius: '14px',
-              overflow: 'hidden',
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: spacing.md,
+              padding: spacing.lg,
+              border: 'none',
+              backgroundColor: colors.neutral[50],
+              cursor: 'pointer',
+              textAlign: 'left',
             }}
           >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                justifyContent: 'space-between',
-                gap: spacing.md,
-                padding: spacing.lg,
-                borderBottom: `1px solid ${colors.neutral[100]}`,
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
-                  <p style={{ fontSize: '15px', fontWeight: '700', color: colors.neutral[900], margin: 0 }}>
-                    {r.label}
-                  </p>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: '600',
-                      color: scoped ? colors.accent[700] : colors.primary[800],
-                      backgroundColor: scoped ? colors.accent[50] : colors.primary[50],
-                      padding: '2px 8px',
-                      borderRadius: '10px',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {scoped ? 'Per branch' : 'All branches'}
-                  </span>
-                </div>
-                <p style={{ fontSize: '13px', color: colors.neutral[600], margin: `${spacing.xs} 0 0`, lineHeight: '1.5', maxWidth: '520px' }}>
-                  {roleDescription(appCode, r.code)}
-                </p>
-              </div>
-              <div style={{ fontSize: '12px', color: colors.neutral[400], fontWeight: '600', flexShrink: 0, whiteSpace: 'nowrap' }}>
-                {filledCount}/{roleSlots.length} set up
-              </div>
-            </div>
-
             <div>
-              {roleSlots.map((slot) => (
-                <SlotRow
-                  key={`${slot.role}-${slot.branchId ?? 'tenant'}`}
-                  slot={slot}
-                  onAdd={() => setAddingSlot(slot)}
-                  onEdit={() => setEditingCred(slot.cred)}
-                  onDelete={() => setConfirmDeleteCred(slot.cred)}
+              <p style={{ fontSize: '14px', fontWeight: '700', color: colors.neutral[900], margin: 0 }}>
+                Staff logins
+              </p>
+              <p style={{ fontSize: '12.5px', color: colors.neutral[600], margin: `${spacing.xs} 0 0` }}>
+                {staffRoles.map((r) => r.label).join(', ')} — branch logins for your team, separate from the
+                owner login above.
+              </p>
+            </div>
+            <MdExpandMore
+              size={22}
+              color={colors.neutral[500]}
+              style={{
+                flexShrink: 0,
+                transform: staffExpanded ? 'rotate(180deg)' : 'none',
+                transition: 'transform 0.15s',
+              }}
+            />
+          </button>
+
+          {staffExpanded && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.lg, padding: spacing.lg }}>
+              {staffRoles.map((r) => (
+                <RoleCard
+                  key={r.code}
+                  role={r}
+                  appCode={appCode}
+                  scoped
+                  slots={buildSlots(r.code, true)}
+                  onAdd={setAddingSlot}
+                  onEdit={(cred) => setEditingCred(cred)}
+                  onDelete={(cred) => setConfirmDeleteCred(cred)}
                 />
               ))}
             </div>
-          </div>
-        );
-      })}
+          )}
+        </div>
+      )}
 
       {addingSlot && (
         <CreateCredentialModal
@@ -235,6 +254,89 @@ export function CredentialsSection({ appCode, branches, branchesLoading }: Props
           }}
         />
       )}
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+
+function RoleCard({
+  role,
+  appCode,
+  scoped,
+  slots,
+  onAdd,
+  onEdit,
+  onDelete,
+}: {
+  role: { code: string; label: string };
+  appCode: string;
+  scoped: boolean;
+  slots: Slot[];
+  onAdd: (slot: Slot) => void;
+  onEdit: (cred: AppCredential | null) => void;
+  onDelete: (cred: AppCredential | null) => void;
+}) {
+  const filledCount = slots.filter((s) => s.cred).length;
+
+  return (
+    <div
+      style={{
+        backgroundColor: colors.neutral[0],
+        border: `1px solid ${colors.neutral[200]}`,
+        borderRadius: '14px',
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: spacing.md,
+          padding: spacing.lg,
+          borderBottom: `1px solid ${colors.neutral[100]}`,
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
+            <p style={{ fontSize: '15px', fontWeight: '700', color: colors.neutral[900], margin: 0 }}>
+              {role.label}
+            </p>
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: '600',
+                color: scoped ? colors.accent[700] : colors.primary[800],
+                backgroundColor: scoped ? colors.accent[50] : colors.primary[50],
+                padding: '2px 8px',
+                borderRadius: '10px',
+                flexShrink: 0,
+              }}
+            >
+              {scoped ? 'Per branch' : 'All branches'}
+            </span>
+          </div>
+          <p style={{ fontSize: '13px', color: colors.neutral[600], margin: `${spacing.xs} 0 0`, lineHeight: '1.5', maxWidth: '520px' }}>
+            {roleDescription(appCode, role.code)}
+          </p>
+        </div>
+        <div style={{ fontSize: '12px', color: colors.neutral[400], fontWeight: '600', flexShrink: 0, whiteSpace: 'nowrap' }}>
+          {filledCount}/{slots.length} set up
+        </div>
+      </div>
+
+      <div>
+        {slots.map((slot) => (
+          <SlotRow
+            key={`${slot.role}-${slot.branchId ?? 'tenant'}`}
+            slot={slot}
+            onAdd={() => onAdd(slot)}
+            onEdit={() => onEdit(slot.cred)}
+            onDelete={() => onDelete(slot.cred)}
+          />
+        ))}
+      </div>
     </div>
   );
 }

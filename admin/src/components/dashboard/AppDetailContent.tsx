@@ -119,8 +119,6 @@ export function AppDetailContent({ slug }: { slug: string }) {
             width: '64px',
             height: '64px',
             borderRadius: '16px',
-            backgroundColor: colors.primary[50],
-            color: colors.primary[800],
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -136,7 +134,7 @@ export function AppDetailContent({ slug }: { slug: string }) {
               style={{ width: '100%', height: '100%', objectFit: 'contain' }}
             />
           ) : (
-            <Icon size={32} />
+            <Icon size={32} color={colors.primary[800]} />
           )}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>

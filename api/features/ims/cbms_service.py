@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from core.configs import settings
+from core.crypto import encrypt_secret, decrypt_secret
 from shared_models.ims_cbms_credential import IMSCbmsCredential
 from utils.logger import logger
 
@@ -20,19 +21,22 @@ class CBMSCredentialRepository:
 
     @staticmethod
     def upsert(db: Session, tenant_id: str, ird_username: str, ird_password: str) -> IMSCbmsCredential:
+        """ird_password is the tenant's real IRD Taxpayer Portal password —
+        always stored encrypted (core/crypto.py), never in plaintext."""
+        encrypted_password = encrypt_secret(ird_password)
         cred = db.query(IMSCbmsCredential).filter(
             IMSCbmsCredential.tenant_id == tenant_id
         ).first()
         if cred:
             cred.ird_username = ird_username
-            cred.ird_password = ird_password
+            cred.ird_password = encrypted_password
             cred.is_active = True
         else:
             cred = IMSCbmsCredential(
                 id=str(uuid.uuid4()),
                 tenant_id=tenant_id,
                 ird_username=ird_username,
-                ird_password=ird_password,
+                ird_password=encrypted_password,
             )
             db.add(cred)
         db.flush()
@@ -79,7 +83,7 @@ def build_cbms_payload(invoice, cred: IMSCbmsCredential) -> dict:
 
     return {
         "username": cred.ird_username,
-        "password": cred.ird_password,
+        "password": decrypt_secret(cred.ird_password),
         "seller_pan": invoice.seller_pan or "",
         "buyer_pan": invoice.buyer_pan or "",
         "fiscal_year": fiscal_year,

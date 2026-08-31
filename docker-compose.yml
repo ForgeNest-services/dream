@@ -112,20 +112,20 @@ services:
       - srota-network
     restart: unless-stopped
 
-  pms:
-    build:
-      context: ./pms
-      dockerfile: Dockerfile
-      args:
-        VITE_API_URL: ${VITE_API_URL}
-    container_name: srota-pms
-    env_file:
-      - .env
-    ports:
-      - "3007:80"
-    networks:
-      - srota-network
-    restart: unless-stopped
+  # pms:
+  #   build:
+  #     context: ./pms
+  #     dockerfile: Dockerfile
+  #     args:
+  #       VITE_API_URL: ${VITE_API_URL}
+  #   container_name: srota-pms
+  #   env_file:
+  #     - .env
+  #   ports:
+  #     - "3007:80"
+  #   networks:
+  #     - srota-network
+  #   restart: unless-stopped
 
   rms:
     build:

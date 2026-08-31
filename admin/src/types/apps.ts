@@ -11,6 +11,9 @@ export interface App {
   // Public MinIO URL of the app's logo/icon PNG. Preferred over the icon-name
   // fallback when both are present.
   icon_url?: string | null;
+  // Public MinIO URL of the app's larger preview/thumbnail PNG (e.g. for a
+  // catalog card image).
+  thumbnail_url?: string | null;
   url: string;
   is_active: boolean;
 }

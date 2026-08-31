@@ -8,6 +8,7 @@ RUN npm install
 COPY src ./src
 COPY fonts ./fonts
 COPY *.html ./
+COPY blog ./blog
 COPY public ./public
 
 RUN npx @tailwindcss/cli -i ./src/input.css -o ./dist/output.css --minify
@@ -23,6 +24,9 @@ COPY dist/index.js /usr/share/nginx/html/dist/index.js
 COPY public /usr/share/nginx/html/public
 COPY fonts /usr/share/nginx/html/fonts
 COPY *.html /usr/share/nginx/html/
+# *.html above only matches root-level pages — blog posts live one
+# directory deeper (blog/*.html) and need their own explicit copy.
+COPY blog /usr/share/nginx/html/blog
 
 # CSS built in the previous stage — always fresh, never stale
 COPY --from=build /app/dist/output.css /usr/share/nginx/html/dist/output.css
