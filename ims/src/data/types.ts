@@ -142,7 +142,7 @@ export interface Product {
   createdAt: string;
 }
 
-export type MovementType = "restock" | "adjust-in" | "adjust-out" | "sale" | "transfer";
+export type MovementType = "restock" | "adjust-in" | "adjust-out" | "sale" | "transfer" | "return";
 
 export interface StockMovement {
   id: string;

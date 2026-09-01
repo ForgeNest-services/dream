@@ -721,6 +721,11 @@ class IMSInvoiceService:
             # actually charged; only the quantity flips sign so line_gross
             # (rate - discount) * qty comes out negative and sums back to
             # the negated header totals above.
+            #
+            # Every credit note also restores the sold quantity back to
+            # stock (explicit product decision — a billing-only correction
+            # where goods never left is expected to go through a separate
+            # manual stock adjustment, not silently skip the restore here).
             for line in original.lines:
                 IMSInvoiceRepository.add_line(
                     db,
@@ -735,6 +740,24 @@ class IMSInvoiceService:
                     taxable=line.taxable,
                     tax_rate=line.tax_rate,
                     vat_amount=-line.vat_amount,
+                )
+
+                stock_row = txn.get_or_create_stock_row(db, line.variant_id, original.branch_id)
+                balance = stock_row.qty + line.qty
+                txn.set_stock_qty(db, stock_row, balance)
+                txn.create_movement(
+                    db,
+                    tenant_id=tenant_id,
+                    date=original.date,
+                    date_bs=original.date_bs,
+                    branch_id=original.branch_id,
+                    product_id=line.product_id,
+                    variant_id=line.variant_id,
+                    type="return",
+                    qty=line.qty,
+                    balance_after=balance,
+                    reference=cn_number,
+                    user_id=user_id,
                 )
 
             # Reverse the ledger entries.
