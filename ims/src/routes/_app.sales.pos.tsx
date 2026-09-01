@@ -117,6 +117,28 @@ function PosPage() {
   // printed bill. The customer pays the same total either way; a
   // "VAT bill" toggled off just doesn't itemize how that total was made up.
   const totals = computeTotals(lines, app.company);
+
+  // IRD: Electronic Billing Procedure 2082, Annexure-6 — an abbreviated
+  // invoice can't be issued above Rs 10,000 taxable value. Server enforces
+  // this for real (never trust the client) — this is just so a cashier
+  // sees the toggle lock itself rather than build the whole cart and only
+  // find out at checkout.
+  const abbreviatedLimitExceeded = !isQuotation && app.company.vatRegistered && totals.taxable > 10000;
+  useEffect(() => {
+    if (abbreviatedLimitExceeded && !vatBillOn) setVatBillOn(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abbreviatedLimitExceeded]);
+  // Cash is the default payment method — keep the Cash received field
+  // synced to the running total as the cart changes, so the common "paid
+  // in full, cash" case needs zero clicks (was previously only filled by
+  // clicking the Cash method button, which does nothing when it's already
+  // selected — the default state). Only auto-fills while method is
+  // "cash"; switching to qr/split, or the user editing Cash by hand,
+  // naturally stops this from re-firing until the total itself changes.
+  useEffect(() => {
+    if (method === "cash") setCash(totals.total);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totals.total, method]);
   // Customer-facing "Sub total" — sum of shelf prices (inclusive), before
   // discount. totals.gross is the exclusive rate sum, which is the right
   // input for VAT math but the wrong number to show as a headline figure.
@@ -455,12 +477,18 @@ function PosPage() {
                 <div>
                   <p className="text-sm">VAT bill</p>
                   <p className="text-xs text-muted-foreground">
-                    {vatBillOn
-                      ? "Tax invoice with taxable amount + VAT breakdown"
-                      : "Plain bill — shelf price only, no VAT breakdown"}
+                    {abbreviatedLimitExceeded
+                      ? "Full tax invoice required — abbreviated invoices are only permitted up to Rs 10,000 taxable value"
+                      : vatBillOn
+                        ? "Tax invoice with taxable amount + VAT breakdown"
+                        : "Plain bill — shelf price only, no VAT breakdown"}
                   </p>
                 </div>
-                <Switch checked={vatBillOn} onCheckedChange={setVatBillOn} />
+                <Switch
+                  checked={vatBillOn}
+                  onCheckedChange={setVatBillOn}
+                  disabled={abbreviatedLimitExceeded}
+                />
               </div>
             )}
             <dl className="space-y-1.5 text-sm">

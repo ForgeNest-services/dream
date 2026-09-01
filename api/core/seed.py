@@ -487,7 +487,9 @@ def ensure_subscription_payments_group_schema() -> None:
 
 
 def ensure_ird_schema() -> None:
-    """Adds all IRD Electronic Billing Procedure 2074 columns to restro_orders
+    """Adds all IRD Electronic Billing Procedure, 2082 columns (this
+    supersedes the 2074 procedure — clause 12(ग) of the 2082 text repeals it
+    outright; see docs/Srota_IRD_Compliance_Checklist.md) to restro_orders
     and ims_invoices. Safe to run repeatedly — uses ADD COLUMN IF NOT EXISTS."""
     db = SessionLocal()
     try:
@@ -521,6 +523,11 @@ def ensure_ird_schema() -> None:
             # constraint or a bigger schema change. Those legacy columns are
             # kept for forward-compat but print_count is the real mechanism.
             ("print_count", "INTEGER DEFAULT 0"),
+            # Annexure-5 Standard View fields — see shared_models/restro_order.py
+            ("discount_amount", "NUMERIC(12,2)"),
+            ("is_bill_printed", "BOOLEAN DEFAULT FALSE"),
+            ("printed_time", "TIMESTAMP WITH TIME ZONE"),
+            ("printed_by", "VARCHAR"),
             ("is_credit_note", "BOOLEAN DEFAULT FALSE"),
             ("original_order_id", "VARCHAR"),
             ("note_reason", "TEXT"),
@@ -543,6 +550,10 @@ def ensure_ird_schema() -> None:
             ("is_reprint", "BOOLEAN DEFAULT FALSE"),
             ("reprint_of", "VARCHAR"),
             ("reprint_number", "INTEGER"),
+            # Annexure-5 Standard View fields — see shared_models/ims_invoice.py
+            ("is_bill_printed", "BOOLEAN DEFAULT FALSE"),
+            ("printed_time", "TIMESTAMP WITH TIME ZONE"),
+            ("printed_by", "VARCHAR"),
             ("is_credit_note", "BOOLEAN DEFAULT FALSE"),
             ("original_invoice_id", "VARCHAR"),
             ("note_reason", "TEXT"),

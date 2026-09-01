@@ -99,6 +99,12 @@ class RestroOrder(Base):
 
     discount_type = Column(String(10), nullable=False, default="percent")  # percent|flat
     discount_value = Column(Numeric(10, 2), nullable=False, default=0)
+    # Annexure-5's "Discount" field wants the actual rupee amount deducted,
+    # snapshotted at mark-paid time — not the type/value INPUT above, which
+    # is just "10%" or "Rs 50" and requires recomputing against the
+    # subtotal to get a real figure. Populated once, alongside
+    # subtotal/taxable/vat/total below, never live-recomputed after.
+    discount_amount = Column(Numeric(12, 2), nullable=True)
 
     # ── VAT breakdown (IRD: snapshotted at mark-paid time) ───────────────────
     subtotal_amount = Column(Numeric(12, 2), nullable=True)  # before discount
@@ -144,6 +150,13 @@ class RestroOrder(Base):
     is_reprint = Column(Boolean, nullable=False, default=False)
     reprint_of = Column(String(36), ForeignKey("public.restro_orders.id"), nullable=True)
     reprint_number = Column(Integer, nullable=True)
+    # Annexure-5's Is_Bill_Printed/Printed_Time/Printed_By — Printed_By is
+    # deliberately separate from waiter_cred_id (Entered_By): whoever
+    # opened/took the order isn't necessarily who triggered the print
+    # (e.g. a manager reprinting a bill later at the counter).
+    is_bill_printed = Column(Boolean, nullable=False, default=False)
+    printed_time = Column(DateTime(timezone=True), nullable=True)
+    printed_by = Column(String(36), nullable=True)
 
     # ── Credit notes (IRD: reversal of a paid bill) ───────────────────────────
     is_credit_note = Column(Boolean, nullable=False, default=False)

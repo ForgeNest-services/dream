@@ -67,6 +67,11 @@ export function OrderScreen(props: OrderScreenProps) {
   // THIS print is a reprint, so BillReceipt can watermark it. Server is the
   // source of truth (print_count), not guessed client-side.
   const [printBillReprint, setPrintBillReprint] = useState(false);
+  const [printBillCount, setPrintBillCount] = useState<number | undefined>(undefined);
+  // IRD: Order Slip numbers (clause 6.2घ) — the cached order in the store
+  // only carries these right after a send-to-kitchen call, so fetch fresh
+  // at print time (same reasoning as printBillReprint/printBillCount above).
+  const [printBillSlipNumbers, setPrintBillSlipNumbers] = useState<number[] | undefined>(undefined);
   const [method, setMethod] = useState<"cash" | "qr" | "khata">("cash");
   // For khata payments the caller must attach a customer. Cleared each time
   // the dialog re-opens. Delivery orders already have a customer attached
@@ -88,14 +93,27 @@ export function OrderScreen(props: OrderScreenProps) {
   const order =
     props.mode === "dine-in" ? orderForTable(props.table.id) : orderById(props.orderId);
   const totals = useBillTotals(order, settings.vatEnabled, settings.vatRate);
+  // IRD: Electronic Billing Procedure 2082, Annexure-6 — a simplified bill
+  // can't be issued above Rs 10,000 taxable value. Server enforces this for
+  // real; this just locks the toggle so staff see why before hitting Pay.
+  const abbreviatedLimitExceeded = settings.vatEnabled && totals.taxable > 10000;
+  useEffect(() => {
+    if (abbreviatedLimitExceeded && !vatBillOn) setVatBillOn(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abbreviatedLimitExceeded]);
   // IRD: a second (or later) print of a paid bill must be watermarked as a
   // copy — register with the server before showing the print dialog so
   // print_count (and the watermark decision) stays authoritative even
   // across devices/terminals printing the same bill.
   const openPrintBill = async () => {
     if (order && activeBranchId) {
-      const res = await ordersApi.registerPrint(activeBranchId, order.id);
-      setPrintBillReprint(res.data?.is_reprint ?? false);
+      const [printRes, orderRes] = await Promise.all([
+        ordersApi.registerPrint(activeBranchId, order.id),
+        ordersApi.get(activeBranchId, order.id),
+      ]);
+      setPrintBillReprint(printRes.data?.is_reprint ?? false);
+      setPrintBillCount(printRes.data?.print_count);
+      setPrintBillSlipNumbers(orderRes.data?.slip_numbers);
     }
     setPrintBillOpen(true);
   };
@@ -521,12 +539,18 @@ export function OrderScreen(props: OrderScreenProps) {
               <div>
                 <p className="text-sm font-medium">VAT bill</p>
                 <p className="text-xs text-muted-foreground">
-                  {vatBillOn
-                    ? "Tax invoice with taxable amount + VAT breakdown"
-                    : "Plain bill — shelf price only, no VAT breakdown"}
+                  {abbreviatedLimitExceeded
+                    ? "Full tax invoice required — simplified bills are only permitted up to Rs 10,000 taxable value"
+                    : vatBillOn
+                      ? "Tax invoice with taxable amount + VAT breakdown"
+                      : "Plain bill — shelf price only, no VAT breakdown"}
                 </p>
               </div>
-              <Switch checked={vatBillOn} onCheckedChange={setVatBillOn} />
+              <Switch
+                checked={vatBillOn}
+                onCheckedChange={setVatBillOn}
+                disabled={abbreviatedLimitExceeded}
+              />
             </div>
           )}
 
@@ -601,6 +625,8 @@ export function OrderScreen(props: OrderScreenProps) {
               settings={settings}
               totals={totals}
               isReprint={printBillReprint}
+              printCount={printBillCount}
+              slipNumbers={printBillSlipNumbers}
             />
           </PrintDialog>
         </>

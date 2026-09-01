@@ -74,6 +74,7 @@ from features.restro.menu_item_service import MenuItemService
 from features.restro.zone_service import ZoneService
 from features.restro.table_service import TableService
 from features.restro.order_service import OrderService
+from features.restro.order_repository import OrderRepository
 from features.restro.inventory_service import InventoryService
 from features.restro.employee_service import EmployeeService
 from features.restro.customer_service import CustomerService
@@ -328,8 +329,8 @@ def get_tenant_info(
 # ---------------------------------------------------------------------------
 
 @router.post("/auth/login")
-def staff_login(data: StaffLoginRequest, db: Session = Depends(get_db)):
-    result = RestroAuthService.login(db, data.username, data.password)
+def staff_login(data: StaffLoginRequest, request: Request, db: Session = Depends(get_db)):
+    result = RestroAuthService.login(db, data.username, data.password, terminal_ip=_client_ip(request))
 
     if not result["success"]:
         return error_response(
@@ -348,6 +349,19 @@ def staff_login(data: StaffLoginRequest, db: Session = Depends(get_db)):
         ).model_dump(mode="json"),
         message="Logged in",
     )
+
+
+@router.post("/auth/logout")
+def staff_logout(
+    request: Request,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    # IRD: Electronic Billing Procedure 2082, clause 6.3ख — no server-side
+    # session to invalidate (stateless JWT, see CLAUDE.md §2.6), this just
+    # records the event so the activity log has a real logout entry.
+    RestroAuthService.logout(db, staff["tenant_id"], staff["cred_id"], terminal_ip=_client_ip(request))
+    return success_response(message="Logged out")
 
 
 # ---------------------------------------------------------------------------
@@ -1322,6 +1336,11 @@ _ORDER_ERROR_MAP = {
     "CREATION_FAILED": ("CREATION_FAILED", "Failed to create order.", 500),
     "ORDER_NOT_PAID": ("ORDER_NOT_PAID", "Only paid orders can have a credit note issued.", 409),
     "ALREADY_CREDIT_NOTE": ("ALREADY_CREDIT_NOTE", "This order is already a credit note.", 409),
+    "ABBREVIATED_INVOICE_LIMIT_EXCEEDED": (
+        "ABBREVIATED_INVOICE_LIMIT_EXCEEDED",
+        "Abbreviated bills can't be issued above Rs 10,000 taxable value — switch to a full VAT bill.",
+        422,
+    ),
 }
 
 
@@ -1330,10 +1349,16 @@ def _order_error(code: str):
     return error_response(*mapped)
 
 
-def _order_payload(order) -> dict:
+def _order_payload(order, slip_numbers: list[int] | None = None) -> dict:
     """Serialize an Order (with lines relationship loaded) to the response
-    shape. Kept centralized so every endpoint returns identical structure."""
-    return OrderData.model_validate(order).model_dump(mode="json")
+    shape. Kept centralized so every endpoint returns identical structure.
+    `slip_numbers` (IRD: Electronic Billing Procedure 2082, clause 6.2घ) is
+    opt-in per call site — fetched only where actually consumed (single-order
+    fetch, send-to-kitchen) to avoid an N+1 query on list/board views."""
+    payload = OrderData.model_validate(order).model_dump(mode="json")
+    if slip_numbers is not None:
+        payload["slip_numbers"] = slip_numbers
+    return payload
 
 
 def _client_ip(request: Request) -> str | None:
@@ -1450,7 +1475,8 @@ def get_order(
     result = OrderService.get(db, staff["tenant_id"], branch_id, order_id)
     if not result["success"]:
         return _order_error(result["error_code"])
-    return success_response(data=_order_payload(result["order"]))
+    slip_numbers = OrderRepository.get_slip_numbers(db, order_id)
+    return success_response(data=_order_payload(result["order"], slip_numbers))
 
 
 @router.post("/branches/{branch_id}/orders")
@@ -1602,13 +1628,18 @@ def send_order_to_kitchen(
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.send_to_kitchen(
-        db, tenant_id=staff["tenant_id"], branch_id=branch_id, order_id=order_id
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        created_by=staff.get("cred_id"),
     )
     if not result["success"]:
         return _order_error(result["error_code"])
     order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    slip_numbers = OrderRepository.get_slip_numbers(db, order_id)
     return success_response(
-        data=_order_payload(order),
+        data=_order_payload(order, slip_numbers),
         message=f"Sent {result['marked']} line(s) to kitchen",
     )
 
@@ -1790,9 +1821,11 @@ def register_order_print(
 ):
     """Call right before actually printing/showing a paid bill — see
     OrderService.register_print. Returns whether this print should carry the
-    "COPY OF ORIGINAL" watermark."""
+    "Copy of Original (N)" watermark."""
     _assert_branch_scope(staff, branch_id)
-    result = OrderService.register_print(db, staff["tenant_id"], branch_id, order_id)
+    result = OrderService.register_print(
+        db, staff["tenant_id"], branch_id, order_id, staff.get("cred_id")
+    )
     if not result["success"]:
         return _order_error(result["error_code"])
     return success_response(

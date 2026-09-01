@@ -91,6 +91,11 @@ export interface OrderDto {
   created_at: string;
   updated_at: string;
   lines: OrderLineDto[];
+  // IRD: Electronic Billing Procedure 2082, clause 6.2घ — Order Slip
+  // sequential numbers this bill was built from. Only populated by
+  // GET /orders/{id} and send-to-kitchen responses — undefined elsewhere
+  // (list/board views never fetch it, to avoid an N+1 query backend-side).
+  slip_numbers?: number[];
 }
 
 export const asNum = (v: string | number | null | undefined): number =>

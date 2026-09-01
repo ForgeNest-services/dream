@@ -49,6 +49,25 @@ def _compute_totals(lines: list[dict], vat_registered: bool, vat_rate: Decimal) 
     vat_amount = taxable_net * effective_rate / 100 if vat_registered else Decimal(0)
     total_amount = taxable_net + vat_amount + exempt_net
 
+    # Round to cents now, before this feeds any paid/due comparison or gets
+    # stored — raw Decimal division (line_vat, vat_amount above) can carry
+    # more than 2 decimal places, so an unrounded total_amount could sit a
+    # fraction of a cent above what actually gets stored in the
+    # numeric(12,2) column. That mismatch made a fully-paid invoice
+    # (paid_amount == total_amount once both are stored/rounded) compare as
+    # `capped_paid >= totals["total"]` == False at write time, since the
+    # comparison ran against the unrounded total — landing status="partial"
+    # with a displayed due of Rs 0.00 (bug found via a 2026-09-01 audit
+    # session). Quantizing here, not just on the ORM columns, keeps the
+    # comparison and the stored value in agreement.
+    cents = Decimal("0.01")
+    gross = gross.quantize(cents)
+    discount_total = discount_total.quantize(cents)
+    taxable_net = taxable_net.quantize(cents)
+    exempt_net = exempt_net.quantize(cents)
+    vat_amount = vat_amount.quantize(cents)
+    total_amount = total_amount.quantize(cents)
+
     return {
         "gross": gross,
         "discount": discount_total,
@@ -106,6 +125,83 @@ class IMSInvoiceService:
         if not invoice:
             return {"success": False, "error_code": "DOCUMENT_NOT_FOUND"}
         return {"success": True, "invoice": invoice}
+
+    @staticmethod
+    def register_print(db: Session, tenant_id: str, invoice_id: str, printed_by: str | None) -> dict:
+        """Call once per actual print of an issued invoice — bumps the
+        reprint counter and tells the caller whether THIS print is the
+        original (no watermark) or a reprint ("Copy of Original (N)"). Not
+        meaningful for a quotation, which isn't a real bill yet."""
+        invoice = IMSInvoiceRepository.get_by_id(db, tenant_id, invoice_id)
+        if not invoice:
+            return {"success": False, "error_code": "DOCUMENT_NOT_FOUND"}
+        if invoice.kind == "quotation":
+            return {"success": True, "invoice": invoice, "is_reprint": False}
+        invoice = IMSInvoiceRepository.register_print(db, invoice, printed_by)
+        return {"success": True, "invoice": invoice, "is_reprint": invoice.is_reprint}
+
+    @staticmethod
+    def record_payment(
+        db: Session,
+        tenant_id: str,
+        invoice_id: str,
+        amount: Decimal,
+        method: str,
+        performed_by: str | None = None,
+    ) -> dict:
+        """Settle more of an already-issued invoice later — e.g. it was
+        saved unpaid/partial at checkout and the customer pays afterward.
+        Never touches line items or the original totals (IRD: Electronic
+        Billing Procedure 2082, clause 6.3घ — issued transaction data can't
+        be edited); this only adds a new payment on top, same as a second
+        installment. Mirrors create()'s payment-received ledger entry."""
+        invoice = IMSInvoiceRepository.get_by_id(db, tenant_id, invoice_id)
+        if not invoice:
+            return {"success": False, "error_code": "DOCUMENT_NOT_FOUND"}
+        if invoice.kind == "quotation":
+            return {"success": False, "error_code": "QUOTATION_NOT_PAYABLE"}
+        if invoice.is_credit_note:
+            return {"success": False, "error_code": "CREDIT_NOTE_NOT_PAYABLE"}
+        if amount <= 0:
+            return {"success": False, "error_code": "INVALID_AMOUNT"}
+        due = invoice.total_amount - invoice.paid_amount
+        if due <= 0:
+            return {"success": False, "error_code": "ALREADY_PAID"}
+
+        capped = min(amount, due)
+        before_paid = invoice.paid_amount
+        invoice.paid_amount = before_paid + capped
+        invoice.status = "paid" if invoice.paid_amount >= invoice.total_amount else "partial"
+
+        txn.create_ledger_entry(
+            db,
+            tenant_id=tenant_id,
+            party_id=invoice.customer_id,
+            date=datetime.utcnow(),
+            description=f"Payment received ({method})",
+            reference=invoice.number,
+            debit=Decimal(0),
+            credit=capped,
+        )
+        AuditRepository.write(
+            db,
+            tenant_id=tenant_id,
+            app_code="ims",
+            entity_type="invoice",
+            entity_id=invoice.id,
+            action="record_payment",
+            performed_by=performed_by or "unknown",
+            performer_type="staff",
+            after_state={
+                "amount": float(capped),
+                "method": method,
+                "before_paid": float(before_paid),
+                "after_paid": float(invoice.paid_amount),
+            },
+        )
+        db.commit()
+        db.refresh(invoice)
+        return {"success": True, "invoice": invoice, "amount_applied": capped}
 
     @staticmethod
     def list_for_tenant(
@@ -173,6 +269,20 @@ class IMSInvoiceService:
         # vat_registered so callers that don't pass it (any non-POS caller)
         # keep the original one-flag behavior.
         show_breakdown = vat_registered if show_vat_breakdown is None else show_vat_breakdown
+
+        # IRD: Electronic Billing Procedure 2082, Annexure-6's own abbreviated
+        # ("संक्षिप्त कर बीजक") invoice template states outright: "दश हजार
+        # रुपैयाँभन्दा बढी कर लाग्ने मूल्यको वस्तु वा सेवाको बिक्रीमा यो बीजक
+        # जारी गरिने छैन" — this format cannot be issued for a sale whose
+        # TAXABLE value exceeds Rs 10,000. show_vat_breakdown is a UI
+        # preference; this is a hard legal ceiling on it, enforced
+        # server-side (never trust a client-supplied show_vat_breakdown to
+        # bypass it) using the same totals math the invoice is about to be
+        # saved with, not a separate approximation.
+        if not is_quotation and not show_breakdown:
+            _precheck_totals = _compute_totals(lines, vat_registered, vat_rate)
+            if _precheck_totals["taxable"] > Decimal("10000"):
+                return {"success": False, "error_code": "ABBREVIATED_INVOICE_LIMIT_EXCEEDED"}
 
         # Stock is only actually deducted for a real sale (a quotation is a
         # price offer, no stock movement — see the loop below), so only real
@@ -409,6 +519,18 @@ class IMSInvoiceService:
         # "abbreviated" for display/printing.
         show_breakdown = vat_registered if show_vat_breakdown is None else show_vat_breakdown
 
+        # IRD: same Rs 10,000 taxable-value ceiling as create() — see that
+        # function's matching comment for the exact Annexure-6 citation.
+        if not show_breakdown:
+            _precheck_lines = [
+                {"variant_id": line.variant_id, "qty": line.qty, "rate": line.rate,
+                 "discount": line.discount, "taxable": line.taxable}
+                for line in invoice.lines
+            ]
+            _precheck_totals = _compute_totals(_precheck_lines, vat_registered, vat_rate)
+            if _precheck_totals["taxable"] > Decimal("10000"):
+                return {"success": False, "error_code": "ABBREVIATED_INVOICE_LIMIT_EXCEEDED"}
+
         # Same hard-block rule as create() — stock is only ever checked here
         # (not reserved at quote time), so re-validated fresh at conversion
         # since stock may have moved since the quote was made.
@@ -591,6 +713,29 @@ class IMSInvoiceService:
                 original_invoice_id=original.id,
                 note_reason=reason,
             )
+
+            # Mirror each original line onto the credit note — negate qty
+            # (not rate), so the printed document reads as "returned: -2 x
+            # Widget @ Rs 50" rather than showing a bare total with no
+            # items. rate/discount/tax_rate stay as the customer was
+            # actually charged; only the quantity flips sign so line_gross
+            # (rate - discount) * qty comes out negative and sums back to
+            # the negated header totals above.
+            for line in original.lines:
+                IMSInvoiceRepository.add_line(
+                    db,
+                    invoice_id=cn.id,
+                    product_id=line.product_id,
+                    variant_id=line.variant_id,
+                    description=line.description,
+                    qty=-line.qty,
+                    unit_id=line.unit_id,
+                    rate=line.rate,
+                    discount=line.discount,
+                    taxable=line.taxable,
+                    tax_rate=line.tax_rate,
+                    vat_amount=-line.vat_amount,
+                )
 
             # Reverse the ledger entries.
             txn.create_ledger_entry(

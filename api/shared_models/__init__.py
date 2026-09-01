@@ -16,6 +16,8 @@ from .restro_zone import RestroZone
 from .restro_table import RestroTable
 from .restro_order import RestroOrder
 from .restro_order_line import RestroOrderLine
+from .restro_order_slip import RestroOrderSlip
+from .restro_order_slip_serial import RestroOrderSlipSerial
 from .restro_inventory_item import RestroInventoryItem
 from .restro_stock_movement import RestroStockMovement
 from .restro_employee import RestroEmployee
@@ -70,6 +72,8 @@ __all__ = [
     "RestroTable",
     "RestroOrder",
     "RestroOrderLine",
+    "RestroOrderSlip",
+    "RestroOrderSlipSerial",
     "RestroInventoryItem",
     "RestroStockMovement",
     "RestroEmployee",

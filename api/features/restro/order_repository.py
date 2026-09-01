@@ -3,7 +3,15 @@ from decimal import Decimal
 from sqlalchemy import and_, or_, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from shared_models import RestroOrder, RestroOrderLine, RestroTable, RestroCustomer, RestroInvoiceSerial
+from shared_models import (
+    RestroOrder,
+    RestroOrderLine,
+    RestroOrderSlip,
+    RestroOrderSlipSerial,
+    RestroTable,
+    RestroCustomer,
+    RestroInvoiceSerial,
+)
 from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad
 
 
@@ -101,12 +109,21 @@ class OrderRepository:
         )
 
     @staticmethod
-    def increment_print_count(db: Session, order: RestroOrder) -> RestroOrder:
+    def increment_print_count(db: Session, order: RestroOrder, printed_by: str | None) -> RestroOrder:
         """IRD: printing a paid bill more than once must be visibly watermarked
         as a copy. Called once per actual print action — the caller (service
         layer) decides what "print" means (e.g. clicking Print Bill), this
-        just atomically bumps the counter and returns the new count."""
+        just atomically bumps the counter and returns the new count. Also
+        sets Annexure-5's is_bill_printed/printed_time/printed_by —
+        printed_by is deliberately independent of waiter_cred_id
+        (Entered_By): whoever took the order isn't necessarily who's
+        standing at the counter triggering the print."""
+        from datetime import datetime, timezone
+
         order.print_count = (order.print_count or 0) + 1
+        order.is_bill_printed = True
+        order.printed_time = datetime.now(timezone.utc)
+        order.printed_by = printed_by
         db.commit()
         db.refresh(order)
         return order
@@ -505,3 +522,72 @@ class OrderRepository:
             line.sent = True
         db.commit()
         return len(rows)
+
+    # ------------------------------------------------------------------
+    # Order Slips (IRD: Electronic Billing Procedure 2082, clause 6.2घ)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _next_slip_number(db: Session, branch_id: str, fiscal_year: str) -> int:
+        """Same SELECT … FOR UPDATE gapless-counter pattern as
+        _next_bill_number, but a distinct sequence — Order Slip numbers are
+        their own series, not the bill's."""
+        row = (
+            db.execute(
+                select(RestroOrderSlipSerial)
+                .filter_by(branch_id=branch_id, fiscal_year=fiscal_year)
+                .with_for_update()
+            )
+            .scalars()
+            .first()
+        )
+        if row is None:
+            row = RestroOrderSlipSerial(
+                branch_id=branch_id,
+                fiscal_year=fiscal_year,
+                last_number=0,
+            )
+            db.add(row)
+            db.flush()
+        row.last_number += 1
+        db.flush()
+        return row.last_number
+
+    @staticmethod
+    def create_slip(
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        order: RestroOrder,
+        line_count: int,
+        created_by: str | None,
+    ) -> RestroOrderSlip:
+        """Records one send-to-kitchen round as a numbered Order Slip."""
+        now = datetime.now(timezone.utc)
+        fy = order.fiscal_year or fiscal_year_from_ad(now) or ""
+        slip_num = OrderRepository._next_slip_number(db, branch_id, fy)
+        slip = RestroOrderSlip(
+            tenant_id=tenant_id,
+            branch_id=branch_id,
+            order_id=order.id,
+            slip_number=slip_num,
+            fiscal_year=fy,
+            line_count=line_count,
+            created_by=created_by,
+            created_at=now,
+            created_at_bs=to_bs_iso(now) or "",
+        )
+        db.add(slip)
+        db.commit()
+        db.refresh(slip)
+        return slip
+
+    @staticmethod
+    def get_slip_numbers(db: Session, order_id: str) -> list[int]:
+        rows = (
+            db.query(RestroOrderSlip.slip_number)
+            .filter(RestroOrderSlip.order_id == order_id)
+            .order_by(RestroOrderSlip.slip_number)
+            .all()
+        )
+        return [r[0] for r in rows]

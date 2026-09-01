@@ -343,6 +343,15 @@ class RecordPaymentRequest(BaseModel):
     reference: str | None = None
 
 
+class RecordInvoicePaymentRequest(BaseModel):
+    """Settle more of an already-issued invoice later (it was saved
+    unpaid/partial at checkout). Distinct from RecordPaymentRequest above,
+    which posts a payment against a party's overall ledger, not one
+    specific invoice."""
+    amount: Decimal
+    method: str
+
+
 class PurchaseLineData(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -495,6 +504,9 @@ class InvoiceData(BaseModel):
     is_reprint: bool
     reprint_of: str | None
     reprint_number: int | None
+    is_bill_printed: bool
+    printed_time: datetime | None
+    printed_by: str | None
     is_credit_note: bool
     original_invoice_id: str | None
     note_reason: str | None

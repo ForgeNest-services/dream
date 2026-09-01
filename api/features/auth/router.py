@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from core.database import get_db
-from core.deps import get_current_user, require_role, require_tenant_user
+from core.deps import get_current_user, require_role, require_tenant_user, require_platform_user
 from core.queue import job_queue
 from utils.helpers import success_response, error_response
 from features.auth.schemas import (
@@ -22,6 +22,14 @@ from features.auth.repository import UserRepository
 from jobs.email_jobs import send_team_invitation_email, send_otp_verification_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _client_ip(request: Request) -> str | None:
+    """Best-effort real client IP for the audit trail — prefers the
+    original caller from X-Forwarded-For (set by nginx/whatever's in front)
+    over the direct TCP peer, which behind a proxy is just the proxy itself."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    return forwarded.split(",")[0].strip() if forwarded else getattr(request.client, "host", None)
 
 
 @router.post("/register")
@@ -220,8 +228,8 @@ def resend_verification_otp(data: ResendOTPRequest, db: Session = Depends(get_db
 
 
 @router.post("/login")
-def login(data: LoginRequest, db: Session = Depends(get_db)):
-    result = AuthService.login(db, data)
+def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    result = AuthService.login(db, data, terminal_ip=_client_ip(request))
 
     if not result["success"]:
         error_code = result.get("error_code", "INVALID_CREDENTIALS")
@@ -279,6 +287,20 @@ def refresh(data: RefreshTokenRequest, db: Session = Depends(get_db)):
             401,
         )
     return success_response(data=result["tokens"], message="Token refreshed")
+
+
+@router.post("/logout")
+def logout(
+    request: Request,
+    current_user: dict = Depends(require_platform_user),
+    db: Session = Depends(get_db),
+):
+    # IRD: Electronic Billing Procedure 2082, clause 6.3ख — no server-side
+    # session to invalidate here either (access/refresh tokens aren't
+    # revocation-tracked), just records the event for the activity log.
+    user = current_user["user"]
+    AuthService.logout(db, user.id, user.tenant_id, terminal_ip=_client_ip(request))
+    return success_response(message="Logged out")
 
 
 @router.get("/me")

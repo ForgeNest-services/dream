@@ -21,6 +21,7 @@ from features.auth.schemas import (
     TenantData,
     TokenData,
 )
+from features.hotel_pms.audit_repository import AuditRepository
 from utils.logger import logger
 from utils.otp import generate_otp, store_otp, verify_otp
 
@@ -180,12 +181,15 @@ class AuthService:
             return {"success": False, "error_code": "UPDATE_FAILED"}
 
     @staticmethod
-    def login(db: Session, data: LoginRequest) -> dict:
+    def login(db: Session, data: LoginRequest, terminal_ip: str | None = None) -> dict:
         admin = PlatformAdminRepository.get_by_email(db, data.email)
         if admin and admin.is_active:
             if verify_password(data.password, admin.password_hash):
                 tokens = AuthService._issue_tokens_for_superadmin(admin)
                 logger.info(f"Superadmin login: {admin.email}")
+                # No tenant to attach an audit row to (AuditLog.tenant_id is
+                # NOT NULL) — superadmin is Forgenest's own staff, outside
+                # IRD's per-business activity-log scope anyway.
                 return {
                     "success": True,
                     "admin_id": admin.id,
@@ -215,6 +219,22 @@ class AuthService:
                 tenant = TenantRepository.get_by_id(db, user.tenant_id)
                 if tenant:
                     tenant_data = TenantData.model_validate(tenant)
+                # IRD: Electronic Billing Procedure 2082, clause 6.3ख — all
+                # user activity in the DB. Owner/Manager platform login is
+                # in scope once a tenant (business) actually exists.
+                AuditRepository.write(
+                    db,
+                    tenant_id=user.tenant_id,
+                    app_code="platform",
+                    entity_type="user",
+                    entity_id=user.id,
+                    action="login",
+                    performed_by=user.id,
+                    performer_type="platform_user",
+                    after_state={"email": user.email, "role": user.role},
+                    terminal_ip=terminal_ip,
+                )
+                db.commit()
 
             return {
                 "success": True,
@@ -223,8 +243,42 @@ class AuthService:
                 "tokens": tokens,
             }
 
+        if user.tenant_id:
+            AuditRepository.write(
+                db,
+                tenant_id=user.tenant_id,
+                app_code="platform",
+                entity_type="user",
+                entity_id=user.id,
+                action="login_failed",
+                performed_by=user.id,
+                performer_type="platform_user",
+                after_state={"email": user.email},
+                terminal_ip=terminal_ip,
+            )
+            db.commit()
         logger.warning(f"Login failed: invalid password for {data.email}")
         return {"success": False, "error_code": "INVALID_CREDENTIALS"}
+
+    @staticmethod
+    def logout(db: Session, user_id: str, tenant_id: str | None, terminal_ip: str | None = None) -> None:
+        """No server-side session to invalidate (access token is short-lived
+        and stateless; refresh token isn't revocation-tracked either) — this
+        exists purely so the activity log has a real logout event."""
+        if not tenant_id:
+            return
+        AuditRepository.write(
+            db,
+            tenant_id=tenant_id,
+            app_code="platform",
+            entity_type="user",
+            entity_id=user_id,
+            action="logout",
+            performed_by=user_id,
+            performer_type="platform_user",
+            terminal_ip=terminal_ip,
+        )
+        db.commit()
 
     @staticmethod
     def _issue_tokens_for_user(user) -> dict:

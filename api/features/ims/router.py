@@ -31,6 +31,7 @@ from features.ims.schemas import (
     UpdatePartyRequest,
     LedgerEntryData,
     RecordPaymentRequest,
+    RecordInvoicePaymentRequest,
     PurchaseData,
     CreatePurchaseRequest,
     CostHistoryEntry,
@@ -85,13 +86,21 @@ def _assert_branch_scope(staff: dict, branch_id: str) -> None:
         raise HTTPException(403, "Not allowed for this branch")
 
 
+def _client_ip(request: Request) -> str | None:
+    """Best-effort real client IP for the audit trail — prefers the
+    original caller from X-Forwarded-For (set by nginx/whatever's in front)
+    over the direct TCP peer, which behind a proxy is just the proxy itself."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    return forwarded.split(",")[0].strip() if forwarded else getattr(request.client, "host", None)
+
+
 # ---------------------------------------------------------------------------
 # Staff-facing (public) - login from ims.dream.com
 # ---------------------------------------------------------------------------
 
 @router.post("/auth/login")
-def staff_login(data: StaffLoginRequest, db: Session = Depends(get_db)):
-    result = IMSAuthService.login(db, data.username, data.password)
+def staff_login(data: StaffLoginRequest, request: Request, db: Session = Depends(get_db)):
+    result = IMSAuthService.login(db, data.username, data.password, terminal_ip=_client_ip(request))
 
     if not result["success"]:
         return error_response(
@@ -110,6 +119,19 @@ def staff_login(data: StaffLoginRequest, db: Session = Depends(get_db)):
         ).model_dump(mode="json"),
         message="Logged in",
     )
+
+
+@router.post("/auth/logout")
+def staff_logout(
+    request: Request,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    # IRD: Electronic Billing Procedure 2082, clause 6.3ख — no server-side
+    # session to invalidate (stateless JWT, see CLAUDE.md §2.6), this just
+    # records the event so the activity log has a real logout entry.
+    IMSAuthService.logout(db, staff["tenant_id"], staff["cred_id"], terminal_ip=_client_ip(request))
+    return success_response(message="Logged out")
 
 
 # ---------------------------------------------------------------------------
@@ -1167,8 +1189,22 @@ _INVOICE_ERROR_MAP = {
     "CONVERSION_FAILED": ("CONVERSION_FAILED", "Failed to convert quotation.", 500),
     "INSUFFICIENT_STOCK": ("INSUFFICIENT_STOCK", "Not enough stock for one or more items.", 409),
     "NOT_AN_INVOICE": ("NOT_AN_INVOICE", "Credit notes can only be issued against tax or abbreviated invoices.", 409),
+    "NOT_A_REGULAR_INVOICE": (
+        "NOT_A_REGULAR_INVOICE",
+        "Credit notes can only be issued against a regular tax or abbreviated invoice — not a quotation or an already-credited document.",
+        409,
+    ),
     "ALREADY_CREDIT_NOTE": ("ALREADY_CREDIT_NOTE", "This document is already a credit note.", 409),
     "CN_FAILED": ("CN_FAILED", "Failed to issue credit note.", 500),
+    "ABBREVIATED_INVOICE_LIMIT_EXCEEDED": (
+        "ABBREVIATED_INVOICE_LIMIT_EXCEEDED",
+        "Abbreviated invoices can't be issued above Rs 10,000 taxable value — switch to a full tax invoice.",
+        422,
+    ),
+    "QUOTATION_NOT_PAYABLE": ("QUOTATION_NOT_PAYABLE", "Quotations can't be paid — convert to a sale first.", 422),
+    "CREDIT_NOTE_NOT_PAYABLE": ("CREDIT_NOTE_NOT_PAYABLE", "Credit notes can't take a payment.", 422),
+    "INVALID_AMOUNT": ("INVALID_AMOUNT", "Enter a payment amount greater than zero.", 422),
+    "ALREADY_PAID": ("ALREADY_PAID", "This invoice is already fully paid.", 409),
 }
 
 
@@ -1350,6 +1386,53 @@ def issue_credit_note(
         data=InvoiceData.model_validate(cn).model_dump(mode="json"),
         message="Credit note issued",
         status_code=201,
+    )
+
+
+@router.post("/invoices/{invoice_id}/register-print")
+def register_invoice_print(
+    invoice_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """Call right before actually printing/showing an issued invoice —
+    Electronic Billing Procedure 2082, clause 6.2(च): a reprint must be
+    watermarked "Copy of Original (N)". Returns whether this print should
+    carry that watermark."""
+    result = IMSInvoiceService.register_print(db, staff["tenant_id"], invoice_id, staff.get("cred_id"))
+    if not result["success"]:
+        return error_response(result["error_code"], "Invoice not found", 404)
+    return success_response(
+        data={
+            "is_reprint": result["is_reprint"],
+            "reprint_number": result["invoice"].reprint_number,
+        }
+    )
+
+
+@router.post("/invoices/{invoice_id}/record-payment")
+def record_invoice_payment(
+    invoice_id: str,
+    data: RecordInvoicePaymentRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """Settle more of an invoice that was saved unpaid/partial at checkout.
+    Never edits line items or the original totals — only adds a payment on
+    top, same as create()'s own payment-received ledger entry."""
+    result = IMSInvoiceService.record_payment(
+        db,
+        tenant_id=staff["tenant_id"],
+        invoice_id=invoice_id,
+        amount=data.amount,
+        method=data.method,
+        performed_by=staff.get("cred_id"),
+    )
+    if not result["success"]:
+        return _invoice_error(result)
+    return success_response(
+        data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
+        message="Payment recorded",
     )
 
 

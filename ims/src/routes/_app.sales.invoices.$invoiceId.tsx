@@ -1,4 +1,5 @@
 import { EmptyState, Money, PageHeader, StatusPill, DateText } from "@/components/common/primitives";
+import { DecimalTextInput } from "@/components/inventory/numeric-input";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -10,13 +11,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/context/app-store";
 import { computeStoredTotals, invoiceDue } from "@/lib/invoice";
 import { invoicesApi, type InvoiceDto } from "@/lib/invoices-api";
 import type { Invoice, InvoiceLine } from "@/data/types";
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
-import { ArrowLeft, FileX2, Printer, RefreshCw, Upload } from "lucide-react";
+import { ArrowLeft, FileX2, Printer, RefreshCw, Upload, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -82,6 +92,10 @@ function InvoiceDetailPage() {
   const [cnReason, setCnReason] = useState("");
   const [isIssuingCn, setIsIssuingCn] = useState(false);
   const [isSyncingCbms, setIsSyncingCbms] = useState(false);
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "qr">("cash");
+  const [isRecordingPayment, setIsRecordingPayment] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,6 +167,29 @@ function InvoiceDetailPage() {
     }
   }
 
+  async function handleRecordPayment() {
+    if (paymentAmount <= 0) {
+      toast.error("Enter a payment amount");
+      return;
+    }
+    setIsRecordingPayment(true);
+    try {
+      const res = await invoicesApi.recordPayment(invoiceId, paymentAmount, paymentMethod);
+      if (!res.success || !res.data) {
+        toast.error((res as { message?: string }).message ?? "Failed to record payment");
+        return;
+      }
+      toast.success("Payment recorded");
+      setShowPaymentDialog(false);
+      setPaymentAmount(0);
+      setInvoice(dtoToInvoice(res.data));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to record payment");
+    } finally {
+      setIsRecordingPayment(false);
+    }
+  }
+
   const backButton = (
     <Button asChild variant="ghost" size="sm">
       <Link to="/sales/invoices">
@@ -195,6 +232,9 @@ function InvoiceDetailPage() {
     !invoice.cbmsSynced &&
     ["owner", "manager"].includes(app.effectiveRole ?? "");
 
+  const canRecordPayment =
+    !invoice.isCreditNote && invoice.kind !== "quotation" && due > 0;
+
   return (
     <>
     <div className="mx-auto max-w-4xl">
@@ -233,6 +273,11 @@ function InvoiceDetailPage() {
               >
                 <Upload className="mr-1.5 h-4 w-4" />
                 {isSyncingCbms ? "Syncing…" : "Sync to CBMS"}
+              </Button>
+            )}
+            {canRecordPayment && (
+              <Button size="sm" onClick={() => setShowPaymentDialog(true)}>
+                <Wallet className="mr-1.5 h-4 w-4" /> Record Payment
               </Button>
             )}
             <Button asChild variant="outline" size="sm">
@@ -423,6 +468,53 @@ function InvoiceDetailPage() {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Record Payment</DialogTitle>
+          <DialogDescription>
+            Add a payment against <strong>{invoice.number}</strong> — balance due is{" "}
+            <Money value={due} />. This doesn't change the original invoice amounts.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs">Amount</Label>
+            <DecimalTextInput
+              className="mt-1"
+              value={paymentAmount}
+              onChange={setPaymentAmount}
+              placeholder="0.00"
+            />
+          </div>
+          <div className="flex gap-2">
+            {(["cash", "qr"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setPaymentMethod(m)}
+                className={`flex-1 rounded-md border px-3 py-1.5 text-sm capitalize ${
+                  paymentMethod === m
+                    ? "border-primary bg-primary/10 font-medium"
+                    : "text-muted-foreground"
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" disabled={isRecordingPayment} onClick={() => setShowPaymentDialog(false)}>
+            Cancel
+          </Button>
+          <Button disabled={isRecordingPayment || paymentAmount <= 0} onClick={handleRecordPayment}>
+            {isRecordingPayment ? "Recording…" : "Record Payment"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     </>
   );
 }

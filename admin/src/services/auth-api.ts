@@ -171,4 +171,16 @@ export const authApi = {
       throw normalizeError(error);
     }
   },
+
+  // IRD: Electronic Billing Procedure 2082, clause 6.3ख — records the
+  // logout event server-side for the activity log. There's no session to
+  // actually invalidate (access/refresh tokens aren't revocation-tracked),
+  // so this is fire-and-forget from the caller's perspective.
+  logout: async (): Promise<void> => {
+    try {
+      await axiosClient.post('/auth/logout');
+    } catch {
+      // Non-fatal — logout proceeds client-side regardless.
+    }
+  },
 };

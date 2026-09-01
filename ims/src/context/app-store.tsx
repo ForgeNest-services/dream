@@ -483,6 +483,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // IRD: fire-and-forget — records the logout event server-side (clause
+    // 6.3ख). Called before clearing local state since the endpoint is
+    // authenticated; a failure here shouldn't block the actual logout.
+    void authApi.logout().catch(() => {});
     authStorage.clear();
     setState((s) => ({ ...s, currentUser: null, viewAsRole: null }));
   }, []);

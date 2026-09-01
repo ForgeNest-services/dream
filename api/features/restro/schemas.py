@@ -408,6 +408,9 @@ class OrderData(BaseModel):
     kind: str | None
     # ── VAT breakdown snapshot (IRD: set at mark-paid time, null until then) ──
     subtotal_amount: Decimal | None
+    # Annexure-5's "Discount" — actual deducted amount, distinct from the
+    # discount_type/discount_value INPUT above.
+    discount_amount: Decimal | None
     taxable_amount: Decimal | None
     exempt_amount: Decimal | None
     vat_amount: Decimal | None
@@ -427,6 +430,9 @@ class OrderData(BaseModel):
     is_reprint: bool
     reprint_of: str | None
     reprint_number: int | None
+    is_bill_printed: bool
+    printed_time: datetime | None
+    printed_by: str | None
     is_credit_note: bool
     original_order_id: str | None
     note_reason: str | None
@@ -435,6 +441,12 @@ class OrderData(BaseModel):
     created_at: datetime
     updated_at: datetime
     lines: list[OrderLineData] = []
+    # IRD: Electronic Billing Procedure 2082, clause 6.2घ — Order Slip
+    # sequential numbers this bill was built from. Populated only by call
+    # sites that actually fetch it (see router._order_payload); absent
+    # (None) elsewhere, not an empty list, so the frontend can tell
+    # "not fetched" apart from "genuinely zero slips".
+    slip_numbers: list[int] | None = None
 
 
 class CreateOrderRequest(BaseModel):

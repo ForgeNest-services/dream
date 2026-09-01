@@ -60,12 +60,21 @@ class IMSInvoice(Base):
     paid_amount = Column(Numeric(12, 2), nullable=False, default=0)
     status = Column(String(20), nullable=False)  # paid | partial | unpaid
     note = Column(String(1000), nullable=True)
+    # Annexure-5's "Entered_By" — the staff member who recorded the sale.
     user_id = Column(String(36), nullable=False)
 
-    # ── Reprint (IRD: new row per reprint, watermarked "Copy of Original") ────
+    # ── Reprint (IRD: new row per reprint, watermarked "Copy of Original (N)")
+    # per Electronic Billing Procedure 2082, clause 6.2(च) and Annexure-3's
+    # sample. Also covers Annexure-5's Is_Bill_Printed/Printed_Time/
+    # Printed_By — Printed_By is deliberately separate from user_id
+    # (Entered_By): the person who keyed in the sale is not necessarily the
+    # one who triggered the print (e.g. a manager reprinting later).
     is_reprint = Column(Boolean, nullable=False, default=False)
     reprint_of = Column(String(36), ForeignKey("public.ims_invoices.id"), nullable=True)
     reprint_number = Column(Integer, nullable=True)
+    is_bill_printed = Column(Boolean, nullable=False, default=False)
+    printed_time = Column(DateTime(timezone=True), nullable=True)
+    printed_by = Column(String(36), nullable=True)
 
     # ── Credit notes (IRD: own serial sequence, reverses original) ───────────
     is_credit_note = Column(Boolean, nullable=False, default=False)

@@ -142,6 +142,23 @@ export const invoicesApi = {
       {},
     );
   },
+  // Call right before actually printing/showing an issued invoice — server
+  // bumps the reprint counter and tells us whether to render the
+  // "Copy of Original (N)" watermark on this print.
+  registerPrint(invoiceId: string) {
+    return apiClient.post<{ is_reprint: boolean; reprint_number: number | null }>(
+      `/ims/invoices/${invoiceId}/register-print`,
+      {},
+    );
+  },
+  // Settle more of an already-issued invoice later (saved unpaid/partial
+  // at checkout). Never edits line items/totals — only adds a payment.
+  recordPayment(invoiceId: string, amount: number, method: string) {
+    return apiClient.post<InvoiceDto>(`/ims/invoices/${invoiceId}/record-payment`, {
+      amount,
+      method,
+    });
+  },
 };
 
 export interface CbmsSyncLogEntry {

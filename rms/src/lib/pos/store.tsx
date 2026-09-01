@@ -137,6 +137,7 @@ function toOrder(o: OrderDto): Order {
   if (o.delivery_status) order.deliveryStatus = o.delivery_status;
   if (o.kind === "tax" || o.kind === "abbreviated") order.kind = o.kind;
   if (o.buyer_pan) order.buyerPan = o.buyer_pan;
+  if (o.slip_numbers) order.slipNumbers = o.slip_numbers;
   return order;
 }
 
@@ -606,6 +607,10 @@ export function PosProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // IRD: fire-and-forget — records the logout event server-side (clause
+    // 6.3ख). Called before clearing local state since the endpoint is
+    // authenticated; a failure here shouldn't block the actual logout.
+    void authApi.logout().catch(() => {});
     authStorage.writeSession(null);
     setSessionState(null);
     setViewAsRoleState(null);

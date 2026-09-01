@@ -141,19 +141,22 @@ class OrderService:
         return {"success": True, "order": order}
 
     @staticmethod
-    def register_print(db: Session, tenant_id: str, branch_id: str, order_id: str) -> dict:
+    def register_print(
+        db: Session, tenant_id: str, branch_id: str, order_id: str, printed_by: str | None = None
+    ) -> dict:
         """Call once per actual print of a paid bill — bumps print_count and
         tells the caller whether THIS print is the original (count==1, no
-        watermark) or a reprint (count>1, must show "COPY OF ORIGINAL").
-        Only meaningful for a paid bill — a draft being previewed isn't a
-        real bill yet, and a credit note is its own document, not a copy of
-        one, so neither needs/gets watermark tracking here."""
+        watermark) or a reprint (count>1, must show "Copy of Original (N)"
+        per Electronic Billing Procedure 2082, clause 6.2(च)). Only
+        meaningful for a paid bill — a draft being previewed isn't a real
+        bill yet, and a credit note is its own document, not a copy of one,
+        so neither needs/gets watermark tracking here."""
         order = OrderRepository.get_by_id(db, tenant_id, order_id)
         if not order or order.branch_id != branch_id:
             return {"success": False, "error_code": "ORDER_NOT_FOUND"}
         if order.status != "paid":
             return {"success": True, "is_reprint": False, "print_count": 0}
-        order = OrderRepository.increment_print_count(db, order)
+        order = OrderRepository.increment_print_count(db, order, printed_by)
         return {"success": True, "is_reprint": order.print_count > 1, "print_count": order.print_count}
 
     @staticmethod
@@ -450,7 +453,11 @@ class OrderService:
 
     @staticmethod
     def send_to_kitchen(
-        db: Session, tenant_id: str, branch_id: str, order_id: str
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        order_id: str,
+        created_by: str | None = None,
     ) -> dict:
         order = OrderRepository.get_by_id(db, tenant_id, order_id)
         if not order or order.branch_id != branch_id:
@@ -458,13 +465,21 @@ class OrderService:
         if order.status != "draft":
             return {"success": False, "error_code": "ORDER_NOT_EDITABLE"}
         marked = OrderRepository.mark_all_unsent_as_sent(db, order_id)
-        # Bump placed_at so the kitchen "time since order" clock resets for a
-        # follow-up round, and reset kitchen_status if it was already served.
+        slip = None
+        # IRD: Electronic Billing Procedure 2082, clause 6.2घ — each round of
+        # items actually sent to the kitchen gets its own sequential Order
+        # Slip number + log entry. Nothing to log if this call marked zero
+        # lines (e.g. a re-click with nothing new in the cart).
         if marked > 0:
+            slip = OrderRepository.create_slip(
+                db, tenant_id, branch_id, order, line_count=marked, created_by=created_by
+            )
+            # Bump placed_at so the kitchen "time since order" clock resets
+            # for a follow-up round, and reset kitchen_status if served.
             OrderRepository.bump_placed_at(db, order)
         if order.kitchen_status == "served":
             OrderRepository.set_status(db, order, kitchen_status="new")
-        return {"success": True, "order": order, "marked": marked}
+        return {"success": True, "order": order, "marked": marked, "slip": slip}
 
     @staticmethod
     def set_kitchen_status(
@@ -577,7 +592,6 @@ class OrderService:
         # default), since callers that don't pass it (e.g. any future
         # non-POS caller) should keep today's one-flag behavior.
         show_breakdown = vat_enabled if show_vat_breakdown is None else show_vat_breakdown
-        order.kind = "tax" if show_breakdown else "abbreviated"
 
         # Line prices (RestroMenuItem/Variant.price) are stored VAT-INCLUSIVE
         # — what the customer pays per unit. Discount is a cut off that
@@ -601,6 +615,19 @@ class OrderService:
             taxable = Decimal("0")
             vat = Decimal("0")
 
+        # IRD: Electronic Billing Procedure 2082, Annexure-6's own abbreviated
+        # ("संक्षिप्त कर बीजक") invoice template states outright: "दश हजार
+        # रुपैयाँभन्दा बढी कर लाग्ने मूल्यको वस्तु वा सेवाको बिक्रीमा यो बीजक
+        # जारी गरिने छैन" — this format cannot be issued for a sale whose
+        # TAXABLE value exceeds Rs 10,000. Only a real ceiling in a VAT
+        # context (a PAN-only bill has no VAT breakdown to itemize either
+        # way, so the tax/abbreviated distinction doesn't carry the same
+        # weight there). show_vat_breakdown is a UI preference; this
+        # overrides it, never trusting a client-supplied flag to bypass it.
+        if vat_enabled and not show_breakdown and taxable > Decimal("10000"):
+            return {"success": False, "error_code": "ABBREVIATED_INVOICE_LIMIT_EXCEEDED"}
+        order.kind = "tax" if show_breakdown else "abbreviated"
+
         tenant = TenantRepository.get_by_id(db, tenant_id)
         branch = BranchRepository.get_by_id(db, tenant_id, branch_id)
         order.seller_name = tenant.name if tenant else None
@@ -613,6 +640,10 @@ class OrderService:
         order.buyer_pan = buyer_pan
 
         order.subtotal_amount = subtotal
+        # Annexure-5's "Discount" — the actual rupee amount deducted,
+        # snapshotted here (not order.discount_value, which is just the
+        # raw %/flat INPUT and needs the subtotal to mean anything).
+        order.discount_amount = discount.quantize(Decimal("0.01"))
         order.taxable_amount = taxable if vat_enabled else Decimal("0")
         order.exempt_amount = Decimal("0") if vat_enabled else total
         order.vat_amount = vat

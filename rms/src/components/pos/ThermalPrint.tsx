@@ -9,8 +9,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { NPR, type Order, type Settings } from "@/lib/pos/data";
+import { buildIrdQrPayload } from "@/lib/ird-qr";
 import type { TenantInfoDto } from "@/lib/tenant-api";
 import { usePos } from "@/lib/pos/store";
+import { IrdQrCode } from "./IrdQrCode";
 import {
   formatBikramSambat,
   NEPALI_MONTHS,
@@ -92,11 +94,17 @@ export function KotReceipt({
 }) {
   const { tenant, menu } = usePos();
   const printedAt = Date.now();
+  // IRD: Electronic Billing Procedure 2082, clause 6.2घ — an Order Slip
+  // carries its own sequential number, separate from the bill number. The
+  // latest entry is this round's slip (order.slipNumbers is only populated
+  // right after send-to-kitchen or a fresh single-order fetch).
+  const slipNumber = order.slipNumbers?.at(-1);
   return (
     <div className="thermal-receipt mx-auto p-2">
       <p className="text-center text-[13px] uppercase tracking-widest">Kitchen Order Ticket</p>
       <TenantHeader tenant={tenant} settings={settings} showAddress={false} />
       <Divider />
+      {slipNumber != null && <p>Slip  : #{slipNumber}</p>}
       <p>Table : {tableLabel}</p>
       <p>Bill  : #{order.billNumber}</p>
       <p>
@@ -144,6 +152,8 @@ export function BillReceipt({
   settings,
   totals,
   isReprint = false,
+  printCount,
+  slipNumbers,
 }: {
   order: Order;
   tableLabel: string;
@@ -154,6 +164,15 @@ export function BillReceipt({
    *  responsible for asking the server (registerPrint) which this is —
    *  this component just renders whatever it's told. */
   isReprint?: boolean;
+  /** Electronic Billing Procedure 2082, clause 6.2(च) / Annexure-3's sample:
+   *  the watermark must show the actual count — "Copy of Original (2)" —
+   *  not just a generic "copy" label. */
+  printCount?: number;
+  /** Electronic Billing Procedure 2082, clause 6.2घ — Order Slip numbers
+   *  this bill was built from. Overrides order.slipNumbers when given
+   *  (caller fetched fresh at print time); falls back to whatever the
+   *  cached order object already carries otherwise. */
+  slipNumbers?: number[];
 }) {
   const { tenant } = usePos();
   // Prefer the paid_at for closed bills, placed_at for drafts — matches what
@@ -176,7 +195,7 @@ export function BillReceipt({
       {isReprint && (
         <>
           <p className="text-center text-[13px] font-bold tracking-widest">
-            *** COPY OF ORIGINAL ***
+            Copy of Original ({printCount ?? "?"})
           </p>
           <Divider />
         </>
@@ -184,6 +203,12 @@ export function BillReceipt({
       <TenantHeader tenant={tenant} settings={settings} showAddress={true} />
       <Divider />
       <p>Bill  : #{order.billNumber}</p>
+      {/* IRD: Electronic Billing Procedure 2082, clause 6.2घ — the e-bill
+          must reference the Order Slip(s) it was built from. */}
+      {(() => {
+        const slips = slipNumbers ?? order.slipNumbers;
+        return slips && slips.length > 0 ? <p>Slip  : #{slips.join(", #")}</p> : null;
+      })()}
       <p>Table : {tableLabel}</p>
       {order.customer && (
         <>
@@ -224,6 +249,33 @@ export function BillReceipt({
       </div>
       <Divider />
       <p>Payment: {paymentLabel}</p>
+      {order.status === "paid" && tenant?.pan && (
+        <>
+          <Divider />
+          {/* Mandatory Dynamic QR — Electronic Billing Procedure 2082,
+              clause 6.2(ङ). Only rendered for a paid (issued) bill; a
+              pre-payment print/preview isn't a real bill yet. */}
+          <div className="mt-1 flex flex-col items-center gap-1">
+            <IrdQrCode
+              data={buildIrdQrPayload({
+                sellerPan: tenant.pan,
+                isVatRegistered: !!tenant.is_vat_registered,
+                billNumber: order.billNumber,
+                billDateBs: bsFromOrder(order),
+                buyerPan: order.buyerPan,
+                taxableAmount: totals.taxable,
+                taxAmount: totals.vat,
+                totalAmount: totals.total,
+                // No confirmed IRD verification-URL format exists yet —
+                // omitted rather than guessed. Wire up once CBMS/IRD
+                // confirms the scheme during certification.
+              })}
+              size={132}
+            />
+            <p className="text-[9px] opacity-70">Scan to verify bill details</p>
+          </div>
+        </>
+      )}
       <p className="mt-2 text-center">Thank you · Pheri aaunuhola!</p>
       {/* Promotional footer — "Powered By Srota" branding + a QR that opens
           srotaapps.com. Payment QR intentionally removed from the receipt:

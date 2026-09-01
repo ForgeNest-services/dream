@@ -147,6 +147,11 @@ export type Order = {
   // set at mark-paid time, undefined for a still-draft order. Display-only.
   kind?: "tax" | "abbreviated";
   buyerPan?: string;
+  // IRD: Electronic Billing Procedure 2082, clause 6.2घ — Order Slip
+  // sequential numbers this bill was built from (one per "send to
+  // kitchen" round). Only populated when the order was fetched
+  // individually or just sent to kitchen — undefined elsewhere.
+  slipNumbers?: number[];
 };
 
 export type InventoryItem = {
