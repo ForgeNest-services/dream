@@ -31,6 +31,17 @@ class IMSBranchSettingsService:
                 f"Auto-provisioned default IMS branch settings for {branch_id}",
                 extra={"tenant_id": tenant_id, "branch_id": branch_id, "vat_enabled": vat_enabled},
             )
+        # If tenant is no longer VAT-registered but branch settings still has
+        # vat_enabled=True, auto-disable it — prevents stale flag from prior
+        # VAT→PAN change.
+        if settings.vat_enabled:
+            tenant = TenantRepository.get_by_id(db, tenant_id)
+            if not tenant or not tenant.is_vat_registered:
+                settings = IMSBranchSettingsRepository.update(db, settings, vat_enabled=False)
+                logger.info(
+                    f"Auto-disabled VAT for branch {branch_id} — tenant is no longer VAT-registered",
+                    extra={"tenant_id": tenant_id},
+                )
         return {"success": True, "settings": settings}
 
     @staticmethod
