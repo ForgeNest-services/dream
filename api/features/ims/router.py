@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Response
 from sqlalchemy.orm import Session
 from core.database import get_db
@@ -45,6 +46,7 @@ from features.ims.schemas import (
     MarginRow,
     PartyStatementRow,
     DashboardData,
+    AuditLogEntryData,
 )
 from rq import Retry
 from core.queue import job_queue
@@ -72,6 +74,7 @@ from features.ims.invoice_repository import IMSInvoiceRepository
 from features.ims.purchase_repository import IMSPurchaseRepository
 from utils.reports_export import build_xlsx, build_pdf
 from features.auth.repository import TenantRepository
+from features.hotel_pms.audit_repository import AuditRepository
 from utils.bikram_sambat import to_bs_iso
 
 
@@ -2175,3 +2178,46 @@ def get_dashboard(
     result = IMSDashboardService.get(db, staff["tenant_id"], branch_id, bs_from, bs_to)
     data = DashboardData(**{k: v for k, v in result.items() if k != "success"})
     return success_response(data=data.model_dump(mode="json"))
+
+
+# ---------------------------------------------------------------------------
+# Audit log — IRD: Electronic Billing Procedure 2082, clause 6.3ग requires
+# the User Activity Log be viewable/filterable via the front-end. Owner/
+# Manager only (same gating as CBMS sync / credit notes) — front-line
+# staff don't get to see who did what.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/audit-log")
+def list_audit_log(
+    entity_type: str | None = None,
+    action: str | None = None,
+    performed_by: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    q: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can view the activity log")
+    paging = parse_paging(page, per_page)
+    rows, total = AuditRepository.list_for_app(
+        db,
+        tenant_id=staff["tenant_id"],
+        app_code="ims",
+        entity_type=entity_type,
+        action=action,
+        performed_by=performed_by,
+        date_from=date_from,
+        date_to=date_to,
+        q=q,
+        offset=paging["offset"],
+        limit=paging["limit"],
+    )
+    return success_response(
+        data=[AuditLogEntryData.model_validate(r).model_dump(mode="json") for r in rows],
+        meta=build_meta(total, paging["page"], paging["per_page"]),
+    )

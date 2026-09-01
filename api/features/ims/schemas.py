@@ -670,3 +670,22 @@ class DashboardData(BaseModel):
     top_sellers: list[TopSellerRow]
     low_stock_alerts: list[LowStockAlertRow]
     recent_movements: list[RecentMovementRow]
+
+
+class AuditLogEntryData(BaseModel):
+    """IRD: Electronic Billing Procedure 2082, clause 6.3ग — the User
+    Activity Log, viewable/filterable from the front-end."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    app_code: str
+    entity_type: str
+    entity_id: str
+    action: str
+    performed_by: str
+    performer_type: str
+    before_state: dict | None
+    after_state: dict | None
+    reason: str | None
+    terminal_ip: str | None
+    created_at: datetime

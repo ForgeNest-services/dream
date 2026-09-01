@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/common/primitives";
 import { PaymentQrUploader } from "@/components/common/payment-qr-uploader";
+import { TablePagination } from "@/components/common/table-pagination";
 import { UsersSection } from "@/components/common/users-section";
 import {
   AlertDialog,
@@ -17,6 +18,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useApp } from "@/context/app-store";
+import { auditLogApi, type AuditLogEntryDto } from "@/lib/audit-log-api";
+import type { PageMeta } from "@/lib/api-client";
 import { cbmsSyncLogApi, type CbmsSyncLogEntry } from "@/lib/invoices-api";
 import { createFileRoute } from "@tanstack/react-router";
 import { Check, Info, Lock, Trash2 } from "lucide-react";
@@ -67,6 +70,7 @@ function SettingsPage() {
           <TabsTrigger value="units">Units &amp; brands</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
           <TabsTrigger value="ird">IRD / CBMS</TabsTrigger>
+          <TabsTrigger value="audit">Activity Log</TabsTrigger>
         </TabsList>
 
         <TabsContent value="company" className="mt-4 space-y-4">
@@ -303,6 +307,10 @@ function SettingsPage() {
         <TabsContent value="ird" className="mt-4">
           <CbmsCredentialsCard />
         </TabsContent>
+
+        <TabsContent value="audit" className="mt-4">
+          <AuditLogCard />
+        </TabsContent>
       </Tabs>
 
       <AlertDialog open={deleteFyId !== null} onOpenChange={(o) => !o && setDeleteFyId(null)}>
@@ -466,6 +474,151 @@ function CbmsCredentialsCard() {
               ))}
             </tbody>
           </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// IRD: Electronic Billing Procedure 2082, clause 6.3ग — the User Activity
+// Log must be viewable and filterable from the front-end. Owner/Manager
+// only (matches the backend's role gate on GET /ims/audit-log).
+function AuditLogCard() {
+  const [entries, setEntries] = useState<AuditLogEntryDto[] | null>(null);
+  const [meta, setMeta] = useState<PageMeta | null>(null);
+  const [entityType, setEntityType] = useState("");
+  const [action, setAction] = useState("");
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(25);
+
+  useEffect(() => {
+    auditLogApi
+      .list({
+        entity_type: entityType || undefined,
+        action: action || undefined,
+        q: q || undefined,
+        page,
+        per_page: perPage,
+      })
+      .then((res) => {
+        if (res.success) {
+          setEntries(res.data ?? []);
+          setMeta(res.meta ?? null);
+        }
+      })
+      .catch(() => {
+        // Non-fatal — the rest of Settings still renders.
+      });
+  }, [entityType, action, q, page, perPage]);
+
+  const ACTION_LABELS: Record<string, string> = {
+    create: "Sale created",
+    login: "Logged in",
+    login_failed: "Login failed",
+    logout: "Logged out",
+    credit_note: "Credit note issued",
+    record_payment: "Payment recorded",
+  };
+
+  return (
+    <div className="max-w-4xl space-y-4">
+      <div className="rounded-lg border bg-card p-5">
+        <p className="text-sm font-medium">User Activity Log</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Every login, sale, payment, and credit note is recorded here permanently — this list
+          can be filtered but nothing in it can be edited or removed (IRD requirement).
+        </p>
+      </div>
+
+      <div className="rounded-lg border bg-card p-5">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <select
+            value={entityType}
+            onChange={(e) => {
+              setEntityType(e.target.value);
+              setPage(1);
+            }}
+            className="h-8 rounded-md border bg-background px-2 text-xs"
+          >
+            <option value="">All types</option>
+            <option value="invoice">Invoices</option>
+            <option value="credential">Logins</option>
+          </select>
+          <select
+            value={action}
+            onChange={(e) => {
+              setAction(e.target.value);
+              setPage(1);
+            }}
+            className="h-8 rounded-md border bg-background px-2 text-xs"
+          >
+            <option value="">All actions</option>
+            {Object.entries(ACTION_LABELS).map(([k, label]) => (
+              <option key={k} value={k}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <Input
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Search invoice #, staff, reason…"
+            className="h-8 max-w-[220px] text-xs"
+          />
+        </div>
+
+        {entries === null ? (
+          <p className="text-xs text-muted-foreground">Loading…</p>
+        ) : entries.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No activity matches this filter.</p>
+        ) : (
+          <>
+            <table className="w-full text-xs">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 text-left font-medium">When</th>
+                  <th className="py-1 text-left font-medium">Action</th>
+                  <th className="py-1 text-left font-medium">Document / Entity</th>
+                  <th className="py-1 text-left font-medium">Reason</th>
+                  <th className="py-1 text-left font-medium">IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((e) => (
+                  <tr key={e.id} className="border-t border-border/60">
+                    <td className="py-1.5 whitespace-nowrap">
+                      {new Date(e.created_at).toLocaleString()}
+                    </td>
+                    <td className="py-1.5">{ACTION_LABELS[e.action] ?? e.action}</td>
+                    <td className="py-1.5">
+                      {(e.after_state?.number as string | undefined) ??
+                        (e.after_state?.username as string | undefined) ??
+                        `${e.entity_type} · ${e.entity_id.slice(0, 8)}`}
+                    </td>
+                    <td className="py-1.5">{e.reason ?? "—"}</td>
+                    <td className="py-1.5">{e.terminal_ip ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {meta && (
+              <TablePagination
+                page={meta.page}
+                perPage={meta.per_page}
+                totalItems={meta.total}
+                totalPages={meta.total_pages}
+                onPageChange={setPage}
+                onPerPageChange={(pp) => {
+                  setPerPage(pp);
+                  setPage(1);
+                }}
+              />
+            )}
+          </>
         )}
       </div>
     </div>
