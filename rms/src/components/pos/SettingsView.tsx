@@ -1,8 +1,10 @@
-import { useState } from "react";
-import { Building2, Info, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Building2, Check, Info, Loader2, Lock } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -11,12 +13,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { usePos } from "@/lib/pos/store";
+import type { Settings } from "@/lib/pos/data";
+import type { TenantInfoDto } from "@/lib/tenant-api";
 import { MenuQrPrintButton } from "./MenuQrPrint";
 import { UsersSection } from "./UsersSection";
 
 export function SettingsView() {
   const {
     settings,
+    updateSettings,
     uploadQrImage,
     clearQrImage,
     branch,
@@ -151,10 +156,14 @@ export function SettingsView() {
               )}
             </p>
           </div>
-          {/* TODO(vat): add VAT toggle and rate input here when RMS VAT is enabled.
-              The backend DEFAULT_VAT_ENABLED flag (order_service.py) must be flipped
-              to True alongside enabling this UI. */}
         </div>
+
+        <VatSettingsCard
+          tenant={tenant}
+          tenantLoading={tenantLoading}
+          settings={settings}
+          updateSettings={updateSettings}
+        />
 
         <div className="pos-card p-5">
           <h2 className="font-display text-xl">Payment QR</h2>
@@ -239,6 +248,127 @@ export function SettingsView() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function VatSettingsCard({
+  tenant,
+  tenantLoading,
+  settings,
+  updateSettings,
+}: {
+  tenant: TenantInfoDto | null;
+  tenantLoading: boolean;
+  settings: Settings;
+  updateSettings: (patch: Partial<Settings>) => Promise<void>;
+}) {
+  const canToggleVat = tenant?.is_vat_registered === true;
+  const [rateDraft, setRateDraft] = useState(String(settings.vatRate ?? 13));
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  useEffect(() => {
+    setRateDraft(String(settings.vatRate ?? 13));
+  }, [settings.vatRate]);
+
+  const flashSaved = () => {
+    setSavedFlash(true);
+    window.setTimeout(() => setSavedFlash(false), 1200);
+  };
+
+  return (
+    <div className="pos-card p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-display text-xl">Tax</h2>
+        {savedFlash && (
+          <span className="flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success">
+            <Check className="size-3" />
+            Saved
+          </span>
+        )}
+      </div>
+      <div className="mt-3 rounded-xl border border-border bg-secondary/50 p-3 text-xs">
+        <p className="flex items-center gap-1.5 font-medium text-foreground">
+          <Info className="size-3.5" />
+          Business tax status
+        </p>
+        <p className="mt-1 text-muted-foreground">
+          {tenantLoading ? (
+            "Loading…"
+          ) : canToggleVat ? (
+            <>
+              <span className="font-semibold text-primary">VAT-registered</span>
+              {tenant?.pan && <> · PAN {tenant.pan}</>} — VAT can be applied to bills.
+            </>
+          ) : tenant?.pan ? (
+            <>
+              <span className="font-semibold">PAN only</span> · PAN {tenant.pan} — VAT isn't
+              available. Change this in the admin app if you register for VAT.
+            </>
+          ) : (
+            <>No PAN or VAT on file. Update your business info in the admin app.</>
+          )}
+        </p>
+      </div>
+      <div
+        className={`mt-4 flex items-center justify-between rounded-xl p-4 ${
+          canToggleVat ? "bg-secondary" : "bg-secondary/50 opacity-70"
+        }`}
+      >
+        <div>
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            {!canToggleVat && <Lock className="size-3.5 text-muted-foreground" />}
+            Apply VAT on bills
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {canToggleVat
+              ? "Menu prices are treated as VAT-inclusive; the bill shows the breakdown."
+              : "Only available for VAT-registered businesses."}
+          </p>
+        </div>
+        <Switch
+          checked={canToggleVat && settings.vatEnabled}
+          disabled={!canToggleVat}
+          onCheckedChange={async (v) => {
+            await updateSettings({ vatEnabled: v });
+            flashSaved();
+          }}
+        />
+      </div>
+      {canToggleVat && settings.vatEnabled && (
+        <div className="mt-4 space-y-2">
+          <Label className="text-xs">VAT rate (%)</Label>
+          <Input
+            type="number"
+            min={0}
+            max={100}
+            step="0.01"
+            className="h-12"
+            value={rateDraft}
+            onChange={(e) => setRateDraft(e.target.value)}
+            onBlur={async () => {
+              const next = Number(rateDraft);
+              if (
+                !Number.isFinite(next) ||
+                next < 0 ||
+                next > 100 ||
+                next === settings.vatRate
+              ) {
+                setRateDraft(String(settings.vatRate ?? 13));
+                if (Number.isFinite(next) && (next < 0 || next > 100)) {
+                  toast.error("VAT rate must be between 0 and 100");
+                }
+                return;
+              }
+              await updateSettings({ vatRate: next });
+              flashSaved();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

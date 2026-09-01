@@ -28,7 +28,11 @@ export interface ExportContext {
 const asN = (v: string | number | undefined) =>
   typeof v === "number" ? v : Number(v ?? 0);
 
-function billTotal(o: OrderDto, vatEnabled: boolean, vatRate: number): number {
+// Line prices are stored VAT-inclusive — total is just subtotal minus
+// discount, no VAT added on top (mirrors store.tsx's billTotals()).
+// vatEnabled/vatRate are unused here now but kept in the signature/
+// ExportContext since callers already pass them through.
+function billTotal(o: OrderDto, _vatEnabled: boolean, _vatRate: number): number {
   const subtotal = o.lines
     .filter((l) => !l.is_voided)
     .reduce((s, l) => s + Number(l.price) * l.qty, 0);
@@ -36,9 +40,7 @@ function billTotal(o: OrderDto, vatEnabled: boolean, vatRate: number): number {
     o.discount_type === "percent"
       ? (subtotal * Number(o.discount_value)) / 100
       : Number(o.discount_value);
-  const taxable = Math.max(0, subtotal - discount);
-  const vat = vatEnabled ? (taxable * vatRate) / 100 : 0;
-  return taxable + vat;
+  return Math.max(0, subtotal - discount);
 }
 
 function fileStamp(bsFrom: string, bsTo: string): string {

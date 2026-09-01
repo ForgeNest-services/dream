@@ -147,7 +147,7 @@ export function BillReceipt({
   order: Order;
   tableLabel: string;
   settings: Settings;
-  totals: { subtotal: number; discount: number; vat: number; total: number };
+  totals: { subtotal: number; discount: number; taxable: number; vat: number; total: number };
 }) {
   const { tenant } = usePos();
   // Prefer the paid_at for closed bills, placed_at for drafts — matches what
@@ -194,7 +194,10 @@ export function BillReceipt({
       {row("Subtotal", NPR(totals.subtotal))}
       {totals.discount > 0 && row("Discount", `-${NPR(totals.discount)}`)}
       {settings.vatEnabled && tenant?.is_vat_registered && (
-        row(`VAT ${settings.vatRate}%`, NPR(totals.vat))
+        <>
+          {row("Taxable amount", NPR(totals.taxable))}
+          {row(`VAT ${settings.vatRate}%`, NPR(totals.vat))}
+        </>
       )}
       <Divider />
       <div className="flex justify-between text-[13px]">

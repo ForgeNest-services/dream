@@ -201,6 +201,10 @@ export function ReportsView() {
       ? (o.customer?.name ?? "Delivery")
       : (tables.find((t) => t.id === o.table_id)?.label ?? "Walk-in");
 
+  // Line prices are stored VAT-inclusive — total is just subtotal minus
+  // discount, no VAT added on top. Mirrors store.tsx's billTotals(); this
+  // report list doesn't fetch total_amount onto OrderDto, so it can't fall
+  // back to the paid snapshot the way khata/reports elsewhere do.
   const billTotalFromDto = (o: (typeof orders)[number]) => {
     const subtotal = o.lines
       .filter((l) => !l.is_voided)
@@ -209,9 +213,7 @@ export function ReportsView() {
       o.discount_type === "percent"
         ? (subtotal * Number(o.discount_value)) / 100
         : Number(o.discount_value);
-    const taxable = Math.max(0, subtotal - discount);
-    const vat = settings.vatEnabled ? (taxable * settings.vatRate) / 100 : 0;
-    return taxable + vat;
+    return Math.max(0, subtotal - discount);
   };
 
   // ------ layout ------------------------------------------------------

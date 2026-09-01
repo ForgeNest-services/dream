@@ -32,6 +32,7 @@ import { expensesApi, type ExpenseDto } from "../expenses-api";
 import { uploadsApi } from "../uploads-api";
 import { parseApiDate } from "./nepali-date";
 import {
+  round2,
   type Category,
   type Customer,
   type DeliveryStatus,
@@ -218,8 +219,14 @@ export function toMenuItem(m: MenuItemDto): MenuItem {
     ...(m.image_url ? { image: m.image_url } : {}),
     hasVariants: m.has_variants,
     isCombo: m.is_combo,
-    ...(m.price !== null ? { price: m.price } : {}),
-    variants: m.variants.map((v) => ({ id: v.id, name: v.name, price: v.price })),
+    // price is a Decimal column server-side — serializes as a JSON string
+    // ("100.00"), not a number, despite the DTO type saying otherwise.
+    // Number.isFinite() (used by DecimalTextInput's initial-render check)
+    // rejects strings outright rather than coercing them, so an uncoerced
+    // string silently rendered as a blank input — coerce here, once, at the
+    // DTO boundary, same as line.price below.
+    ...(m.price !== null ? { price: Number(m.price) } : {}),
+    variants: m.variants.map((v) => ({ id: v.id, name: v.name, price: Number(v.price) })),
     components: (m.components ?? []).map((c) => ({
       id: c.id,
       childMenuItemId: c.child_menu_item_id,
@@ -1634,26 +1641,32 @@ export function usePos() {
   return ctx;
 }
 
-export function useBillTotals(order: Order | undefined, vatEnabled: boolean, vatRate: number) {
-  return useMemo(() => {
-    const subtotal = order?.lines.reduce((s, l) => s + l.price * l.qty, 0) ?? 0;
-    const discount =
-      order?.discountType === "percent"
-        ? (subtotal * (order?.discountValue ?? 0)) / 100
-        : (order?.discountValue ?? 0);
-    const taxable = Math.max(0, subtotal - discount);
-    const vat = vatEnabled ? (taxable * vatRate) / 100 : 0;
-    return { subtotal, discount, vat, total: taxable + vat };
-  }, [order, vatEnabled, vatRate]);
-}
-
-export function billTotals(order: Order | undefined, vatEnabled: boolean, vatRate: number) {
+/** line.price (and MenuItem/Variant.price it's snapshotted from) is stored
+ *  VAT-INCLUSIVE — what the customer actually pays per unit. Discount is a
+ *  cut off that inclusive subtotal (a coupon/offer reduces what the
+ *  customer pays, VAT included, not the pre-VAT taxable amount). VAT is
+ *  then backed OUT of what remains, not added on top — the bill's "Total"
+ *  always equals subtotal - discount; taxable/vat are just that same
+ *  number's breakdown for the printed VAT line. */
+function computeBillTotals(order: Order | undefined, vatEnabled: boolean, vatRate: number) {
   const subtotal = order?.lines.reduce((s, l) => s + l.price * l.qty, 0) ?? 0;
   const discount =
     order?.discountType === "percent"
       ? (subtotal * (order?.discountValue ?? 0)) / 100
       : (order?.discountValue ?? 0);
-  const taxable = Math.max(0, subtotal - discount);
-  const vat = vatEnabled ? (taxable * vatRate) / 100 : 0;
-  return { subtotal, discount, vat, total: taxable + vat };
+  const total = Math.max(0, subtotal - discount);
+  const taxable = vatEnabled ? round2(total / (1 + vatRate / 100)) : total;
+  const vat = vatEnabled ? round2(total - taxable) : 0;
+  return { subtotal, discount, taxable, vat, total };
+}
+
+export function useBillTotals(order: Order | undefined, vatEnabled: boolean, vatRate: number) {
+  return useMemo(
+    () => computeBillTotals(order, vatEnabled, vatRate),
+    [order, vatEnabled, vatRate],
+  );
+}
+
+export function billTotals(order: Order | undefined, vatEnabled: boolean, vatRate: number) {
+  return computeBillTotals(order, vatEnabled, vatRate);
 }

@@ -604,7 +604,7 @@ function BillPanel({
   onPay,
 }: {
   order: Order | undefined;
-  totals: { subtotal: number; discount: number; vat: number; total: number };
+  totals: { subtotal: number; discount: number; taxable: number; vat: number; total: number };
   unsent: number;
   onSend: () => void;
   onPrintKot: () => void;
@@ -717,10 +717,16 @@ function BillPanel({
               </div>
             )}
             {settings.vatEnabled && (
-              <div className="flex justify-between">
-                <dt className="text-muted-foreground">VAT ({settings.vatRate}%)</dt>
-                <dd>{NPR(totals.vat)}</dd>
-              </div>
+              <>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">Taxable amount</dt>
+                  <dd>{NPR(totals.taxable)}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">VAT ({settings.vatRate}%)</dt>
+                  <dd>{NPR(totals.vat)}</dd>
+                </div>
+              </>
             )}
             <div className="flex items-center justify-between border-t border-border pt-2">
               <dt className="font-display text-base font-semibold">Total</dt>

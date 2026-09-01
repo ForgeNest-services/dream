@@ -17,7 +17,7 @@ from features.restro.menu_item_repository import MenuItemRepository
 from features.restro.menu_item_service import combo_note_from_components
 from features.restro.customer_repository import CustomerRepository
 from features.restro.khata_settlement_repository import KhataSettlementRepository
-from features.restro.branch_settings_repository import BranchSettingsRepository
+from features.restro.branch_settings_service import BranchSettingsService
 from features.branches.repository import BranchRepository
 from features.auth.repository import TenantRepository
 from features.hotel_pms.audit_repository import AuditRepository
@@ -29,23 +29,29 @@ from utils.logger import logger
 def order_vat_settings(db: Session, tenant_id: str, branch_id: str) -> tuple[bool, Decimal]:
     """Reads the branch's real VAT config (RestroBranchSettings), which is
     itself gated server-side on tenant.is_vat_registered — never a hardcoded
-    default. Falls back to VAT-off if the branch has no settings row yet
-    (auto-provisioning only happens through BranchSettingsService.get_or_create,
-    which order flows don't call)."""
-    settings = BranchSettingsRepository.get(db, tenant_id, branch_id)
-    if not settings:
+    default. Goes through BranchSettingsService.get_or_create (not the bare
+    repository) so a tenant that just switched PAN<->VAT gets that reflected
+    on their very next bill, not just after someone happens to open
+    Settings — same auto-sync every other settings read gets."""
+    result = BranchSettingsService.get_or_create(db, tenant_id, branch_id)
+    if not result["success"]:
         return False, Decimal("13")
+    settings = result["settings"]
     return bool(settings.vat_enabled), Decimal(settings.vat_rate)
 
 
 def compute_order_total(order, vat_enabled: bool = False, vat_rate: Decimal = Decimal("13")) -> Decimal:
     """Mirrors the frontend billTotals(): subtotal from non-voided lines,
-    discount (percent or flat), then VAT applied to the taxable amount.
-    Used server-side both for reports and for the khata outstanding-balance
-    calculation, so the number always matches what the customer was shown at
-    bill time. vat_enabled/vat_rate come from the order's branch settings —
-    callers iterating orders across branches must pass the right pair per
-    order (see khata_orders_total)."""
+    discount (percent or flat), then VAT backed OUT of what remains — line
+    prices (RestroMenuItem/Variant.price, snapshotted onto the order line at
+    add-line time) are stored VAT-INCLUSIVE, so the total the customer pays
+    is subtotal - discount, full stop; VAT is a breakdown of that number for
+    the printed bill, never added on top of it. Used server-side both for
+    reports and for the khata outstanding-balance calculation, so the number
+    always matches what the customer was shown at bill time. vat_enabled/
+    vat_rate come from the order's branch settings — callers iterating
+    orders across branches must pass the right pair per order (see
+    khata_orders_total)."""
     subtotal = sum(
         (Decimal(line.price) * line.qty for line in order.lines if not line.is_voided),
         Decimal("0"),
@@ -54,9 +60,8 @@ def compute_order_total(order, vat_enabled: bool = False, vat_rate: Decimal = De
         discount = subtotal * Decimal(order.discount_value) / Decimal("100")
     else:
         discount = Decimal(order.discount_value)
-    taxable = max(Decimal("0"), subtotal - discount)
-    vat = (taxable * vat_rate / Decimal("100")) if vat_enabled else Decimal("0")
-    return (taxable + vat).quantize(Decimal("0.01"))
+    total = max(Decimal("0"), subtotal - discount)
+    return total.quantize(Decimal("0.01"))
 
 
 class OrderService:
@@ -480,6 +485,11 @@ class OrderService:
         # ── IRD: PAN snapshot — seller and buyer ─────────────────────────────
         vat_enabled, vat_rate = order_vat_settings(db, tenant_id, branch_id)
 
+        # Line prices (RestroMenuItem/Variant.price) are stored VAT-INCLUSIVE
+        # — what the customer pays per unit. Discount is a cut off that
+        # inclusive subtotal, and VAT is backed OUT of what remains, never
+        # added on top: total = subtotal - discount, full stop. taxable/vat
+        # are just that same total's breakdown for the printed VAT line.
         subtotal = sum(
             (Decimal(line.price) * line.qty for line in order.lines if not line.is_voided),
             Decimal("0"),
@@ -489,9 +499,13 @@ class OrderService:
         else:
             discount = Decimal(order.discount_value)
 
-        taxable_and_vat = max(Decimal("0"), subtotal - discount)
-        vat = (taxable_and_vat * vat_rate / Decimal("100")) if vat_enabled else Decimal("0")
-        total = (taxable_and_vat + vat).quantize(Decimal("0.01"))
+        total = max(Decimal("0"), subtotal - discount).quantize(Decimal("0.01"))
+        if vat_enabled:
+            taxable = (total / (1 + vat_rate / Decimal("100"))).quantize(Decimal("0.01"))
+            vat = (total - taxable).quantize(Decimal("0.01"))
+        else:
+            taxable = Decimal("0")
+            vat = Decimal("0")
 
         tenant = TenantRepository.get_by_id(db, tenant_id)
         branch = BranchRepository.get_by_id(db, tenant_id, branch_id)
@@ -505,8 +519,8 @@ class OrderService:
         order.buyer_pan = buyer_pan
 
         order.subtotal_amount = subtotal
-        order.taxable_amount = taxable_and_vat if vat_enabled else Decimal("0")
-        order.exempt_amount = Decimal("0") if vat_enabled else taxable_and_vat
+        order.taxable_amount = taxable if vat_enabled else Decimal("0")
+        order.exempt_amount = Decimal("0") if vat_enabled else total
         order.vat_amount = vat
         order.total_amount = total
 
