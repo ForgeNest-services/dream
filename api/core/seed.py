@@ -2,7 +2,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from core.database import SessionLocal
+from core.database import SessionLocal, AdminSessionLocal
 from core.configs import settings
 from core.security import hash_password
 from core.storage import upload_file_at_key, build_public_url, object_exists
@@ -140,7 +140,7 @@ def ensure_ims_products_schema() -> None:
     unique constraint on (tenant_id, sku) if it still exists from before the
     partial-unique-index migration, so a soft-deleted product's SKU can be
     reused — IF EXISTS makes both statements safe to re-run."""
-    db = SessionLocal()
+    db = AdminSessionLocal()
     try:
         db.execute(text(
             "ALTER TABLE public.ims_products "
@@ -169,7 +169,7 @@ def ensure_ims_parties_schema() -> None:
     entries at the DB level. Base.create_all doesn't ALTER existing FKs, so
     this drops and recreates the constraint — IF EXISTS/re-running is a
     no-op once the cascade is in place."""
-    db = SessionLocal()
+    db = AdminSessionLocal()
     try:
         db.execute(text(
             "ALTER TABLE public.ims_ledger_entries "
@@ -198,7 +198,7 @@ def ensure_ims_bs_date_schema() -> None:
     column nullable, converts each row's AD `date` in Python via
     to_bs_iso(), then sets NOT NULL — safe to re-run since the UPDATE only
     touches rows where date_bs IS NULL."""
-    db = SessionLocal()
+    db = AdminSessionLocal()
     try:
         db.execute(text(
             "ALTER TABLE public.ims_purchases ADD COLUMN IF NOT EXISTS date_bs VARCHAR(10)"
@@ -251,7 +251,7 @@ def ensure_ims_invoice_line_vat_schema() -> None:
     snapshotting, so they back-fill to 0 rather than a guessed value — the
     header-level taxable_amount/vat_amount on ims_invoices is still correct
     and unaffected; only the per-line breakdown is unknown for old rows."""
-    db = SessionLocal()
+    db = AdminSessionLocal()
     try:
         db.execute(text(
             "ALTER TABLE public.ims_invoice_lines "
@@ -273,7 +273,7 @@ def ensure_ims_invoice_line_vat_schema() -> None:
 def ensure_ims_variant_expiry_schema() -> None:
     """Back-fill the optional expiry_date column onto ims_variants (single
     date per variant, no batch/lot tracking — see IMSVariant's docstring)."""
-    db = SessionLocal()
+    db = AdminSessionLocal()
     try:
         db.execute(text(
             "ALTER TABLE public.ims_variants ADD COLUMN IF NOT EXISTS expiry_date DATE"
@@ -299,7 +299,7 @@ def ensure_ims_fiscal_year_link_schema() -> None:
     from features.ims.nepali_date import fiscal_year_start_for_bs_date
     from shared_models import IMSFiscalYear
 
-    db = SessionLocal()
+    db = AdminSessionLocal()
     try:
         db.execute(text(
             "ALTER TABLE public.ims_invoices "
@@ -365,7 +365,7 @@ def ensure_ims_branch_settings_qr_schema() -> None:
     """Back-fill the optional qr_image_url column onto ims_branch_settings
     (see IMSBranchSettings' docstring) — mirrors restro_branch_settings'
     existing qr_image_url column."""
-    db = SessionLocal()
+    db = AdminSessionLocal()
     try:
         db.execute(text(
             "ALTER TABLE public.ims_branch_settings "
@@ -419,7 +419,7 @@ def ensure_tenants_free_app_schema() -> None:
     — see SubscriptionService.start_trial_if_needed), so tenants.free_app_code
     is dead. This drops it if an earlier deploy already added it — safe to
     run even if the column was never there (IF EXISTS)."""
-    db = SessionLocal()
+    db = AdminSessionLocal()
     try:
         db.execute(text(
             "ALTER TABLE public.tenants "
@@ -442,7 +442,7 @@ def ensure_subscription_payments_group_schema() -> None:
     current ones (no 'bundle' plan value anymore). Table has no real rows
     yet in any deployed environment, so no data backfill is needed for
     group_id itself — existing (test) rows get group_id = their own id."""
-    db = SessionLocal()
+    db = AdminSessionLocal()
     try:
         db.execute(text(
             "ALTER TABLE public.subscription_payments "
@@ -491,7 +491,7 @@ def ensure_ird_schema() -> None:
     supersedes the 2074 procedure — clause 12(ग) of the 2082 text repeals it
     outright; see docs/Srota_IRD_Compliance_Checklist.md) to restro_orders
     and ims_invoices. Safe to run repeatedly — uses ADD COLUMN IF NOT EXISTS."""
-    db = SessionLocal()
+    db = AdminSessionLocal()
     try:
         # ── restro_orders ────────────────────────────────────────────────────
         restro_cols = [
@@ -585,7 +585,7 @@ def ensure_org_tax_settings_schema() -> None:
     per-app ims_cbms_credentials table these two superseded (had zero real
     rows at migration time, confirmed against the dev DB before removing
     it)."""
-    db = SessionLocal()
+    db = AdminSessionLocal()
     try:
         db.execute(text("DROP TABLE IF EXISTS public.ims_cbms_credentials"))
         db.commit()
@@ -597,8 +597,111 @@ def ensure_org_tax_settings_schema() -> None:
         db.close()
 
 
+# IRD: Electronic Billing Procedure 2082, clause 6.3घ — "transaction data
+# already entered into the software must not be removable or modifiable,
+# from either the front-end or the back-end." A REVOKE only means something
+# if the app connects as a non-superuser role (superusers bypass all
+# grants) — see ensure_app_role below.
+#
+# Each entry: table -> set of columns that legitimately change AFTER the
+# row is first written (a follow-on event like a payment or a reprint —
+# never the original billed facts: amounts, line items, seller/buyer, tax).
+# UPDATE is revoked on the table entirely, then re-granted column-by-column
+# for just these. Tables not listed here aren't transaction records (stock
+# balances, catalog data, credentials, etc.) and keep full UPDATE/DELETE —
+# only add a table here if it holds data an issued bill/order is built
+# from and IRD's immutability rule should actually cover.
+_IMMUTABLE_TABLES: dict[str, set[str]] = {
+    "ims_invoices": {
+        "paid_amount", "status", "is_bill_printed", "printed_time",
+        "printed_by", "is_reprint", "reprint_number", "cbms_synced",
+        "cbms_synced_at",
+    },
+    "ims_invoice_lines": {"tax_rate", "vat_amount"},
+    "ims_stock_movements": set(),
+    "ims_ledger_entries": set(),
+    "audit_log": set(),
+}
+
+
+def ensure_app_role() -> None:
+    """Creates (or updates the password of) the restricted DATABASE_URL
+    role the app actually connects as for request traffic, and applies
+    _IMMUTABLE_TABLES' column-level UPDATE grants. Runs every startup via
+    the admin (superuser) connection — idempotent, safe to re-run; also
+    what picks up a newly-added table in _IMMUTABLE_TABLES on the next
+    deploy without a separate manual migration step.
+
+    Scoped to IMS's tables only for now — RMS's restro_orders/lines follow
+    a different write pattern (fields are first written at mark-paid time,
+    not at row creation) and need their own analysis before being added
+    here, not a copy of IMS's column list."""
+    if not settings.DATABASE_APP_PASSWORD:
+        logger.warning(
+            "DATABASE_APP_PASSWORD not set — skipping restricted app role "
+            "setup. The app will keep connecting as the superuser "
+            "(DATABASE_URL), so IRD's back-end immutability requirement "
+            "isn't actually enforced yet. Set DATABASE_APP_PASSWORD and "
+            "point DATABASE_URL at DATABASE_APP_USER to fix."
+        )
+        return
+
+    user = settings.DATABASE_APP_USER
+    # CREATE ROLE / ALTER ROLE are DDL — Postgres doesn't support bind
+    # parameters for them (confirmed: PREPARE rejects a param there), so
+    # the password has to be inlined as a SQL string literal. quote_literal
+    # via a throwaway SELECT is the standard safe way to escape it (handles
+    # embedded quotes/backslashes) rather than hand-rolling .replace("'", "''").
+    db = AdminSessionLocal()
+    try:
+        quoted_pw = db.execute(
+            text("SELECT quote_literal(:pw)"), {"pw": settings.DATABASE_APP_PASSWORD}
+        ).scalar()
+
+        exists = db.execute(
+            text("SELECT 1 FROM pg_roles WHERE rolname = :user"), {"user": user}
+        ).scalar()
+        if exists:
+            # ALTER ROLE ... PASSWORD is idempotent to re-run (just resets
+            # to the same value) and picks up a rotated DATABASE_APP_PASSWORD.
+            db.execute(text(f'ALTER ROLE "{user}" WITH LOGIN PASSWORD {quoted_pw}'))
+        else:
+            db.execute(text(f'CREATE ROLE "{user}" WITH LOGIN PASSWORD {quoted_pw}'))
+        db.commit()
+
+        db.execute(text(f'GRANT USAGE ON SCHEMA public TO "{user}"'))
+        # Broad baseline: everything not in _IMMUTABLE_TABLES keeps normal
+        # read/write. Re-run every startup so a brand-new table (created
+        # moments ago by create_all) is immediately writable — Postgres
+        # GRANTs don't apply retroactively to tables that didn't exist yet.
+        db.execute(text(f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "{user}"'))
+        db.commit()
+
+        for table, mutable_cols in _IMMUTABLE_TABLES.items():
+            db.execute(text(f'REVOKE UPDATE, DELETE ON public."{table}" FROM "{user}"'))
+            if mutable_cols:
+                cols = ", ".join(f'"{c}"' for c in sorted(mutable_cols))
+                db.execute(text(f'GRANT UPDATE ({cols}) ON public."{table}" TO "{user}"'))
+        db.commit()
+        logger.info(
+            f"App role '{user}' ready — UPDATE/DELETE revoked on "
+            f"{len(_IMMUTABLE_TABLES)} transaction table(s), "
+            f"column-level UPDATE re-granted where legitimately needed."
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to ensure app DB role: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
 def seed_apps():
-    db = SessionLocal()
+    # Uses the admin session (not the restricted app role) because this
+    # calls _ensure_apps_schema(db) first, which runs ALTER TABLE — the
+    # inserts that follow work fine under either session, but splitting
+    # one function across two DB connections isn't worth it here.
+    db = AdminSessionLocal()
     try:
         _ensure_apps_schema(db)
         for entry in _app_catalog():

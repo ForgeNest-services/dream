@@ -6,7 +6,26 @@ REDIS_PORT = os.getenv("REDIS_PORT")
 REDIS_DB = os.getenv("REDIS_DB")
 
 class Settings:
+    # DATABASE_URL is what the running app actually connects as for every
+    # request — a restricted role with UPDATE/DELETE revoked on transaction
+    # tables (IRD: Electronic Billing Procedure 2082, clause 6.3घ — issued
+    # transaction data can't be modified/removed from the back-end either,
+    # not just the front-end). DATABASE_ADMIN_URL is the real Postgres
+    # superuser, used ONLY at startup to create that restricted role, apply
+    # its grants, and run schema migrations — never for request traffic.
+    # Falls back to DATABASE_URL so existing setups (before this role
+    # existed) keep working until DATABASE_ADMIN_URL is set.
+    DATABASE_ADMIN_URL: str = os.getenv("DATABASE_ADMIN_URL") or os.getenv("DATABASE_URL")
     DATABASE_URL: str = os.getenv("DATABASE_URL")
+    # Credentials for the restricted role ensure_app_role() creates/updates
+    # at startup (core/seed.py) — must match whatever DATABASE_URL's
+    # username/password actually are, since ensure_app_role runs
+    # CREATE ROLE ... PASSWORD using these, then DATABASE_URL connects as
+    # that same role. Kept as separate explicit vars instead of parsed out
+    # of DATABASE_URL — clearer to set, and avoids URL-encoding edge cases
+    # in a password parsed back out of a connection string.
+    DATABASE_APP_USER: str = os.getenv("DATABASE_APP_USER", "srota_app")
+    DATABASE_APP_PASSWORD: str = os.getenv("DATABASE_APP_PASSWORD", "")
     REDIS_URL: str = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
     ENVIRO: str = os.getenv("ENVIRO", "prod")
     JWT_SECRET: str = os.getenv("JWT_SECRET")

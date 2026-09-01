@@ -6,7 +6,7 @@ from fastapi.openapi.utils import get_openapi
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from utils.helpers import success_response, error_response, format_validation_errors
 from utils.logger import logger
-from core.database import Base, engine
+from core.database import Base, engine, admin_engine
 from core.seed import (
     seed_superadmin,
     seed_apps,
@@ -25,6 +25,7 @@ from core.seed import (
     ensure_subscription_payments_group_schema,
     ensure_ird_schema,
     ensure_org_tax_settings_schema,
+    ensure_app_role,
 )
 from core.storage import ensure_bucket
 import shared_models
@@ -43,10 +44,21 @@ from features.tax_settings.router import router as tax_settings_router
 async def lifespan(app: FastAPI):
     try:
         logger.info("Initializing database tables...")
-        Base.metadata.create_all(bind=engine)
+        # admin_engine (superuser) — create_all needs CREATE TABLE, which
+        # the restricted app role (engine/DATABASE_URL) won't have once
+        # ensure_app_role() below has run.
+        Base.metadata.create_all(bind=admin_engine)
         logger.info("Database tables initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize database tables: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Ensuring restricted app DB role (IRD immutability)...")
+        ensure_app_role()
+        logger.info("App DB role ready")
+    except Exception as e:
+        logger.error(f"Failed to ensure app DB role: {type(e).__name__}: {str(e)}")
         raise
 
     try:
