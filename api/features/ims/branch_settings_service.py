@@ -15,6 +15,9 @@ class IMSBranchSettingsService:
         doesn't exist yet — same pattern as categories/zones elsewhere."""
         if not BranchRepository.get_by_id(db, tenant_id, branch_id):
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
+        tenant = TenantRepository.get_by_id(db, tenant_id)
+        tenant_is_vat_registered = bool(tenant and tenant.is_vat_registered)
+
         settings = IMSBranchSettingsRepository.get(db, tenant_id, branch_id)
         if not settings:
             # VAT can only ever start on for a tenant that's actually
@@ -22,26 +25,39 @@ class IMSBranchSettingsService:
             # an explicit change. A tenant that registers for VAT later gets
             # a settings row here first (PAN-only), then flips vat_enabled
             # on themselves via Settings once they are.
-            tenant = TenantRepository.get_by_id(db, tenant_id)
-            vat_enabled = bool(tenant and tenant.is_vat_registered)
             settings = IMSBranchSettingsRepository.create_default(
-                db, tenant_id, branch_id, vat_enabled=vat_enabled
+                db, tenant_id, branch_id, vat_enabled=tenant_is_vat_registered
             )
             logger.info(
                 f"Auto-provisioned default IMS branch settings for {branch_id}",
-                extra={"tenant_id": tenant_id, "branch_id": branch_id, "vat_enabled": vat_enabled},
+                extra={
+                    "tenant_id": tenant_id,
+                    "branch_id": branch_id,
+                    "vat_enabled": tenant_is_vat_registered,
+                },
             )
-        # If tenant is no longer VAT-registered but branch settings still has
-        # vat_enabled=True, auto-disable it — prevents stale flag from prior
-        # VAT→PAN change.
-        if settings.vat_enabled:
-            tenant = TenantRepository.get_by_id(db, tenant_id)
-            if not tenant or not tenant.is_vat_registered:
-                settings = IMSBranchSettingsRepository.update(db, settings, vat_enabled=False)
-                logger.info(
-                    f"Auto-disabled VAT for branch {branch_id} — tenant is no longer VAT-registered",
-                    extra={"tenant_id": tenant_id},
-                )
+            return {"success": True, "settings": settings}
+
+        # Keep vat_enabled in sync with the tenant's actual registration
+        # status in both directions. VAT→PAN: auto-disable so a stale
+        # enabled flag doesn't outlive the registration that justified it.
+        # PAN→VAT: auto-re-enable, so a tenant who re-registers for VAT
+        # (after a prior VAT→PAN switch forced this off) gets the taxable
+        # pricing fields back without having to manually flip the Settings
+        # toggle — vat_enabled has no independent "business chose to stay
+        # exempt while registered" meaning, it's purely derived state here.
+        if settings.vat_enabled and not tenant_is_vat_registered:
+            settings = IMSBranchSettingsRepository.update(db, settings, vat_enabled=False)
+            logger.info(
+                f"Auto-disabled VAT for branch {branch_id} — tenant is no longer VAT-registered",
+                extra={"tenant_id": tenant_id},
+            )
+        elif not settings.vat_enabled and tenant_is_vat_registered:
+            settings = IMSBranchSettingsRepository.update(db, settings, vat_enabled=True)
+            logger.info(
+                f"Auto-enabled VAT for branch {branch_id} — tenant is VAT-registered again",
+                extra={"tenant_id": tenant_id},
+            )
         return {"success": True, "settings": settings}
 
     @staticmethod
