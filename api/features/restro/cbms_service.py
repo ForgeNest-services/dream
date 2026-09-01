@@ -7,9 +7,10 @@ from features.cbms.submit import IRD_CBMS_URL, IRD_CBMS_RETURN_URL, post_to_cbms
 from shared_models.ims_cbms_credential import IMSCbmsCredential
 from utils.logger import logger
 
-# Credential storage/CRUD now lives in features/cbms (shared with RMS) — this
-# file keeps only what's genuinely IMS-specific: building the payload shape
-# from an IMSInvoice, and the invoice-table write-back on a successful sync.
+# Mirrors features/ims/cbms_service.py — same IRD payload shape, same
+# credential store (features/cbms, shared across apps), different source
+# model (RestroOrder instead of IMSInvoice). See that file for the format
+# conversion helpers' reasoning.
 
 
 def _fy_to_ird_format(fiscal_year: str) -> str:
@@ -19,45 +20,32 @@ def _fy_to_ird_format(fiscal_year: str) -> str:
     parts = fiscal_year.split("-")
     if len(parts) != 2:
         return fiscal_year
-    start = parts[0].strip()   # "2081"
-    end_short = parts[1].strip()  # "82"
-    century = start[:2]  # "20"
-    end_long = century + end_short.zfill(2)  # "2082" → use last 3 digits → "082"
-    return f"{start}/{end_long[-3:]}"  # "2081/082"
+    start = parts[0].strip()
+    end_short = parts[1].strip()
+    century = start[:2]
+    end_long = century + end_short.zfill(2)
+    return f"{start}/{end_long[-3:]}"
 
 
-def _fiscal_year_from_date_bs(date_bs: str) -> str:
-    """Derive the fiscal year label (e.g. '2081-82') from a BS date string."""
-    if not date_bs or len(date_bs) < 7:
-        return ""
-    bs_year = int(date_bs[:4])
-    bs_month = int(date_bs[5:7])
-    start_year = bs_year if bs_month >= 4 else bs_year - 1
-    end_short = str(start_year + 1)[-2:]
-    return f"{start_year}-{end_short}"
-
-
-def build_cbms_payload(invoice, cred: IMSCbmsCredential) -> dict:
-    """Build the exact IRD CBMS JSON payload."""
-    date_ad = invoice.date
+def build_cbms_payload(order, cred: IMSCbmsCredential) -> dict:
+    """Build the exact IRD CBMS JSON payload for a paid RestroOrder."""
+    date_ad = order.paid_at or order.placed_at
     date_str = date_ad.strftime("%Y.%m.%d") if date_ad else ""
+    fiscal_year = _fy_to_ird_format(order.fiscal_year or "")
 
-    fy_label = _fiscal_year_from_date_bs(invoice.date_bs or "")
-    fiscal_year = _fy_to_ird_format(fy_label)
-
-    total_sales = float(invoice.total_amount or 0)
-    taxable_sales_vat = float(invoice.taxable_amount or 0)
-    vat = float(invoice.vat_amount or 0)
-    tax_exempted_sales = float(invoice.exempt_amount or 0)
+    total_sales = float(order.total_amount or 0)
+    taxable_sales_vat = float(order.taxable_amount or 0)
+    vat = float(order.vat_amount or 0)
+    tax_exempted_sales = float(order.exempt_amount or 0)
 
     return {
         "username": cred.ird_username,
         "password": decrypt_secret(cred.ird_password),
-        "seller_pan": invoice.seller_pan or "",
-        "buyer_pan": invoice.buyer_pan or "",
+        "seller_pan": order.seller_pan or "",
+        "buyer_pan": order.buyer_pan or "",
         "fiscal_year": fiscal_year,
-        "buyer_name": invoice.buyer_name or "",
-        "invoice_number": invoice.number or "",
+        "buyer_name": order.buyer_name or "",
+        "invoice_number": str(order.bill_number),
         "invoice_date": date_str,
         "total_sales": round(total_sales, 2),
         "taxable_sales_vat": round(taxable_sales_vat, 2),
@@ -75,18 +63,18 @@ def build_cbms_payload(invoice, cred: IMSCbmsCredential) -> dict:
     }
 
 
-def build_credit_note_payload(credit_note, original_invoice, cred: IMSCbmsCredential) -> dict:
-    """Build IRD CBMS payload for credit note — posted to /api/billreturn."""
-    date_ad = credit_note.date
+def build_credit_note_payload(credit_note, original_order, cred: IMSCbmsCredential) -> dict:
+    """Build IRD CBMS payload for a credit note — posted to /api/billreturn."""
+    date_ad = credit_note.paid_at or credit_note.placed_at
     date_str = date_ad.strftime("%Y.%m.%d") if date_ad else ""
-    fy_label = _fiscal_year_from_date_bs(credit_note.date_bs or "")
-    fiscal_year = _fy_to_ird_format(fy_label)
+    fiscal_year = _fy_to_ird_format(credit_note.fiscal_year or "")
 
     total_sales = abs(float(credit_note.total_amount or 0))
     taxable_sales_vat = abs(float(credit_note.taxable_amount or 0))
     vat = abs(float(credit_note.vat_amount or 0))
     tax_exempted_sales = abs(float(credit_note.exempt_amount or 0))
 
+    original_date = original_order.paid_at or original_order.placed_at if original_order else None
     return {
         "username": cred.ird_username,
         "password": decrypt_secret(cred.ird_password),
@@ -94,9 +82,9 @@ def build_credit_note_payload(credit_note, original_invoice, cred: IMSCbmsCreden
         "buyer_pan": credit_note.buyer_pan or "",
         "fiscal_year": fiscal_year,
         "buyer_name": credit_note.buyer_name or "",
-        "invoice_number": original_invoice.number if original_invoice else "",
-        "invoice_date": original_invoice.date.strftime("%Y.%m.%d") if original_invoice and original_invoice.date else "",
-        "credit_note_number": credit_note.number or "",
+        "invoice_number": str(original_order.bill_number) if original_order else "",
+        "invoice_date": original_date.strftime("%Y.%m.%d") if original_date else "",
+        "credit_note_number": str(credit_note.bill_number),
         "credit_note_date": date_str,
         "reason_for_return": credit_note.note_reason or "Credit note issued",
         "total_sales": round(total_sales, 2),
@@ -115,7 +103,7 @@ def build_credit_note_payload(credit_note, original_invoice, cred: IMSCbmsCreden
     }
 
 
-class CBMSService:
+class RestroCBMSService:
     @staticmethod
     def get_credentials(db: Session, tenant_id: str) -> dict:
         return CBMSCredentialService.get_credentials(db, tenant_id)
@@ -125,81 +113,81 @@ class CBMSService:
         return CBMSCredentialService.save_credentials(db, tenant_id, ird_username, ird_password)
 
     @staticmethod
-    def sync_invoice(db: Session, invoice, tenant_id: str) -> dict:
-        """Submit invoice to IRD CBMS. Returns {success, synced, error?}."""
+    def sync_order(db: Session, order, tenant_id: str) -> dict:
+        """Submit a paid order's bill to IRD CBMS."""
         cred = CBMSCredentialRepository.get(db, tenant_id)
         if not cred:
             return {"success": False, "error_code": "CBMS_NOT_CONFIGURED"}
 
-        payload = build_cbms_payload(invoice, cred)
+        payload = build_cbms_payload(order, cred)
         result = post_to_cbms(IRD_CBMS_URL, payload)
         if result["success"]:
             db.execute(
-                text("UPDATE public.ims_invoices SET cbms_synced = TRUE, cbms_synced_at = NOW() WHERE id = :id"),
-                {"id": invoice.id},
+                text("UPDATE public.restro_orders SET cbms_synced = TRUE, cbms_synced_at = NOW() WHERE id = :id"),
+                {"id": order.id},
             )
             db.commit()
         return result
 
     @staticmethod
-    def sync_credit_note(db: Session, credit_note, original_invoice, tenant_id: str) -> dict:
-        """Submit credit note to IRD CBMS /api/billreturn."""
+    def sync_credit_note(db: Session, credit_note, original_order, tenant_id: str) -> dict:
+        """Submit a credit note to IRD CBMS /api/billreturn."""
         cred = CBMSCredentialRepository.get(db, tenant_id)
         if not cred:
             return {"success": False, "error_code": "CBMS_NOT_CONFIGURED"}
 
-        payload = build_credit_note_payload(credit_note, original_invoice, cred)
+        payload = build_credit_note_payload(credit_note, original_order, cred)
         result = post_to_cbms(IRD_CBMS_RETURN_URL, payload)
         if result["success"]:
             db.execute(
-                text("UPDATE public.ims_invoices SET cbms_synced = TRUE, cbms_synced_at = NOW() WHERE id = :id"),
+                text("UPDATE public.restro_orders SET cbms_synced = TRUE, cbms_synced_at = NOW() WHERE id = :id"),
                 {"id": credit_note.id},
             )
             db.commit()
         return result
 
     @staticmethod
-    def get_payload(db: Session, invoice, tenant_id: str) -> dict:
+    def get_payload(db: Session, order, tenant_id: str) -> dict:
         """Return the CBMS payload without submitting it (for preview/debug)."""
         cred = CBMSCredentialRepository.get(db, tenant_id)
         if not cred:
             return {"success": False, "error_code": "CBMS_NOT_CONFIGURED"}
-        payload = build_cbms_payload(invoice, cred)
+        payload = build_cbms_payload(order, cred)
         payload["password"] = "••••••••"
         return {"success": True, "payload": payload}
 
 
-def sync_invoice_background(invoice_id: str, tenant_id: str) -> None:
-    """Called as a FastAPI BackgroundTask after invoice creation — creates its
-    own DB session so it runs safely after the response has been sent."""
+def sync_order_background(order_id: str, tenant_id: str) -> None:
+    """Called as a FastAPI BackgroundTask after mark-paid — creates its own
+    DB session so it runs safely after the response has been sent."""
     from core.database import SessionLocal
-    from features.ims.invoice_repository import IMSInvoiceRepository
+    from features.restro.order_repository import OrderRepository
     db = SessionLocal()
     try:
-        invoice = IMSInvoiceRepository.get_by_id(db, invoice_id, tenant_id)
-        if invoice and invoice.kind in ("tax", "abbreviated"):
-            result = CBMSService.sync_invoice(db, invoice, tenant_id)
+        order = OrderRepository.get_by_id(db, tenant_id, order_id)
+        if order and order.status == "paid" and not order.is_credit_note:
+            result = RestroCBMSService.sync_order(db, order, tenant_id)
             if not result.get("success"):
                 logger.warning(
-                    f"Auto CBMS sync failed for invoice {invoice_id}: "
+                    f"Auto CBMS sync failed for order {order_id}: "
                     f"{result.get('error_code')} — {result.get('detail', '')}"
                 )
     except Exception as e:
-        logger.error(f"Auto CBMS sync background task error for {invoice_id}: {e}")
+        logger.error(f"Auto CBMS sync background task error for {order_id}: {e}")
     finally:
         db.close()
 
 
-def sync_credit_note_background(credit_note_id: str, original_invoice_id: str, tenant_id: str) -> None:
+def sync_credit_note_background(credit_note_id: str, original_order_id: str, tenant_id: str) -> None:
     """Background CBMS sync for credit notes."""
     from core.database import SessionLocal
-    from features.ims.invoice_repository import IMSInvoiceRepository
+    from features.restro.order_repository import OrderRepository
     db = SessionLocal()
     try:
-        cn = IMSInvoiceRepository.get_by_id(db, credit_note_id, tenant_id)
-        original = IMSInvoiceRepository.get_by_id(db, original_invoice_id, tenant_id) if original_invoice_id else None
+        cn = OrderRepository.get_by_id(db, tenant_id, credit_note_id)
+        original = OrderRepository.get_by_id(db, tenant_id, original_order_id) if original_order_id else None
         if cn:
-            result = CBMSService.sync_credit_note(db, cn, original, tenant_id)
+            result = RestroCBMSService.sync_credit_note(db, cn, original, tenant_id)
             if not result.get("success"):
                 logger.warning(
                     f"Auto CBMS CN sync failed for {credit_note_id}: "

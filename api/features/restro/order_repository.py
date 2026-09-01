@@ -101,6 +101,17 @@ class OrderRepository:
         )
 
     @staticmethod
+    def increment_print_count(db: Session, order: RestroOrder) -> RestroOrder:
+        """IRD: printing a paid bill more than once must be visibly watermarked
+        as a copy. Called once per actual print action — the caller (service
+        layer) decides what "print" means (e.g. clicking Print Bill), this
+        just atomically bumps the counter and returns the new count."""
+        order.print_count = (order.print_count or 0) + 1
+        db.commit()
+        db.refresh(order)
+        return order
+
+    @staticmethod
     def _apply_order_filters(
         query,
         *,

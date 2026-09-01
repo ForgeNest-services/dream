@@ -1,8 +1,14 @@
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_restro_staff
+from features.restro.cbms_service import (
+    RestroCBMSService,
+    sync_order_background,
+    sync_credit_note_background,
+)
+from features.cbms.schemas import CBMSCredentialRequest
 from utils.helpers import success_response, error_response
 from utils.paging import parse_paging, build_meta
 from features.restro.schemas import (
@@ -1331,6 +1337,14 @@ def _order_payload(order) -> dict:
     return OrderData.model_validate(order).model_dump(mode="json")
 
 
+def _client_ip(request: Request) -> str | None:
+    """Best-effort real client IP for the audit trail — prefers the
+    original caller from X-Forwarded-For (set by nginx/whatever's in front)
+    over the direct TCP peer, which behind a proxy is just the proxy itself."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    return forwarded.split(",")[0].strip() if forwarded else getattr(request.client, "host", None)
+
+
 @router.get("/branches/{branch_id}/orders")
 def list_orders(
     branch_id: str,
@@ -1508,6 +1522,7 @@ def update_order_line(
     order_id: str,
     line_id: str,
     data: UpdateOrderLineRequest,
+    request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
@@ -1520,6 +1535,8 @@ def update_order_line(
         line_id=line_id,
         qty=data.qty,
         note=data.note,
+        performed_by=staff.get("cred_id"),
+        terminal_ip=_client_ip(request),
     )
     if not result["success"]:
         return _order_error(result["error_code"])
@@ -1534,6 +1551,7 @@ def void_order_line(
     order_id: str,
     line_id: str,
     data: VoidOrderLineRequest,
+    request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
@@ -1545,6 +1563,8 @@ def void_order_line(
         order_id=order_id,
         line_id=line_id,
         reason=data.reason,
+        performed_by=staff.get("cred_id"),
+        terminal_ip=_client_ip(request),
     )
     if not result["success"]:
         return _order_error(result["error_code"])
@@ -1621,6 +1641,7 @@ def set_order_discount(
     branch_id: str,
     order_id: str,
     data: SetDiscountRequest,
+    request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
@@ -1632,6 +1653,8 @@ def set_order_discount(
         order_id=order_id,
         discount_type=data.discount_type,
         discount_value=data.discount_value,
+        performed_by=staff.get("cred_id"),
+        terminal_ip=_client_ip(request),
     )
     if not result["success"]:
         return _order_error(result["error_code"])
@@ -1667,13 +1690,12 @@ def mark_order_paid(
     order_id: str,
     data: MarkPaidRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
     _assert_branch_scope(staff, branch_id)
-    forwarded = request.headers.get("X-Forwarded-For")
-    client_ip = (forwarded.split(",")[0].strip() if forwarded
-                 else getattr(request.client, "host", None))
+    client_ip = _client_ip(request)
     result = OrderService.mark_paid(
         db,
         tenant_id=staff["tenant_id"],
@@ -1688,6 +1710,7 @@ def mark_order_paid(
     if not result["success"]:
         return _order_error(result["error_code"])
     order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    background_tasks.add_task(sync_order_background, order.id, staff["tenant_id"])
     return success_response(data=_order_payload(order), message="Marked as paid")
 
 
@@ -1695,12 +1718,18 @@ def mark_order_paid(
 def cancel_order(
     branch_id: str,
     order_id: str,
+    request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.cancel(
-        db, tenant_id=staff["tenant_id"], branch_id=branch_id, order_id=order_id
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        performed_by=staff.get("cred_id"),
+        terminal_ip=_client_ip(request),
     )
     if not result["success"]:
         return _order_error(result["error_code"])
@@ -1714,15 +1743,14 @@ def issue_order_credit_note(
     branch_id: str,
     order_id: str,
     data: RMSCreditNoteRequest,
+    background_tasks: BackgroundTasks,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only owner or manager can issue credit notes")
     _assert_branch_scope(staff, branch_id)
-    forwarded = request.headers.get("X-Forwarded-For")
-    client_ip = (forwarded.split(",")[0].strip() if forwarded
-                 else getattr(request.client, "host", None))
+    client_ip = _client_ip(request)
     result = OrderService.issue_credit_note(
         db,
         tenant_id=staff["tenant_id"],
@@ -1734,11 +1762,108 @@ def issue_order_credit_note(
     )
     if not result["success"]:
         return _order_error(result["error_code"])
+    background_tasks.add_task(
+        sync_credit_note_background, result["order"].id, order_id, staff["tenant_id"]
+    )
     return success_response(
         data=_order_payload(result["order"]),
         message="Credit note issued",
         status_code=201,
     )
+
+
+@router.post("/branches/{branch_id}/orders/{order_id}/register-print")
+def register_order_print(
+    branch_id: str,
+    order_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Call right before actually printing/showing a paid bill — see
+    OrderService.register_print. Returns whether this print should carry the
+    "COPY OF ORIGINAL" watermark."""
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.register_print(db, staff["tenant_id"], branch_id, order_id)
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    return success_response(
+        data={"is_reprint": result["is_reprint"], "print_count": result["print_count"]}
+    )
+
+
+@router.get("/branches/{branch_id}/orders/{order_id}/cbms-payload")
+def get_order_cbms_payload(
+    branch_id: str,
+    order_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    _assert_branch_scope(staff, branch_id)
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id).get("order")
+    if not order:
+        return error_response("NOT_FOUND", "Order not found", 404)
+    if order.status != "paid":
+        return error_response("NOT_PAID", "Only paid bills can be submitted to CBMS", 400)
+    result = RestroCBMSService.get_payload(db, order, staff["tenant_id"])
+    if not result["success"]:
+        return error_response(result["error_code"], "CBMS credentials not configured for this tenant", 400)
+    return success_response(data=result["payload"])
+
+
+@router.post("/branches/{branch_id}/orders/{order_id}/cbms-sync")
+def sync_order_to_cbms(
+    branch_id: str,
+    order_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can sync bills to CBMS")
+    _assert_branch_scope(staff, branch_id)
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id).get("order")
+    if not order:
+        return error_response("NOT_FOUND", "Order not found", 404)
+    if order.status != "paid":
+        return error_response("NOT_PAID", "Only paid bills can be submitted to CBMS", 400)
+    if order.is_credit_note:
+        original = (
+            OrderService.get(db, staff["tenant_id"], branch_id, order.original_order_id).get("order")
+            if order.original_order_id
+            else None
+        )
+        result = RestroCBMSService.sync_credit_note(db, order, original, staff["tenant_id"])
+    else:
+        result = RestroCBMSService.sync_order(db, order, staff["tenant_id"])
+    if not result["success"]:
+        return error_response(result["error_code"], result.get("detail", "CBMS sync failed"), 400)
+    return success_response(data={"synced": True, "message": "Bill submitted to IRD CBMS successfully"})
+
+
+@router.get("/cbms-credentials")
+def get_restro_cbms_credentials(
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can view CBMS credentials")
+    result = RestroCBMSService.get_credentials(db, staff["tenant_id"])
+    if not result["success"] and result["error_code"] == "CBMS_NOT_CONFIGURED":
+        return success_response(data={"configured": False})
+    return success_response(data={"configured": True, **result.get("credentials", {})})
+
+
+@router.put("/cbms-credentials")
+def save_restro_cbms_credentials(
+    body: CBMSCredentialRequest,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] != "owner":
+        raise HTTPException(403, "Only the owner can configure CBMS credentials")
+    result = RestroCBMSService.save_credentials(db, staff["tenant_id"], body.ird_username, body.ird_password)
+    if not result["success"]:
+        return error_response(result["error_code"], "Failed to save CBMS credentials", 400)
+    return success_response(data={"saved": True})
 
 
 @router.patch("/branches/{branch_id}/orders/{order_id}/delivery-status")

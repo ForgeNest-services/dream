@@ -15,6 +15,7 @@ import {
 import { usePos } from "@/lib/pos/store";
 import type { Settings } from "@/lib/pos/data";
 import type { TenantInfoDto } from "@/lib/tenant-api";
+import { cbmsApi } from "@/lib/cbms-api";
 import { MenuQrPrintButton } from "./MenuQrPrint";
 import { UsersSection } from "./UsersSection";
 
@@ -31,6 +32,7 @@ export function SettingsView() {
     setBranchId,
     tenant,
     tenantLoading,
+    actualRole,
   } = usePos();
   const [isUploadingQr, setIsUploadingQr] = useState(false);
   const origin = typeof window === "undefined" ? "" : window.location.origin;
@@ -164,6 +166,8 @@ export function SettingsView() {
           settings={settings}
           updateSettings={updateSettings}
         />
+
+        <CbmsCredentialsCard isOwner={actualRole === "owner"} />
 
         <div className="pos-card p-5">
           <h2 className="font-display text-xl">Payment QR</h2>
@@ -368,6 +372,112 @@ function VatSettingsCard({
             }}
           />
         </div>
+      )}
+    </div>
+  );
+}
+
+function CbmsCredentialsCard({ isOwner }: { isOwner: boolean }) {
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [currentUsername, setCurrentUsername] = useState<string | undefined>(undefined);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    cbmsApi
+      .getCredentials()
+      .then((res) => {
+        if (res.data) {
+          setConfigured(res.data.configured);
+          setCurrentUsername(res.data.ird_username);
+        }
+      })
+      .catch(() => {
+        // silently ignore — not critical to render the rest of the page
+      });
+  }, []);
+
+  async function handleSave() {
+    if (!username.trim() || !password.trim()) {
+      toast.error("Username and password are required");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await cbmsApi.saveCredentials(username.trim(), password.trim());
+      if (!res.data?.saved) {
+        toast.error("Failed to save CBMS credentials");
+        return;
+      }
+      toast.success("CBMS credentials saved");
+      setConfigured(true);
+      setCurrentUsername(username.trim());
+      setUsername("");
+      setPassword("");
+    } catch {
+      toast.error("Failed to save CBMS credentials");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="pos-card p-5">
+      <h2 className="font-display text-xl">IRD CBMS Integration</h2>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Central Billing Monitoring System credentials issued by Inland Revenue Department Nepal.
+        Required to sync bills to IRD in real time (Electronic Billing Procedure 2074). Shared with
+        Inventory (IMS) if that app is also in use — enter it once.
+      </p>
+
+      <div className="mt-4 rounded-xl border border-border bg-secondary/50 px-3 py-2 text-xs">
+        <span className="font-medium">Status: </span>
+        {configured === null ? (
+          <span className="text-muted-foreground">Loading…</span>
+        ) : configured ? (
+          <span className="font-medium text-success">
+            Configured{currentUsername ? ` · ${currentUsername}` : ""}
+          </span>
+        ) : (
+          <span className="font-medium text-amber-600">Not configured</span>
+        )}
+      </div>
+
+      {isOwner ? (
+        <div className="mt-4 space-y-3">
+          <p className="text-xs font-medium text-muted-foreground">
+            {configured ? "Update credentials" : "Enter IRD credentials"}
+          </p>
+          <div className="space-y-1.5">
+            <Label className="text-xs">IRD Username</Label>
+            <Input
+              className="h-12"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="IRD_USERNAME"
+              autoComplete="off"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">IRD Password</Label>
+            <Input
+              className="h-12"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="new-password"
+            />
+          </div>
+          <Button size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? "Saving…" : "Save credentials"}
+          </Button>
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Only the owner can update IRD credentials.
+        </p>
       )}
     </div>
   );

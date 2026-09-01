@@ -53,10 +53,34 @@ export interface OrderDto {
   settled_at_bs: string | null;
   discount_type: DiscountType;
   discount_value: string;
+  // ── VAT breakdown snapshot (IRD) — null until mark-paid. Prefer this over
+  // recomputing from lines for a paid order: it's the actual amount the
+  // customer was charged and must never change even if VAT settings later
+  // do. Money fields are Decimal on the wire — strings, see asNum() below.
+  subtotal_amount: string | null;
+  taxable_amount: string | null;
+  exempt_amount: string | null;
+  vat_amount: string | null;
+  total_amount: string | null;
   payment_method: PaymentMethod | null;
+  // ── Seller/buyer snapshot (IRD) ──────────────────────────────────────
+  seller_name: string | null;
+  seller_address: string | null;
+  seller_pan: string | null;
+  buyer_name: string | null;
+  buyer_pan: string | null;
   waiter_name: string;
   waiter_cred_id: string | null;
   delivery_status: DeliveryStatus | null;
+  // ── Reprint / credit note (IRD) ──────────────────────────────────────
+  print_count: number;
+  is_reprint: boolean;
+  reprint_of: string | null;
+  reprint_number: number | null;
+  is_credit_note: boolean;
+  original_order_id: string | null;
+  note_reason: string | null;
+  cbms_synced: boolean;
   // Embedded (slim) customer object — populated whenever customer_id is set.
   // Delivery orders always have this; dine-in orders have it when the
   // waiter attached a customer at pay time (khata).
@@ -65,6 +89,9 @@ export interface OrderDto {
   updated_at: string;
   lines: OrderLineDto[];
 }
+
+export const asNum = (v: string | number | null | undefined): number =>
+  typeof v === "number" ? v : Number(v ?? 0);
 
 export interface OrdersListQuery {
   status?: OrderStatus;
@@ -242,6 +269,15 @@ export const ordersApi = {
     return apiClient.patch<OrderDto>(
       `/restro/branches/${branchId}/orders/${orderId}/delivery-status`,
       { delivery_status },
+    );
+  },
+  // Call right before actually printing/showing a paid bill — server bumps
+  // print_count and tells us whether to render the "COPY OF ORIGINAL"
+  // watermark on this print.
+  registerPrint(branchId: string, orderId: string) {
+    return apiClient.post<{ is_reprint: boolean; print_count: number }>(
+      `/restro/branches/${branchId}/orders/${orderId}/register-print`,
+      {},
     );
   },
 };

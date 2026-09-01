@@ -121,7 +121,20 @@ class RestroOrder(Base):
     # Delivery workflow status (only meaningful for type='delivery').
     delivery_status = Column(String(20), nullable=True)  # pending|out|delivered
 
-    # ── Reprint (IRD: new row per reprint, watermarked "Copy of Original") ────
+    # ── Reprint (IRD: printing a paid bill more than once must be visibly
+    # marked) — unlike IMS/PMS invoices, bill_number is a plain sequential
+    # Integer (not a formatted string), so a reprint can't carry a suffixed
+    # "42/Copy-1"-style number without either breaking the UNIQUE(branch,
+    # fiscal_year, bill_number) constraint or switching that column to a
+    # string platform-wide. Simpler and sufficient: track how many times
+    # THIS bill has been printed, on the original row itself, no new row per
+    # print. print_count == 1 after the first print (original, no
+    # watermark); every print beyond that is a reprint (watermark "COPY OF
+    # ORIGINAL"). is_reprint/reprint_of/reprint_number below are legacy
+    # columns from an earlier row-per-reprint design that was never wired up
+    # — kept (nullable/default-false) so they're harmless if something still
+    # references them, but print_count is the real mechanism now.
+    print_count = Column(Integer, nullable=False, default=0)
     is_reprint = Column(Boolean, nullable=False, default=False)
     reprint_of = Column(String(36), ForeignKey("public.restro_orders.id"), nullable=True)
     reprint_number = Column(Integer, nullable=True)

@@ -201,11 +201,14 @@ export function ReportsView() {
       ? (o.customer?.name ?? "Delivery")
       : (tables.find((t) => t.id === o.table_id)?.label ?? "Walk-in");
 
-  // Line prices are stored VAT-inclusive — total is just subtotal minus
-  // discount, no VAT added on top. Mirrors store.tsx's billTotals(); this
-  // report list doesn't fetch total_amount onto OrderDto, so it can't fall
-  // back to the paid snapshot the way khata/reports elsewhere do.
+  // A paid/cancelled-with-a-snapshot order's total_amount is set once at
+  // mark-paid time and must never drift even if VAT settings change later —
+  // prefer it. Only a draft (still being built, no snapshot yet) needs a
+  // live computation. Line prices are stored VAT-inclusive, so that live
+  // total is just subtotal minus discount, no VAT added on top (mirrors
+  // store.tsx's billTotals()).
   const billTotalFromDto = (o: (typeof orders)[number]) => {
+    if (o.total_amount !== null) return Number(o.total_amount);
     const subtotal = o.lines
       .filter((l) => !l.is_voided)
       .reduce((s, l) => s + Number(l.price) * l.qty, 0);

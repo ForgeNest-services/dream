@@ -141,6 +141,22 @@ class OrderService:
         return {"success": True, "order": order}
 
     @staticmethod
+    def register_print(db: Session, tenant_id: str, branch_id: str, order_id: str) -> dict:
+        """Call once per actual print of a paid bill — bumps print_count and
+        tells the caller whether THIS print is the original (count==1, no
+        watermark) or a reprint (count>1, must show "COPY OF ORIGINAL").
+        Only meaningful for a paid bill — a draft being previewed isn't a
+        real bill yet, and a credit note is its own document, not a copy of
+        one, so neither needs/gets watermark tracking here."""
+        order = OrderRepository.get_by_id(db, tenant_id, order_id)
+        if not order or order.branch_id != branch_id:
+            return {"success": False, "error_code": "ORDER_NOT_FOUND"}
+        if order.status != "paid":
+            return {"success": True, "is_reprint": False, "print_count": 0}
+        order = OrderRepository.increment_print_count(db, order)
+        return {"success": True, "is_reprint": order.print_count > 1, "print_count": order.print_count}
+
+    @staticmethod
     def get_draft_for_table(
         db: Session, tenant_id: str, branch_id: str, table_id: str
     ) -> dict:
@@ -326,6 +342,8 @@ class OrderService:
         line_id: str,
         qty: int | None = None,
         note: str | None = None,
+        performed_by: str | None = None,
+        terminal_ip: str | None = None,
     ) -> dict:
         order = OrderRepository.get_by_id(db, tenant_id, order_id)
         if not order or order.branch_id != branch_id:
@@ -337,7 +355,25 @@ class OrderService:
             return {"success": False, "error_code": "LINE_NOT_FOUND"}
         if qty is not None and qty < 1:
             return {"success": False, "error_code": "INVALID_QTY"}
+        before_qty = line.qty
         updated = OrderRepository.update_line(db, line, qty=qty, note=note)
+        # Only worth an audit entry once the line has been sent to the
+        # kitchen — editing an unsent draft line is normal order-building,
+        # not a correction to something already in motion.
+        if line.sent and qty is not None and qty != before_qty:
+            AuditRepository.write(
+                db,
+                tenant_id=tenant_id,
+                app_code="restro",
+                entity_type="order_line",
+                entity_id=line.id,
+                action="update_qty",
+                performed_by=performed_by or "unknown",
+                performer_type="staff",
+                after_state={"order_id": order_id, "before_qty": before_qty, "after_qty": qty},
+                terminal_ip=terminal_ip,
+            )
+            db.commit()
         return {"success": True, "line": updated}
 
     @staticmethod
@@ -348,6 +384,8 @@ class OrderService:
         order_id: str,
         line_id: str,
         reason: str | None,
+        performed_by: str | None = None,
+        terminal_ip: str | None = None,
     ) -> dict:
         order = OrderRepository.get_by_id(db, tenant_id, order_id)
         if not order or order.branch_id != branch_id:
@@ -358,6 +396,24 @@ class OrderService:
         if not line or line.is_voided:
             return {"success": False, "error_code": "LINE_NOT_FOUND"}
         voided = OrderRepository.mark_line_voided(db, line, reason)
+        AuditRepository.write(
+            db,
+            tenant_id=tenant_id,
+            app_code="restro",
+            entity_type="order_line",
+            entity_id=line.id,
+            action="void",
+            performed_by=performed_by or "unknown",
+            performer_type="staff",
+            after_state={
+                "order_id": order_id,
+                "name": line.name,
+                "qty": line.qty,
+                "reason": reason,
+            },
+            terminal_ip=terminal_ip,
+        )
+        db.commit()
         return {"success": True, "line": voided}
 
     @staticmethod
@@ -367,6 +423,8 @@ class OrderService:
         branch_id: str,
         order_id: str,
         line_id: str,
+        performed_by: str | None = None,
+        terminal_ip: str | None = None,
     ) -> dict:
         order = OrderRepository.get_by_id(db, tenant_id, order_id)
         if not order or order.branch_id != branch_id:
@@ -380,6 +438,9 @@ class OrderService:
         # so the audit trail survives.
         if line.sent:
             return {"success": False, "error_code": "CANNOT_DELETE_SENT_LINE"}
+        # Unsent lines are pre-kitchen draft-building — not worth an audit
+        # entry (same reasoning as update_line above; nothing has "happened"
+        # to this line yet from the kitchen/customer's perspective).
         OrderRepository.delete_line(db, line)
         return {"success": True}
 
@@ -431,6 +492,8 @@ class OrderService:
         order_id: str,
         discount_type: str,
         discount_value: Decimal,
+        performed_by: str | None = None,
+        terminal_ip: str | None = None,
     ) -> dict:
         if discount_type not in DISCOUNT_TYPES:
             return {"success": False, "error_code": "INVALID_DISCOUNT_TYPE"}
@@ -441,7 +504,27 @@ class OrderService:
             return {"success": False, "error_code": "ORDER_NOT_FOUND"}
         if order.status != "draft":
             return {"success": False, "error_code": "ORDER_NOT_EDITABLE"}
+        before_type, before_value = order.discount_type, order.discount_value
         updated = OrderRepository.set_discount(db, order, discount_type, Decimal(discount_value))
+        # A discount directly reduces what the customer pays — always worth
+        # an audit entry, regardless of whether the order's been sent yet.
+        if before_type != discount_type or before_value != Decimal(discount_value):
+            AuditRepository.write(
+                db,
+                tenant_id=tenant_id,
+                app_code="restro",
+                entity_type="order",
+                entity_id=order.id,
+                action="set_discount",
+                performed_by=performed_by or "unknown",
+                performer_type="staff",
+                after_state={
+                    "before": {"type": before_type, "value": float(before_value)},
+                    "after": {"type": discount_type, "value": float(discount_value)},
+                },
+                terminal_ip=terminal_ip,
+            )
+            db.commit()
         return {"success": True, "order": updated}
 
     @staticmethod
@@ -673,7 +756,14 @@ class OrderService:
         }
 
     @staticmethod
-    def cancel(db: Session, tenant_id: str, branch_id: str, order_id: str) -> dict:
+    def cancel(
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        order_id: str,
+        performed_by: str | None = None,
+        terminal_ip: str | None = None,
+    ) -> dict:
         order = OrderRepository.get_by_id(db, tenant_id, order_id)
         if not order or order.branch_id != branch_id:
             return {"success": False, "error_code": "ORDER_NOT_FOUND"}
@@ -682,6 +772,24 @@ class OrderService:
         updated = OrderRepository.set_status(db, order, status="cancelled")
         if order.type == "dine-in" and order.table_id:
             OrderService._set_group_status(db, tenant_id, order.table_id, "empty")
+        # Cancelling permanently burns this order's bill_number (never
+        # reused/reclaimed — see the UNIQUE(branch, fiscal_year, bill_number)
+        # constraint) — a real audit entry is what explains the resulting
+        # gap to anyone reviewing the sequence later, not just an app log
+        # line that isn't tamper-evident and isn't tenant-queryable.
+        AuditRepository.write(
+            db,
+            tenant_id=tenant_id,
+            app_code="restro",
+            entity_type="order",
+            entity_id=order.id,
+            action="cancel",
+            performed_by=performed_by or "unknown",
+            performer_type="staff",
+            after_state={"bill_number": order.bill_number, "fiscal_year": order.fiscal_year},
+            terminal_ip=terminal_ip,
+        )
+        db.commit()
         logger.info(f"Order cancelled: {order.id}", extra={"tenant_id": tenant_id})
         return {"success": True, "order": updated}
 

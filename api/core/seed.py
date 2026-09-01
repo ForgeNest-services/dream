@@ -507,6 +507,17 @@ def ensure_ird_schema() -> None:
             ("is_reprint", "BOOLEAN DEFAULT FALSE"),
             ("reprint_of", "VARCHAR"),
             ("reprint_number", "INTEGER"),
+            # How many times this bill has actually been printed — 1 after
+            # the first print (original, no watermark), >1 means every print
+            # from then on must show "COPY OF ORIGINAL" (see order_service.py
+            # register_print). Simpler than is_reprint/reprint_of above,
+            # which assume a new row per reprint — bill_number is a plain
+            # sequential Integer here (unlike IMS/PMS's formatted string
+            # invoice_number), so it can't carry a "/Copy-1" suffix without
+            # either breaking the UNIQUE(branch, fiscal_year, bill_number)
+            # constraint or a bigger schema change. Those legacy columns are
+            # kept for forward-compat but print_count is the real mechanism.
+            ("print_count", "INTEGER DEFAULT 0"),
             ("is_credit_note", "BOOLEAN DEFAULT FALSE"),
             ("original_order_id", "VARCHAR"),
             ("note_reason", "TEXT"),

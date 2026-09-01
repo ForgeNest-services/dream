@@ -8,7 +8,7 @@ import { billTotals, usePos } from "@/lib/pos/store";
 import { formatDateWithStoredBs, parseApiDate, toBsIso } from "@/lib/pos/nepali-date";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useOrdersList } from "@/hooks/useOrdersList";
-import type { OrderDto } from "@/lib/orders-api";
+import { ordersApi, type OrderDto } from "@/lib/orders-api";
 import type { OrdersSearch } from "@/routes/_app.orders";
 import { OrderScreen } from "./OrderScreen";
 import { ReserveDialog, TableGrid } from "./TableGrid";
@@ -106,6 +106,17 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
   const debouncedQ = useDebouncedValue(qInput, 300);
 
   const [print, setPrint] = useState<Order | null>(null);
+  const [printReprint, setPrintReprint] = useState(false);
+
+  // IRD: reprinting an already-paid bill must be watermarked as a copy —
+  // ask the server (authoritative print_count) before showing it.
+  const openPrint = async (o: OrderDto, mapped: Order) => {
+    if (branchId) {
+      const res = await ordersApi.registerPrint(branchId, o.id);
+      setPrintReprint(res.data?.is_reprint ?? false);
+    }
+    setPrint(mapped);
+  };
 
   // Helper: patch specific URL search params. `replace: true` avoids flooding
   // browser history with every filter tweak. Resets page to 1 by default so a
@@ -368,7 +379,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
                         size="icon"
                         className="size-10"
                         aria-label={`Print bill ${o.id}`}
-                        onClick={() => setPrint(mapped)}
+                        onClick={() => void openPrint(o, mapped)}
                       >
                         <Printer className="size-4" />
                       </Button>
@@ -449,6 +460,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
             tableLabel={print.type === "delivery" ? (print.customer?.name ?? "Delivery") : (tables.find((t) => t.id === print.tableId)?.label ?? "Walk-in")}
             settings={settings}
             totals={billTotals(print, settings.vatEnabled, settings.vatRate)}
+            isReprint={printReprint}
           />
         </PrintDialog>
       )}

@@ -143,11 +143,17 @@ export function BillReceipt({
   tableLabel,
   settings,
   totals,
+  isReprint = false,
 }: {
   order: Order;
   tableLabel: string;
   settings: Settings;
   totals: { subtotal: number; discount: number; taxable: number; vat: number; total: number };
+  /** IRD: printing an already-paid bill a second time must be visibly
+   *  marked as a copy, not indistinguishable from the original. Caller is
+   *  responsible for asking the server (registerPrint) which this is —
+   *  this component just renders whatever it's told. */
+  isReprint?: boolean;
 }) {
   const { tenant } = usePos();
   // Prefer the paid_at for closed bills, placed_at for drafts — matches what
@@ -167,6 +173,14 @@ export function BillReceipt({
     : "PENDING";
   return (
     <div className="thermal-receipt mx-auto p-2">
+      {isReprint && (
+        <>
+          <p className="text-center text-[13px] font-bold tracking-widest">
+            *** COPY OF ORIGINAL ***
+          </p>
+          <Divider />
+        </>
+      )}
       <TenantHeader tenant={tenant} settings={settings} showAddress={true} />
       <Divider />
       <p>Bill  : #{order.billNumber}</p>

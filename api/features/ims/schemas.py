@@ -3,6 +3,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import date, datetime
 from decimal import Decimal
 from features.ims.roles import IMSRole
+# CBMS credentials are tenant-level, shared with RMS — the request schema
+# now lives in features/cbms; re-imported here under the old name so
+# nothing else in this file needs to change.
+from features.cbms.schemas import CBMSCredentialRequest as IMSCbmsCredentialRequest
 
 
 class CredentialData(BaseModel):
@@ -658,15 +662,3 @@ class DashboardData(BaseModel):
     top_sellers: list[TopSellerRow]
     low_stock_alerts: list[LowStockAlertRow]
     recent_movements: list[RecentMovementRow]
-
-
-class IMSCbmsCredentialRequest(BaseModel):
-    ird_username: str
-    ird_password: str
-
-    @field_validator("ird_username", "ird_password")
-    @classmethod
-    def not_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("cannot be blank")
-        return v.strip()

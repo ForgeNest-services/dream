@@ -402,10 +402,31 @@ class OrderData(BaseModel):
     settled_at_bs: str | None
     discount_type: str
     discount_value: Decimal
+    # ── VAT breakdown snapshot (IRD: set at mark-paid time, null until then) ──
+    subtotal_amount: Decimal | None
+    taxable_amount: Decimal | None
+    exempt_amount: Decimal | None
+    vat_amount: Decimal | None
+    total_amount: Decimal | None
     payment_method: str | None
+    # ── Seller/buyer snapshot (IRD) ────────────────────────────────────────
+    seller_name: str | None
+    seller_address: str | None
+    seller_pan: str | None
+    buyer_name: str | None
+    buyer_pan: str | None
     waiter_name: str
     waiter_cred_id: str | None
     delivery_status: str | None
+    # ── Reprint / credit note (IRD) ────────────────────────────────────────
+    print_count: int
+    is_reprint: bool
+    reprint_of: str | None
+    reprint_number: int | None
+    is_credit_note: bool
+    original_order_id: str | None
+    note_reason: str | None
+    cbms_synced: bool
     customer: OrderCustomerRef | None = None
     created_at: datetime
     updated_at: datetime
