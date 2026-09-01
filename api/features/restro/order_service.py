@@ -536,6 +536,7 @@ class OrderService:
         payment_method: str,
         customer_id: str | None = None,
         buyer_pan: str | None = None,
+        show_vat_breakdown: bool | None = None,
         terminal_ip: str | None = None,
         performed_by: str | None = None,
     ) -> dict:
@@ -567,6 +568,16 @@ class OrderService:
 
         # ── IRD: PAN snapshot — seller and buyer ─────────────────────────────
         vat_enabled, vat_rate = order_vat_settings(db, tenant_id, branch_id)
+
+        # Simplified (संक्षिप्त कर बिजक) vs full VAT breakdown — display-only,
+        # mirrors IMSInvoice's show_breakdown: the totals below are computed
+        # identically either way, this only decides whether the printed bill
+        # itemizes Taxable/VAT or shows one total. Defaults to itemized
+        # whenever VAT actually applies (matches the POS toggle's own
+        # default), since callers that don't pass it (e.g. any future
+        # non-POS caller) should keep today's one-flag behavior.
+        show_breakdown = vat_enabled if show_vat_breakdown is None else show_vat_breakdown
+        order.kind = "tax" if show_breakdown else "abbreviated"
 
         # Line prices (RestroMenuItem/Variant.price) are stored VAT-INCLUSIVE
         # — what the customer pays per unit. Discount is a cut off that

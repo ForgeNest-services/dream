@@ -494,6 +494,9 @@ def ensure_ird_schema() -> None:
         # ── restro_orders ────────────────────────────────────────────────────
         restro_cols = [
             ("fiscal_year", "VARCHAR"),
+            # IRD: simplified vs full VAT breakdown bill — display-only,
+            # see shared_models/restro_order.py's kind column comment.
+            ("kind", "VARCHAR"),
             ("subtotal_amount", "NUMERIC(12,2) DEFAULT 0"),
             ("taxable_amount", "NUMERIC(12,2) DEFAULT 0"),
             ("exempt_amount", "NUMERIC(12,2) DEFAULT 0"),
@@ -560,30 +563,24 @@ def ensure_ird_schema() -> None:
         db.close()
 
 
-def ensure_ims_cbms_schema() -> None:
-    """Creates ims_cbms_credentials table if it doesn't exist (CREATE TABLE IF NOT EXISTS).
-    Also adds cbms_synced_at to ims_invoices if missing."""
+def ensure_org_tax_settings_schema() -> None:
+    """org_tax_settings and cbms_sync_log (see shared_models/org_tax_settings.py
+    and shared_models/cbms_sync_log.py) are BRAND NEW tables, unlike most of
+    this file's other ensure_* functions — Base.metadata.create_all() (run
+    once in main.py's lifespan, right before these ensure_* calls) already
+    creates them from their model definitions, indexes included, since
+    create_all only fails to ALTER existing tables, not create new ones.
+    This function only does what create_all genuinely can't: drop the old
+    per-app ims_cbms_credentials table these two superseded (had zero real
+    rows at migration time, confirmed against the dev DB before removing
+    it)."""
     db = SessionLocal()
     try:
-        db.execute(text("""
-            CREATE TABLE IF NOT EXISTS public.ims_cbms_credentials (
-                id VARCHAR(36) PRIMARY KEY,
-                tenant_id VARCHAR(36) NOT NULL UNIQUE,
-                ird_username VARCHAR(255) NOT NULL,
-                ird_password VARCHAR(255) NOT NULL,
-                is_active BOOLEAN NOT NULL DEFAULT TRUE,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-            )
-        """))
-        db.execute(text(
-            "CREATE UNIQUE INDEX IF NOT EXISTS ix_ims_cbms_credentials_tenant "
-            "ON public.ims_cbms_credentials (tenant_id)"
-        ))
+        db.execute(text("DROP TABLE IF EXISTS public.ims_cbms_credentials"))
         db.commit()
     except Exception as e:
         db.rollback()
-        logger.error(f"Failed to ensure ims_cbms_credentials schema: {type(e).__name__}: {str(e)}")
+        logger.error(f"Failed to drop legacy ims_cbms_credentials table: {type(e).__name__}: {str(e)}")
         raise
     finally:
         db.close()
@@ -620,12 +617,12 @@ def seed_apps():
 
 
 _DEFAULT_PLANS = [
-    {"app_code": "srota_pms", "plan": "monthly", "price_npr": 2999, "label": "PMS Monthly"},
-    {"app_code": "srota_pms", "plan": "yearly",  "price_npr": 11999, "label": "PMS Yearly"},
+    # {"app_code": "srota_pms", "plan": "monthly", "price_npr": 2999, "label": "PMS Monthly"},
+    # {"app_code": "srota_pms", "plan": "yearly",  "price_npr": 11999, "label": "PMS Yearly"},
     {"app_code": "srota_rms", "plan": "monthly", "price_npr": 1299,  "label": "RMS Monthly"},
     {"app_code": "srota_rms", "plan": "yearly",  "price_npr": 6999,  "label": "RMS Yearly"},
-    {"app_code": "srota_ims", "plan": "monthly", "price_npr": 1299,  "label": "IMS Monthly"},
-    {"app_code": "srota_ims", "plan": "yearly",  "price_npr": 6999,  "label": "IMS Yearly"},
+    {"app_code": "srota_ims", "plan": "monthly", "price_npr": 1699,  "label": "IMS Monthly"},
+    {"app_code": "srota_ims", "plan": "yearly",  "price_npr": 7999,  "label": "IMS Yearly"},
 ]
 
 # Default % knocked off the summed individual prices when a tenant buys 2+

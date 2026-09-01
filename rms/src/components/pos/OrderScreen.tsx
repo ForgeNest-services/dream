@@ -4,6 +4,7 @@ import placeholder from "@/assets/menu-placeholder.jpg";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -71,6 +72,18 @@ export function OrderScreen(props: OrderScreenProps) {
   // the dialog re-opens. Delivery orders already have a customer attached
   // from creation — in that case we skip the picker entirely and reuse it.
   const [khataCustomerId, setKhataCustomerId] = useState<string | null>(null);
+  // IRD: buyer PAN for a B2B bill — optional, a walk-in guest just leaves
+  // this blank. Cleared each time the payment dialog re-opens.
+  const [buyerPan, setBuyerPan] = useState("");
+  // IRD: simplified (संक्षिप्त कर बिजक) vs full VAT breakdown bill — same
+  // "VAT bill" toggle IMS's POS already has. Only meaningful when VAT is
+  // actually enabled for this branch; defaults to itemized (matches
+  // settings.vatEnabled) so this mirrors ProductFormPage's taxable-default
+  // pattern rather than requiring a manual flip on every sale.
+  const [vatBillOn, setVatBillOn] = useState(false);
+  useEffect(() => {
+    setVatBillOn(settings.vatEnabled);
+  }, [settings.vatEnabled]);
 
   const order =
     props.mode === "dine-in" ? orderForTable(props.table.id) : orderById(props.orderId);
@@ -431,6 +444,8 @@ export function OrderScreen(props: OrderScreenProps) {
           if (!o) {
             setMethod("cash");
             setKhataCustomerId(null);
+            setBuyerPan("");
+            setVatBillOn(settings.vatEnabled);
           }
         }}
       >
@@ -490,6 +505,31 @@ export function OrderScreen(props: OrderScreenProps) {
               totalAmount={totals.total}
             />
           )}
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Buyer PAN (optional)</Label>
+            <Input
+              value={buyerPan}
+              onChange={(e) => setBuyerPan(e.target.value)}
+              placeholder="Leave blank for a walk-in guest"
+              className="h-11"
+            />
+          </div>
+
+          {settings.vatEnabled && (
+            <div className="flex items-center justify-between rounded-xl bg-secondary p-3">
+              <div>
+                <p className="text-sm font-medium">VAT bill</p>
+                <p className="text-xs text-muted-foreground">
+                  {vatBillOn
+                    ? "Tax invoice with taxable amount + VAT breakdown"
+                    : "Plain bill — shelf price only, no VAT breakdown"}
+                </p>
+              </div>
+              <Switch checked={vatBillOn} onCheckedChange={setVatBillOn} />
+            </div>
+          )}
+
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
@@ -512,7 +552,13 @@ export function OrderScreen(props: OrderScreenProps) {
                   method === "khata"
                     ? khataCustomerId ?? order.customer?.id ?? undefined
                     : undefined;
-                markPaid(order.id, method, cid);
+                markPaid(
+                  order.id,
+                  method,
+                  cid,
+                  buyerPan || undefined,
+                  settings.vatEnabled ? vatBillOn : undefined,
+                );
                 setPayOpen(false);
                 setMethod("cash");
                 setKhataCustomerId(null);

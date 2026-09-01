@@ -219,6 +219,8 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
     discountValue: Number(o.discount_value),
     ...(o.payment_method ? { paymentMethod: o.payment_method } : {}),
     waiter: o.waiter_name,
+    ...(o.kind ? { kind: o.kind } : {}),
+    ...(o.buyer_pan ? { buyerPan: o.buyer_pan } : {}),
   });
 
   const clearFilters = () => {

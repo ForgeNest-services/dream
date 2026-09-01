@@ -1,15 +1,12 @@
 from datetime import datetime
-from sqlalchemy.orm import Session
-from sqlalchemy import text
 from core.crypto import decrypt_secret
-from features.cbms.credential_service import CBMSCredentialRepository, CBMSCredentialService
-from features.cbms.submit import IRD_CBMS_URL, IRD_CBMS_RETURN_URL, post_to_cbms
-from shared_models.ims_cbms_credential import IMSCbmsCredential
-from utils.logger import logger
+from shared_models.org_tax_settings import OrgTaxSettings
 
-# Credential storage/CRUD now lives in features/cbms (shared with RMS) — this
-# file keeps only what's genuinely IMS-specific: building the payload shape
-# from an IMSInvoice, and the invoice-table write-back on a successful sync.
+# Credential storage lives in shared_models/org_tax_settings.py (one row per
+# tenant, shared with RMS — see features/tax_settings/). Actual submission
+# (HTTP call, response classification, retry) lives in
+# api/jobs/cbms_jobs.py as an RQ job. This file keeps only what's genuinely
+# IMS-specific: building the CBMS payload shape from an IMSInvoice.
 
 
 def _fy_to_ird_format(fiscal_year: str) -> str:
@@ -37,7 +34,7 @@ def _fiscal_year_from_date_bs(date_bs: str) -> str:
     return f"{start_year}-{end_short}"
 
 
-def build_cbms_payload(invoice, cred: IMSCbmsCredential) -> dict:
+def build_cbms_payload(invoice, org: OrgTaxSettings) -> dict:
     """Build the exact IRD CBMS JSON payload."""
     date_ad = invoice.date
     date_str = date_ad.strftime("%Y.%m.%d") if date_ad else ""
@@ -51,8 +48,8 @@ def build_cbms_payload(invoice, cred: IMSCbmsCredential) -> dict:
     tax_exempted_sales = float(invoice.exempt_amount or 0)
 
     return {
-        "username": cred.ird_username,
-        "password": decrypt_secret(cred.ird_password),
+        "username": org.ird_username,
+        "password": decrypt_secret(org.ird_password),
         "seller_pan": invoice.seller_pan or "",
         "buyer_pan": invoice.buyer_pan or "",
         "fiscal_year": fiscal_year,
@@ -75,7 +72,7 @@ def build_cbms_payload(invoice, cred: IMSCbmsCredential) -> dict:
     }
 
 
-def build_credit_note_payload(credit_note, original_invoice, cred: IMSCbmsCredential) -> dict:
+def build_credit_note_payload(credit_note, original_invoice, org: OrgTaxSettings) -> dict:
     """Build IRD CBMS payload for credit note — posted to /api/billreturn."""
     date_ad = credit_note.date
     date_str = date_ad.strftime("%Y.%m.%d") if date_ad else ""
@@ -88,14 +85,13 @@ def build_credit_note_payload(credit_note, original_invoice, cred: IMSCbmsCreden
     tax_exempted_sales = abs(float(credit_note.exempt_amount or 0))
 
     return {
-        "username": cred.ird_username,
-        "password": decrypt_secret(cred.ird_password),
+        "username": org.ird_username,
+        "password": decrypt_secret(org.ird_password),
         "seller_pan": credit_note.seller_pan or "",
         "buyer_pan": credit_note.buyer_pan or "",
         "fiscal_year": fiscal_year,
         "buyer_name": credit_note.buyer_name or "",
-        "invoice_number": original_invoice.number if original_invoice else "",
-        "invoice_date": original_invoice.date.strftime("%Y.%m.%d") if original_invoice and original_invoice.date else "",
+        "ref_invoice_number": original_invoice.number if original_invoice else "",
         "credit_note_number": credit_note.number or "",
         "credit_note_date": date_str,
         "reason_for_return": credit_note.note_reason or "Credit note issued",
@@ -113,99 +109,3 @@ def build_credit_note_payload(credit_note, original_invoice, cred: IMSCbmsCreden
         "isrealtime": True,
         "datetimeClient": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
     }
-
-
-class CBMSService:
-    @staticmethod
-    def get_credentials(db: Session, tenant_id: str) -> dict:
-        return CBMSCredentialService.get_credentials(db, tenant_id)
-
-    @staticmethod
-    def save_credentials(db: Session, tenant_id: str, ird_username: str, ird_password: str) -> dict:
-        return CBMSCredentialService.save_credentials(db, tenant_id, ird_username, ird_password)
-
-    @staticmethod
-    def sync_invoice(db: Session, invoice, tenant_id: str) -> dict:
-        """Submit invoice to IRD CBMS. Returns {success, synced, error?}."""
-        cred = CBMSCredentialRepository.get(db, tenant_id)
-        if not cred:
-            return {"success": False, "error_code": "CBMS_NOT_CONFIGURED"}
-
-        payload = build_cbms_payload(invoice, cred)
-        result = post_to_cbms(IRD_CBMS_URL, payload)
-        if result["success"]:
-            db.execute(
-                text("UPDATE public.ims_invoices SET cbms_synced = TRUE, cbms_synced_at = NOW() WHERE id = :id"),
-                {"id": invoice.id},
-            )
-            db.commit()
-        return result
-
-    @staticmethod
-    def sync_credit_note(db: Session, credit_note, original_invoice, tenant_id: str) -> dict:
-        """Submit credit note to IRD CBMS /api/billreturn."""
-        cred = CBMSCredentialRepository.get(db, tenant_id)
-        if not cred:
-            return {"success": False, "error_code": "CBMS_NOT_CONFIGURED"}
-
-        payload = build_credit_note_payload(credit_note, original_invoice, cred)
-        result = post_to_cbms(IRD_CBMS_RETURN_URL, payload)
-        if result["success"]:
-            db.execute(
-                text("UPDATE public.ims_invoices SET cbms_synced = TRUE, cbms_synced_at = NOW() WHERE id = :id"),
-                {"id": credit_note.id},
-            )
-            db.commit()
-        return result
-
-    @staticmethod
-    def get_payload(db: Session, invoice, tenant_id: str) -> dict:
-        """Return the CBMS payload without submitting it (for preview/debug)."""
-        cred = CBMSCredentialRepository.get(db, tenant_id)
-        if not cred:
-            return {"success": False, "error_code": "CBMS_NOT_CONFIGURED"}
-        payload = build_cbms_payload(invoice, cred)
-        payload["password"] = "••••••••"
-        return {"success": True, "payload": payload}
-
-
-def sync_invoice_background(invoice_id: str, tenant_id: str) -> None:
-    """Called as a FastAPI BackgroundTask after invoice creation — creates its
-    own DB session so it runs safely after the response has been sent."""
-    from core.database import SessionLocal
-    from features.ims.invoice_repository import IMSInvoiceRepository
-    db = SessionLocal()
-    try:
-        invoice = IMSInvoiceRepository.get_by_id(db, invoice_id, tenant_id)
-        if invoice and invoice.kind in ("tax", "abbreviated"):
-            result = CBMSService.sync_invoice(db, invoice, tenant_id)
-            if not result.get("success"):
-                logger.warning(
-                    f"Auto CBMS sync failed for invoice {invoice_id}: "
-                    f"{result.get('error_code')} — {result.get('detail', '')}"
-                )
-    except Exception as e:
-        logger.error(f"Auto CBMS sync background task error for {invoice_id}: {e}")
-    finally:
-        db.close()
-
-
-def sync_credit_note_background(credit_note_id: str, original_invoice_id: str, tenant_id: str) -> None:
-    """Background CBMS sync for credit notes."""
-    from core.database import SessionLocal
-    from features.ims.invoice_repository import IMSInvoiceRepository
-    db = SessionLocal()
-    try:
-        cn = IMSInvoiceRepository.get_by_id(db, credit_note_id, tenant_id)
-        original = IMSInvoiceRepository.get_by_id(db, original_invoice_id, tenant_id) if original_invoice_id else None
-        if cn:
-            result = CBMSService.sync_credit_note(db, cn, original, tenant_id)
-            if not result.get("success"):
-                logger.warning(
-                    f"Auto CBMS CN sync failed for {credit_note_id}: "
-                    f"{result.get('error_code')} — {result.get('detail', '')}"
-                )
-    except Exception as e:
-        logger.error(f"Auto CBMS CN sync background error for {credit_note_id}: {e}")
-    finally:
-        db.close()

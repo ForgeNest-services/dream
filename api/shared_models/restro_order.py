@@ -79,6 +79,12 @@ class RestroOrder(Base):
     type = Column(String(20), nullable=False)  # "dine-in" | "delivery"
     status = Column(String(20), nullable=False, default="draft")  # draft|paid|cancelled
     kitchen_status = Column(String(20), nullable=False, default="new")  # new|cooking|ready|served
+    # IRD: simplified (संक्षिप्त कर बिजक) vs full VAT breakdown bill — set at
+    # mark-paid time, mirrors IMSInvoice.kind minus "quotation" (RMS has no
+    # quotation concept). Display-only: the actual VAT math is identical
+    # either way (see order_service.py's mark_paid), this only controls
+    # whether the taxable/VAT lines are itemized on the printed bill.
+    kind = Column(String(20), nullable=True)  # "tax" | "abbreviated"
 
     placed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     paid_at = Column(DateTime, nullable=True)

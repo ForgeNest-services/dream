@@ -191,6 +191,7 @@ export function BillReceipt({
           {order.customer.phone && <p>Phone : {order.customer.phone}</p>}
         </>
       )}
+      {order.buyerPan && <p>Buyer PAN : {order.buyerPan}</p>}
       <p>Date : {bsFromOrder(order)}</p>
       <p>Also : {nptDate(displayTs)}</p>
       <p>Time : {nptTime(displayTs)}</p>
@@ -207,7 +208,10 @@ export function BillReceipt({
       <Divider />
       {row("Subtotal", NPR(totals.subtotal))}
       {totals.discount > 0 && row("Discount", `-${NPR(totals.discount)}`)}
-      {settings.vatEnabled && tenant?.is_vat_registered && (
+      {/* order.kind is the persisted, per-bill decision from mark-paid time
+          (the "VAT bill" toggle) — falls back to the live branch setting
+          only for a bill printed before that's been set (e.g. preview). */}
+      {(order.kind ? order.kind === "tax" : settings.vatEnabled) && tenant?.is_vat_registered && (
         <>
           {row("Taxable amount", NPR(totals.taxable))}
           {row(`VAT ${settings.vatRate}%`, NPR(totals.vat))}

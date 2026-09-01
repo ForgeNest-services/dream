@@ -239,6 +239,33 @@ class OrderRepository:
         return items, total
 
     @staticmethod
+    def list_for_report(
+        db: Session,
+        tenant_id: str,
+        branch_id: str | None,
+        bs_from: str | None,
+        bs_to: str | None,
+        include_credit_notes: bool = True,
+    ) -> list[RestroOrder]:
+        """Paid, real bills (and their credit notes, by default) in a BS
+        date range — feeds the IRD sales register / Annexure 13 / monthly
+        VAT summary exports. Unlike list_paginated, branch_id is optional
+        (None = every branch) since a report can span the whole tenant."""
+        query = db.query(RestroOrder).filter(
+            RestroOrder.tenant_id == tenant_id,
+            RestroOrder.status == "paid",
+        )
+        if branch_id:
+            query = query.filter(RestroOrder.branch_id == branch_id)
+        if not include_credit_notes:
+            query = query.filter(RestroOrder.is_credit_note.is_(False))
+        if bs_from:
+            query = query.filter(RestroOrder.placed_at_bs >= bs_from)
+        if bs_to:
+            query = query.filter(RestroOrder.placed_at_bs <= bs_to)
+        return query.order_by(RestroOrder.placed_at_bs, RestroOrder.bill_number).all()
+
+    @staticmethod
     def get_draft_for_tables(
         db: Session, tenant_id: str, table_ids: list[str]
     ) -> RestroOrder | None:

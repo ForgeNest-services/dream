@@ -143,6 +143,10 @@ export type Order = {
   discountValue: number;
   paymentMethod?: "cash" | "qr" | "khata";
   waiter: string;
+  // IRD: simplified ("abbreviated") vs full ("tax") VAT breakdown bill —
+  // set at mark-paid time, undefined for a still-draft order. Display-only.
+  kind?: "tax" | "abbreviated";
+  buyerPan?: string;
 };
 
 export type InventoryItem = {

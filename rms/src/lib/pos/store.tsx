@@ -135,6 +135,8 @@ function toOrder(o: OrderDto): Order {
     };
   }
   if (o.delivery_status) order.deliveryStatus = o.delivery_status;
+  if (o.kind === "tax" || o.kind === "abbreviated") order.kind = o.kind;
+  if (o.buyer_pan) order.buyerPan = o.buyer_pan;
   return order;
 }
 
@@ -336,6 +338,8 @@ type Ctx = {
     orderId: string,
     method: "cash" | "qr" | "khata",
     customerId?: string,
+    buyerPan?: string,
+    showVatBreakdown?: boolean,
   ) => Promise<void>;
   setKitchenStatus: (orderId: string, status: KitchenStatus) => Promise<void>;
 
@@ -1319,11 +1323,18 @@ export function PosProvider({ children }: { children: ReactNode }) {
         toast.error(err instanceof Error ? err.message : "Failed to attach customer");
       }
     },
-    markPaid: async (orderId, method, customerId) => {
+    markPaid: async (orderId, method, customerId, buyerPan, showVatBreakdown) => {
       if (!branchId) return;
       try {
         const current = orders.find((o) => o.id === orderId);
-        const response = await ordersApi.markPaid(branchId, orderId, method, customerId);
+        const response = await ordersApi.markPaid(
+          branchId,
+          orderId,
+          method,
+          customerId,
+          buyerPan,
+          showVatBreakdown,
+        );
         if (response.data) {
           const updated = toOrder(response.data);
           setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));

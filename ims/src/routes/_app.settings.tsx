@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useApp } from "@/context/app-store";
-import { invoicesApi } from "@/lib/invoices-api";
+import { cbmsSyncLogApi, type CbmsSyncLogEntry } from "@/lib/invoices-api";
 import { createFileRoute } from "@tanstack/react-router";
 import { Check, Info, Lock, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -346,122 +346,127 @@ function SettingsPage() {
 
 function CbmsCredentialsCard() {
   const app = useApp();
-  const isOwner = app.effectiveRole === "owner";
-  const [configured, setConfigured] = useState<boolean | null>(null);
-  const [currentUsername, setCurrentUsername] = useState<string | undefined>(undefined);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [saving, setSaving] = useState(false);
+  const canResync = ["owner", "manager"].includes(app.effectiveRole ?? "");
+  const [entries, setEntries] = useState<CbmsSyncLogEntry[] | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [resyncingId, setResyncingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!["owner", "manager"].includes(app.effectiveRole ?? "")) return;
-    invoicesApi
-      .getCbmsCredentials()
+  const load = () => {
+    cbmsSyncLogApi
+      .list({ status: statusFilter || undefined, per_page: 25 })
       .then((res) => {
-        if (res.success && res.data) {
-          setConfigured(res.data.configured);
-          setCurrentUsername(res.data.ird_username);
-        }
+        if (res.success) setEntries(res.data ?? []);
       })
       .catch(() => {
-        // silently ignore — not critical
+        // silently ignore — not critical to render the rest of the page
       });
-  }, [app.effectiveRole]);
+  };
 
-  async function handleSave() {
-    if (!username.trim() || !password.trim()) {
-      toast.error("Username and password are required");
-      return;
-    }
-    setSaving(true);
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter]);
+
+  const handleResync = async (id: string) => {
+    setResyncingId(id);
     try {
-      const res = await invoicesApi.saveCbmsCredentials(username.trim(), password.trim());
-      if (!res.success) {
-        toast.error("Failed to save CBMS credentials");
-        return;
+      const res = await cbmsSyncLogApi.resync(id);
+      if (res.success && res.data?.status === "synced") {
+        toast.success("Synced to CBMS");
+      } else {
+        toast.error("Still not synced — see the response code below");
       }
-      toast.success("CBMS credentials saved");
-      setConfigured(true);
-      setCurrentUsername(username.trim());
-      setUsername("");
-      setPassword("");
+      load();
     } catch {
-      toast.error("Failed to save CBMS credentials");
+      toast.error("Resync failed");
     } finally {
-      setSaving(false);
+      setResyncingId(null);
     }
-  }
+  };
 
   return (
-    <div className="max-w-md space-y-4">
+    <div className="max-w-2xl space-y-4">
       <div className="rounded-lg border bg-card p-5">
         <p className="text-sm font-medium">IRD CBMS Integration</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Central Billing Monitoring System credentials issued by Inland Revenue Department Nepal.
-          Required to sync invoices to IRD in real time (Electronic Billing Procedure 2074).
+          Credentials and the auto-sync toggle are shared across every app and managed once from
+          the business admin app (app.dream.com → Settings). This page shows IMS's own sync
+          history and lets you retry a failed submission.
         </p>
-
-        <div className="mt-4 rounded-md border bg-muted/40 px-3 py-2 text-xs">
-          <span className="font-medium">Status: </span>
-          {configured === null ? (
-            <span className="text-muted-foreground">Loading…</span>
-          ) : configured ? (
-            <span className="text-success font-medium">
-              Configured{currentUsername ? ` · ${currentUsername}` : ""}
-            </span>
-          ) : (
-            <span className="text-amber-600 font-medium">Not configured</span>
-          )}
-        </div>
-
-        {isOwner && (
-          <div className="mt-4 space-y-3">
-            <p className="text-xs font-medium text-muted-foreground">
-              {configured ? "Update credentials" : "Enter IRD credentials"}
-            </p>
-            <div>
-              <Label className="text-xs">IRD Username</Label>
-              <Input
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="IRD_USERNAME"
-                className="num mt-1"
-                autoComplete="off"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">IRD Password</Label>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="mt-1"
-                autoComplete="new-password"
-              />
-            </div>
-            <Button onClick={handleSave} disabled={saving} size="sm">
-              {saving ? "Saving…" : "Save credentials"}
-            </Button>
-          </div>
-        )}
-
-        {!isOwner && (
-          <p className="mt-3 text-xs text-muted-foreground">
-            Only the owner can update IRD credentials.
-          </p>
-        )}
       </div>
 
       <div className="rounded-lg border bg-card p-5">
-        <p className="text-sm font-medium">IRD CBMS endpoint</p>
-        <p className="mt-1 font-mono text-xs text-muted-foreground break-all">
-          http://202.166.207.75:9050/api/bill
-        </p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Configurable via <span className="font-mono">IRD_CBMS_URL</span> environment variable on
-          the API server.
-        </p>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-sm font-medium">Sync log</p>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="h-8 rounded-md border bg-background px-2 text-xs"
+          >
+            <option value="">All</option>
+            <option value="pending">Pending</option>
+            <option value="synced">Synced</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+        {entries === null ? (
+          <p className="text-xs text-muted-foreground">Loading…</p>
+        ) : entries.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No sync attempts yet.</p>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="py-1 text-left font-medium">Document</th>
+                <th className="py-1 text-left font-medium">Type</th>
+                <th className="py-1 text-left font-medium">Status</th>
+                <th className="py-1 text-left font-medium">Code</th>
+                <th className="py-1 text-left font-medium">Last attempt</th>
+                <th className="py-1 text-right font-medium">Attempts</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr key={e.id} className="border-t border-border/60">
+                  <td className="py-1.5">{e.document_number ?? e.document_id.slice(0, 8)}</td>
+                  <td className="py-1.5 capitalize">{e.document_type.replace("_", " ")}</td>
+                  <td className="py-1.5">
+                    <span
+                      className={
+                        e.status === "synced"
+                          ? "text-success"
+                          : e.status === "failed"
+                            ? "text-destructive"
+                            : "text-muted-foreground"
+                      }
+                    >
+                      {e.status}
+                    </span>
+                  </td>
+                  <td className="py-1.5">{e.cbms_response_code ?? "—"}</td>
+                  <td className="py-1.5">
+                    {e.last_attempted_at ? new Date(e.last_attempted_at).toLocaleString() : "—"}
+                  </td>
+                  <td className="py-1.5 text-right">{e.attempt_count}</td>
+                  <td className="py-1.5 text-right">
+                    {canResync && e.status === "failed" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7"
+                        disabled={resyncingId === e.id}
+                        onClick={() => handleResync(e.id)}
+                      >
+                        {resyncingId === e.id ? "Resyncing…" : "Resync"}
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

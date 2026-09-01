@@ -142,15 +142,30 @@ export const invoicesApi = {
       {},
     );
   },
-  async getCbmsCredentials() {
-    return apiClient.get<{ configured: boolean; ird_username?: string }>(
-      `/ims/cbms-credentials`,
-    );
+};
+
+export interface CbmsSyncLogEntry {
+  id: string;
+  document_type: "invoice" | "credit_note";
+  document_id: string;
+  document_number: string | null;
+  status: "pending" | "synced" | "failed";
+  cbms_response_code: string | null;
+  attempt_count: number;
+  last_attempted_at: string | null;
+  synced_at: string | null;
+}
+
+export const cbmsSyncLogApi = {
+  list(params: { status?: string; page?: number; per_page?: number } = {}) {
+    const qs = new URLSearchParams();
+    if (params.status) qs.set("status", params.status);
+    if (params.page) qs.set("page", String(params.page));
+    if (params.per_page) qs.set("per_page", String(params.per_page));
+    const s = qs.toString();
+    return apiClient.get<CbmsSyncLogEntry[]>(`/ims/cbms-sync-log${s ? `?${s}` : ""}`);
   },
-  async saveCbmsCredentials(username: string, password: string) {
-    return apiClient.put<{ saved: boolean }>(`/ims/cbms-credentials`, {
-      ird_username: username,
-      ird_password: password,
-    });
+  resync(logId: string) {
+    return apiClient.post<{ status: string }>(`/ims/cbms-sync-log/${logId}/resync`, {});
   },
 };

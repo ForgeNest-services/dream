@@ -402,6 +402,10 @@ class OrderData(BaseModel):
     settled_at_bs: str | None
     discount_type: str
     discount_value: Decimal
+    # IRD: simplified ("abbreviated") vs full ("tax") VAT breakdown bill —
+    # set at mark-paid time, null until then. Display-only, see
+    # OrderService.mark_paid.
+    kind: str | None
     # ── VAT breakdown snapshot (IRD: set at mark-paid time, null until then) ──
     subtotal_amount: Decimal | None
     taxable_amount: Decimal | None
@@ -516,6 +520,10 @@ class MarkPaidRequest(BaseModel):
     customer_id: str | None = None
     # IRD: buyer PAN for B2B VAT bills (optional for walk-in consumers)
     buyer_pan: str | None = None
+    # IRD: simplified (संक्षिप्त कर बिजक) vs full VAT breakdown — display-only,
+    # see OrderService.mark_paid. Omit to default to itemized whenever the
+    # branch has VAT enabled.
+    show_vat_breakdown: bool | None = None
 
     @field_validator("payment_method")
     @classmethod

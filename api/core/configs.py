@@ -37,4 +37,18 @@ class Settings:
     # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     CBMS_ENCRYPTION_KEY: str = os.getenv("CBMS_ENCRYPTION_KEY", "")
 
+    # docs/Srota_IRD_Compliance_Checklist.md's primary source gives this as
+    # the current address; an older 202.166.207.75:9050 address also turned
+    # up in research — confirm with IRD which is authoritative before a
+    # real submission. Override via env if that changes.
+    IRD_CBMS_URL: str = os.getenv("IRD_CBMS_URL", "https://cbapi.ird.gov.np/api/bill")
+    IRD_CBMS_RETURN_URL: str = os.getenv("IRD_CBMS_RETURN_URL", "https://cbapi.ird.gov.np/api/billreturn")
+
+    # Hard gate on CBMS auto-sync per app — stays False until that app is
+    # actually IRD-certified. Flipping this is the ONLY code change needed
+    # once certification is granted; see features/tax_settings/service.py's
+    # enforcement in the sync-enabled toggle.
+    IMS_CBMS_CERTIFIED: bool = os.getenv("IMS_CBMS_CERTIFIED", "false").lower() == "true"
+    RMS_CBMS_CERTIFIED: bool = os.getenv("RMS_CBMS_CERTIFIED", "false").lower() == "true"
+
 settings = Settings()

@@ -53,6 +53,9 @@ export interface OrderDto {
   settled_at_bs: string | null;
   discount_type: DiscountType;
   discount_value: string;
+  // IRD: simplified ("abbreviated") vs full ("tax") VAT breakdown bill —
+  // null until mark-paid. Display-only, see order_service.py's mark_paid.
+  kind: "tax" | "abbreviated" | null;
   // ── VAT breakdown snapshot (IRD) — null until mark-paid. Prefer this over
   // recomputing from lines for a paid order: it's the actual amount the
   // customer was charged and must never change even if VAT settings later
@@ -249,10 +252,17 @@ export const ordersApi = {
     orderId: string,
     payment_method: PaymentMethod,
     customer_id?: string,
+    buyer_pan?: string,
+    show_vat_breakdown?: boolean,
   ) {
     return apiClient.post<OrderDto>(
       `/restro/branches/${branchId}/orders/${orderId}/mark-paid`,
-      { payment_method, customer_id: customer_id ?? null },
+      {
+        payment_method,
+        customer_id: customer_id ?? null,
+        buyer_pan: buyer_pan?.trim() || null,
+        show_vat_breakdown: show_vat_breakdown ?? null,
+      },
     );
   },
   cancel(branchId: string, orderId: string) {

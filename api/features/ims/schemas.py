@@ -3,10 +3,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import date, datetime
 from decimal import Decimal
 from features.ims.roles import IMSRole
-# CBMS credentials are tenant-level, shared with RMS — the request schema
-# now lives in features/cbms; re-imported here under the old name so
-# nothing else in this file needs to change.
-from features.cbms.schemas import CBMSCredentialRequest as IMSCbmsCredentialRequest
 
 
 class CredentialData(BaseModel):

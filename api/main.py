@@ -24,7 +24,7 @@ from core.seed import (
     ensure_tenants_free_app_schema,
     ensure_subscription_payments_group_schema,
     ensure_ird_schema,
-    ensure_ims_cbms_schema,
+    ensure_org_tax_settings_schema,
 )
 from core.storage import ensure_bucket
 import shared_models
@@ -36,6 +36,7 @@ from features.apps import router as apps_router
 from features.branches.router import router as branches_router
 from features.uploads import router as uploads_router
 from features.subscriptions.router import router as subscriptions_router
+from features.tax_settings.router import router as tax_settings_router
 
 
 @asynccontextmanager
@@ -137,11 +138,11 @@ async def lifespan(app: FastAPI):
         raise
 
     try:
-        logger.info("Ensuring IMS CBMS credentials schema...")
-        ensure_ims_cbms_schema()
-        logger.info("IMS CBMS credentials schema ready")
+        logger.info("Ensuring org tax settings + CBMS sync log schema...")
+        ensure_org_tax_settings_schema()
+        logger.info("Org tax settings + CBMS sync log schema ready")
     except Exception as e:
-        logger.error(f"Failed to ensure IMS CBMS credentials schema: {type(e).__name__}: {str(e)}")
+        logger.error(f"Failed to ensure org tax settings schema: {type(e).__name__}: {str(e)}")
         raise
 
     try:
@@ -228,6 +229,7 @@ app.include_router(ims_router)
 app.include_router(apps_router)
 app.include_router(uploads_router)
 app.include_router(subscriptions_router)
+app.include_router(tax_settings_router)
 
 
 @app.exception_handler(StarletteHTTPException)
