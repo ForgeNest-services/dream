@@ -467,10 +467,10 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
                         <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
                           Exc. VAT
                         </span>
-                        <NumericInput
+                        <DecimalTextInput
                           className="pl-[4.5rem]"
                           value={basePrice}
-                          onChange={(e) => setBasePrice(Number(e.target.value))}
+                          onChange={(v) => setBasePrice(v)}
                           placeholder="0.00"
                         />
                       </div>
@@ -645,13 +645,11 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
                               <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
                                 Exc. VAT
                               </span>
-                              <NumericInput
+                              <DecimalTextInput
                                 className="pl-[4.5rem]"
                                 placeholder="0.00"
                                 value={v.sellingPrice}
-                                onChange={(e) =>
-                                  patchVariant(i, { sellingPrice: Number(e.target.value) })
-                                }
+                                onChange={(val) => patchVariant(i, { sellingPrice: val })}
                               />
                             </div>
                             <div className="relative">

@@ -192,7 +192,7 @@ function InvoiceDetailPage() {
 
   const canSyncCbms =
     invoice.kind !== "quotation" &&
-    invoice.cbmsSynced === false &&
+    !invoice.cbmsSynced &&
     ["owner", "manager"].includes(app.effectiveRole ?? "");
 
   return (
@@ -384,7 +384,7 @@ function InvoiceDetailPage() {
         </div>
       )}
 
-      {invoice.cbmsSynced === false && invoice.kind !== "quotation" && (
+      {!invoice.cbmsSynced && invoice.kind !== "quotation" && (
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
           This invoice has not yet been synced to the IRD CBMS system.
         </div>

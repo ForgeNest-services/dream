@@ -9,6 +9,7 @@ from shared_models.ims_cbms_credential import IMSCbmsCredential
 from utils.logger import logger
 
 IRD_CBMS_URL = getattr(settings, "IRD_CBMS_URL", "http://202.166.207.75:9050/api/bill")
+IRD_CBMS_RETURN_URL = getattr(settings, "IRD_CBMS_RETURN_URL", "http://202.166.207.75:9050/api/billreturn")
 
 
 class CBMSCredentialRepository:
@@ -106,6 +107,46 @@ def build_cbms_payload(invoice, cred: IMSCbmsCredential) -> dict:
     }
 
 
+def build_credit_note_payload(credit_note, original_invoice, cred: IMSCbmsCredential) -> dict:
+    """Build IRD CBMS payload for credit note — posted to /api/billreturn."""
+    date_ad = credit_note.date
+    date_str = date_ad.strftime("%Y.%m.%d") if date_ad else ""
+    fy_label = _fiscal_year_from_date_bs(credit_note.date_bs or "")
+    fiscal_year = _fy_to_ird_format(fy_label)
+
+    total_sales = abs(float(credit_note.total_amount or 0))
+    taxable_sales_vat = abs(float(credit_note.taxable_amount or 0))
+    vat = abs(float(credit_note.vat_amount or 0))
+    tax_exempted_sales = abs(float(credit_note.exempt_amount or 0))
+
+    return {
+        "username": cred.ird_username,
+        "password": decrypt_secret(cred.ird_password),
+        "seller_pan": credit_note.seller_pan or "",
+        "buyer_pan": credit_note.buyer_pan or "",
+        "fiscal_year": fiscal_year,
+        "buyer_name": credit_note.buyer_name or "",
+        "invoice_number": original_invoice.number if original_invoice else "",
+        "invoice_date": original_invoice.date.strftime("%Y.%m.%d") if original_invoice and original_invoice.date else "",
+        "credit_note_number": credit_note.number or "",
+        "credit_note_date": date_str,
+        "reason_for_return": credit_note.note_reason or "Credit note issued",
+        "total_sales": round(total_sales, 2),
+        "taxable_sales_vat": round(taxable_sales_vat, 2),
+        "vat": round(vat, 2),
+        "excisable_amount": 0.00,
+        "excise": 0.00,
+        "taxable_sales_hst": 0.00,
+        "hst": 0.00,
+        "amount_for_esf": 0.00,
+        "esf": 0.00,
+        "export_sales": 0.00,
+        "tax_exempted_sales": round(tax_exempted_sales, 2),
+        "isrealtime": True,
+        "datetimeClient": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+
+
 class CBMSService:
     @staticmethod
     def get_credentials(db: Session, tenant_id: str) -> dict:
@@ -148,23 +189,85 @@ class CBMSService:
                 timeout=15.0,
             )
             if response.status_code == 200:
-                db.execute(
-                    text("UPDATE public.ims_invoices SET cbms_synced = TRUE, cbms_synced_at = NOW() WHERE id = :id"),
-                    {"id": invoice.id},
+                try:
+                    body = response.json()
+                except Exception:
+                    body = {}
+                # IRD response: {"data": {"status": "SUCCESS", ...}} or top-level code field
+                ird_status = (
+                    (body.get("data") or {}).get("status")
+                    or body.get("status")
+                    or body.get("message")
+                    or "ok"
                 )
-                db.commit()
-                return {"success": True, "synced": True, "response": response.json()}
+                ird_code = body.get("code") or body.get("errorCode") or 200
+                # Treat code 200 or status containing "success"/"ok" as success
+                is_success = (
+                    str(ird_code) == "200"
+                    or (isinstance(ird_status, str) and "success" in ird_status.lower())
+                    or (isinstance(ird_status, str) and "ok" in ird_status.lower())
+                )
+                if is_success:
+                    db.execute(
+                        text("UPDATE public.ims_invoices SET cbms_synced = TRUE, cbms_synced_at = NOW() WHERE id = :id"),
+                        {"id": invoice.id},
+                    )
+                    db.commit()
+                    return {"success": True, "synced": True, "ird_response": body}
+                else:
+                    logger.error(f"CBMS rejected invoice {invoice.id}: code={ird_code} status={ird_status}")
+                    return {
+                        "success": False,
+                        "error_code": f"CBMS_REJECTED_{ird_code}",
+                        "detail": str(ird_status),
+                    }
             else:
-                logger.error(f"CBMS sync failed: {response.status_code} {response.text}")
+                logger.error(f"CBMS sync failed: HTTP {response.status_code} {response.text[:200]}")
                 return {
                     "success": False,
-                    "error_code": "CBMS_REJECTED",
-                    "detail": response.text[:500],
+                    "error_code": "CBMS_HTTP_ERROR",
+                    "detail": f"HTTP {response.status_code}: {response.text[:200]}",
                 }
         except httpx.TimeoutException:
             return {"success": False, "error_code": "CBMS_TIMEOUT"}
         except Exception as e:
             logger.error(f"CBMS sync error: {e}")
+            return {"success": False, "error_code": "CBMS_ERROR", "detail": str(e)}
+
+    @staticmethod
+    def sync_credit_note(db: Session, credit_note, original_invoice, tenant_id: str) -> dict:
+        """Submit credit note to IRD CBMS /api/billreturn."""
+        cred = CBMSCredentialRepository.get(db, tenant_id)
+        if not cred:
+            return {"success": False, "error_code": "CBMS_NOT_CONFIGURED"}
+
+        payload = build_credit_note_payload(credit_note, original_invoice, cred)
+
+        try:
+            response = httpx.post(IRD_CBMS_RETURN_URL, json=payload, timeout=15.0)
+            if response.status_code == 200:
+                try:
+                    body = response.json()
+                except Exception:
+                    body = {}
+                ird_status = (body.get("data") or {}).get("status") or body.get("status") or "ok"
+                ird_code = body.get("code") or 200
+                is_success = str(ird_code) == "200" or (isinstance(ird_status, str) and "success" in ird_status.lower())
+                if is_success:
+                    db.execute(
+                        text("UPDATE public.ims_invoices SET cbms_synced = TRUE, cbms_synced_at = NOW() WHERE id = :id"),
+                        {"id": credit_note.id},
+                    )
+                    db.commit()
+                    return {"success": True, "synced": True, "ird_response": body}
+                else:
+                    return {"success": False, "error_code": f"CBMS_REJECTED_{ird_code}", "detail": str(ird_status)}
+            else:
+                return {"success": False, "error_code": "CBMS_HTTP_ERROR", "detail": f"HTTP {response.status_code}"}
+        except httpx.TimeoutException:
+            return {"success": False, "error_code": "CBMS_TIMEOUT"}
+        except Exception as e:
+            logger.error(f"CBMS credit note sync error: {e}")
             return {"success": False, "error_code": "CBMS_ERROR", "detail": str(e)}
 
     @staticmethod
@@ -176,3 +279,45 @@ class CBMSService:
         payload = build_cbms_payload(invoice, cred)
         payload["password"] = "••••••••"
         return {"success": True, "payload": payload}
+
+
+def sync_invoice_background(invoice_id: str, tenant_id: str) -> None:
+    """Called as a FastAPI BackgroundTask after invoice creation — creates its
+    own DB session so it runs safely after the response has been sent."""
+    from core.database import SessionLocal
+    from features.ims.invoice_repository import IMSInvoiceRepository
+    db = SessionLocal()
+    try:
+        invoice = IMSInvoiceRepository.get_by_id(db, invoice_id, tenant_id)
+        if invoice and invoice.kind in ("tax", "abbreviated"):
+            result = CBMSService.sync_invoice(db, invoice, tenant_id)
+            if not result.get("success"):
+                logger.warning(
+                    f"Auto CBMS sync failed for invoice {invoice_id}: "
+                    f"{result.get('error_code')} — {result.get('detail', '')}"
+                )
+    except Exception as e:
+        logger.error(f"Auto CBMS sync background task error for {invoice_id}: {e}")
+    finally:
+        db.close()
+
+
+def sync_credit_note_background(credit_note_id: str, original_invoice_id: str, tenant_id: str) -> None:
+    """Background CBMS sync for credit notes."""
+    from core.database import SessionLocal
+    from features.ims.invoice_repository import IMSInvoiceRepository
+    db = SessionLocal()
+    try:
+        cn = IMSInvoiceRepository.get_by_id(db, credit_note_id, tenant_id)
+        original = IMSInvoiceRepository.get_by_id(db, original_invoice_id, tenant_id) if original_invoice_id else None
+        if cn:
+            result = CBMSService.sync_credit_note(db, cn, original, tenant_id)
+            if not result.get("success"):
+                logger.warning(
+                    f"Auto CBMS CN sync failed for {credit_note_id}: "
+                    f"{result.get('error_code')} — {result.get('detail', '')}"
+                )
+    except Exception as e:
+        logger.error(f"Auto CBMS CN sync background error for {credit_note_id}: {e}")
+    finally:
+        db.close()

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BsDatePicker } from "@/components/common/bs-date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,6 +52,22 @@ export function ExpiryInput({
 }) {
   const [mode, setMode] = useState<"date" | "days">("date");
 
+  const [daysText, setDaysText] = useState(() => {
+    const d = daysFromToday(value);
+    return typeof d === "number" ? String(d) : "";
+  });
+
+  // Sync from external value changes (e.g. when user switches modes or parent resets)
+  useEffect(() => {
+    const d = daysFromToday(value);
+    const n = typeof d === "number" ? d : null;
+    const roundedText = daysText === "" ? null : Number(daysText);
+    if (n !== roundedText) {
+      setDaysText(n !== null ? String(n) : "");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
   return (
     <div className={cn("space-y-1.5", className)}>
       <div className="flex items-center justify-between">
@@ -89,12 +105,15 @@ export function ExpiryInput({
       ) : (
         <div className="flex items-center gap-2">
           <Input
-            type="number"
+            type="text"
+            inputMode="numeric"
             min={0}
             placeholder="e.g. 90"
-            value={daysFromToday(value)}
+            value={daysText}
             onChange={(e) => {
-              const n = e.target.value === "" ? null : Number(e.target.value);
+              const raw = e.target.value.replace(/[^0-9]/g, "");
+              setDaysText(raw);
+              const n = raw === "" ? null : Number(raw);
               onChange(n === null || Number.isNaN(n) ? "" : adIsoFromDays(n));
             }}
             className="num max-w-28"

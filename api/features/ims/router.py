@@ -1,5 +1,5 @@
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File, Form, Response
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_ims_staff
@@ -46,7 +46,7 @@ from features.ims.schemas import (
     PartyStatementRow,
     DashboardData,
 )
-from features.ims.cbms_service import CBMSService
+from features.ims.cbms_service import CBMSService, sync_invoice_background, sync_credit_note_background
 from features.ims.service import IMSCredentialService, IMSAuthService
 from features.ims.category_service import IMSCategoryService
 from features.ims.brand_service import IMSBrandService
@@ -1233,6 +1233,7 @@ def get_invoice(
 @router.post("/invoices")
 def create_invoice(
     request: Request,
+    background_tasks: BackgroundTasks,
     data: CreateInvoiceRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
@@ -1260,6 +1261,8 @@ def create_invoice(
     )
     if not result["success"]:
         return _invoice_error(result)
+    if result.get("invoice") and result["invoice"].kind in ("tax", "abbreviated"):
+        background_tasks.add_task(sync_invoice_background, result["invoice"].id, staff["tenant_id"])
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation saved" if data.is_quotation else "Sale recorded",
@@ -1271,6 +1274,7 @@ def create_invoice(
 def convert_quotation(
     request: Request,
     invoice_id: str,
+    background_tasks: BackgroundTasks,
     data: ConvertQuotationRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
@@ -1293,6 +1297,8 @@ def convert_quotation(
     )
     if not result["success"]:
         return _invoice_error(result)
+    if result.get("invoice") and result["invoice"].kind in ("tax", "abbreviated"):
+        background_tasks.add_task(sync_invoice_background, result["invoice"].id, staff["tenant_id"])
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation converted to invoice",
@@ -1303,6 +1309,7 @@ def convert_quotation(
 def issue_credit_note(
     request: Request,
     invoice_id: str,
+    background_tasks: BackgroundTasks,
     data: IMSCreditNoteRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
@@ -1322,8 +1329,16 @@ def issue_credit_note(
     )
     if not result["success"]:
         return _invoice_error(result)
+    cn = result["invoice"]
+    if cn and cn.original_invoice_id:
+        background_tasks.add_task(
+            sync_credit_note_background,
+            cn.id,
+            cn.original_invoice_id,
+            staff["tenant_id"],
+        )
     return success_response(
-        data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
+        data=InvoiceData.model_validate(cn).model_dump(mode="json"),
         message="Credit note issued",
         status_code=201,
     )
@@ -1359,7 +1374,13 @@ def sync_to_cbms(
         return error_response("NOT_FOUND", "Invoice not found", 404)
     if inv.kind not in ("tax", "abbreviated"):
         return error_response("NOT_AN_INVOICE", "Only tax/abbreviated invoices can be submitted to CBMS", 400)
-    result = CBMSService.sync_invoice(db, inv, staff["tenant_id"])
+    if inv.is_credit_note:
+        original = None
+        if inv.original_invoice_id:
+            original = IMSInvoiceRepository.get_by_id(db, inv.original_invoice_id, staff["tenant_id"])
+        result = CBMSService.sync_credit_note(db, inv, original, staff["tenant_id"])
+    else:
+        result = CBMSService.sync_invoice(db, inv, staff["tenant_id"])
     if not result["success"]:
         return error_response(result["error_code"], result.get("detail", "CBMS sync failed"), 400)
     return success_response(data={"synced": True, "message": "Invoice submitted to IRD CBMS successfully"})
