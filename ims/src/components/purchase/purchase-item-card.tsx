@@ -1,7 +1,7 @@
 import { MediaPicker } from "@/components/inventory/media-picker";
 import { CategoryCombobox, BrandCombobox } from "@/components/inventory/category-combobox";
 import { Money } from "@/components/common/primitives";
-import { DecimalTextInput } from "@/components/inventory/numeric-input";
+import { DecimalTextInput, NumericInput } from "@/components/inventory/numeric-input";
 import { priceWithVat, priceWithoutVat } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,8 +90,12 @@ export function PurchaseItemCard({
       ? (existingProduct?.taxRate ?? app.company.vatRate)
       : (item.taxRate ?? app.company.vatRate)
     : 0;
-  const costInclTax = (excl: number) => priceWithVat(excl, taxRate, taxable);
-  const costExclTax = (incl: number) => priceWithoutVat(incl, taxRate, taxable);
+  // Cost price is always inclusive of VAT (it's what was actually paid to the
+  // seller) — single plain field, no exc/inc split, matching product-form-page.
+  // Selling price follows the opposite, already-established convention (stored
+  // exclusive of VAT), so it gets the exc/inc pair below.
+  const priceInclTax = (excl: number) => priceWithVat(excl, taxRate, taxable);
+  const priceExclTax = (incl: number) => priceWithoutVat(incl, taxRate, taxable);
 
   const setRow = (key: string, patch: Partial<DraftRow>) =>
     onChange({
@@ -252,9 +256,12 @@ export function PurchaseItemCard({
               <th className="py-1 text-left font-medium">Barcode</th>
               <th className="py-1 text-left font-medium">Unit</th>
               <th className="py-1 text-right font-medium">Qty</th>
-              <th className="py-1 text-right font-medium">{taxable ? "Cost (exc. VAT)" : "Cost price"}</th>
-              {taxable && <th className="py-1 text-right font-medium">Cost (inc. VAT)</th>}
-              <th className="py-1 text-right font-medium">Selling</th>
+              <th className="py-1 text-right font-medium">Cost price</th>
+              <th className="py-1 text-right font-medium">
+                {taxable ? "Selling (exc. VAT)" : "Selling"}{" "}
+                <span className="font-normal normal-case text-muted-foreground/70">(optional)</span>
+              </th>
+              {taxable && <th className="py-1 text-right font-medium">Selling (inc. VAT)</th>}
               <th className="py-1 text-left font-medium">Expiry</th>
               <th className="py-1 text-right font-medium">Amount</th>
               <th />
@@ -263,7 +270,7 @@ export function PurchaseItemCard({
           <tbody>
             {item.rows.length === 0 ? (
               <tr>
-                <td colSpan={taxable ? 11 : 10} className="py-3 text-center text-xs text-muted-foreground">
+                <td colSpan={taxable ? 12 : 10} className="py-3 text-center text-xs text-muted-foreground">
                   Choose a product to load its variants.
                 </td>
               </tr>
@@ -327,38 +334,35 @@ export function PurchaseItemCard({
                     </Select>
                   </td>
                   <td className="py-1.5 pr-2">
-                    <Input
-                      type="number"
+                    <NumericInput
                       value={r.qty}
                       onChange={(e) => setRow(r.key, { qty: Number(e.target.value) || 0 })}
-                      className="num h-8 w-20 text-right"
+                      className="h-8 w-20 text-right"
                     />
                   </td>
                   <td className="py-1.5 pr-2">
-                    <Input
-                      type="number"
+                    <DecimalTextInput
                       value={r.unitCost}
-                      onChange={(e) => setRow(r.key, { unitCost: Number(e.target.value) || 0 })}
-                      className="num h-8 w-24 text-right"
+                      onChange={(v) => setRow(r.key, { unitCost: v })}
+                      className="h-8 w-24 text-right"
+                    />
+                  </td>
+                  <td className="py-1.5 pr-2">
+                    <DecimalTextInput
+                      value={r.sellingPrice}
+                      onChange={(v) => setRow(r.key, { sellingPrice: v })}
+                      className="h-8 w-24 text-right"
                     />
                   </td>
                   {taxable && (
                     <td className="py-1.5 pr-2">
                       <DecimalTextInput
-                        value={costInclTax(r.unitCost)}
-                        onChange={(v) => setRow(r.key, { unitCost: costExclTax(v) })}
+                        value={priceInclTax(r.sellingPrice)}
+                        onChange={(v) => setRow(r.key, { sellingPrice: priceExclTax(v) })}
                         className="h-8 w-24 text-right"
                       />
                     </td>
                   )}
-                  <td className="py-1.5 pr-2">
-                    <Input
-                      type="number"
-                      value={r.sellingPrice}
-                      onChange={(e) => setRow(r.key, { sellingPrice: Number(e.target.value) || 0 })}
-                      className="num h-8 w-24 text-right"
-                    />
-                  </td>
                   <td className="py-1.5 pr-2">
                     <Input
                       type="date"

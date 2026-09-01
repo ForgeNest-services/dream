@@ -91,6 +91,7 @@ function PosPage() {
 
   const branchId = app.branchId === "all" ? (app.branches[0]?.id ?? "") : app.branchId;
   const customers = app.parties.filter((p) => p.kind === "customer");
+  const isQuotation = mode === "quotation";
 
   const results = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -131,9 +132,21 @@ function PosPage() {
     const v = app.variants.find((x) => x.id === variantId);
     if (!v) return;
     const p = app.products.find((x) => x.id === v.productId);
+    const maxStock = v.stock[branchId] ?? 0;
+    if (!isQuotation && maxStock <= 0) {
+      toast.error(`${p?.name ?? "Item"} — ${v.name} is out of stock`);
+      return;
+    }
+    setQ("");
     setLines((prev) => {
       const existing = prev.find((l) => l.variantId === variantId);
       if (existing) {
+        // Quotations don't touch stock, so quoting past what's on the shelf
+        // is fine — only a real sale is capped at what's actually available.
+        if (!isQuotation && existing.qty >= maxStock) {
+          toast.error(`Only ${maxStock} ${v.name} in stock`);
+          return prev;
+        }
         return prev.map((l) => (l.variantId === variantId ? { ...l, qty: l.qty + 1 } : l));
       }
       return [
@@ -148,19 +161,26 @@ function PosPage() {
           rate: v.sellingPrice,
           discount: 0,
           taxable: p?.taxable,
-          maxStock: v.stock[branchId] ?? 0,
+          maxStock,
         },
       ];
     });
-    setQ("");
   };
 
   const patch = (id: string, p: Partial<CartLine>) =>
-    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...p } : l)));
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.id !== id) return l;
+        const next = { ...l, ...p };
+        // Same sale-only cap as addVariant — a quotation can still ask for
+        // more than what's on the shelf.
+        if (isQuotation || next.qty <= next.maxStock) return next;
+        toast.error(`Only ${next.maxStock} in stock`);
+        return { ...next, qty: next.maxStock };
+      }),
+    );
 
   const [checkingOut, setCheckingOut] = useState(false);
-
-  const isQuotation = mode === "quotation";
 
   const checkout = async (print: boolean) => {
     if (lines.length === 0) {
@@ -170,6 +190,18 @@ function PosPage() {
     if (!customerId) {
       toast.error("Choose a customer");
       return;
+    }
+    // Belt-and-braces — cart quantities are already clamped as they're
+    // entered, but stock can move (another terminal, a restock/adjust) in
+    // between adding to the cart and pressing pay. Backend re-checks this
+    // for real (see IMSInvoiceService._check_stock_availability); this just
+    // gives an immediate toast instead of a round-trip failure.
+    if (!isQuotation) {
+      const over = lines.find((l) => l.qty > l.maxStock);
+      if (over) {
+        toast.error(`Only ${over.maxStock} ${over.description} in stock`);
+        return;
+      }
     }
     setCheckingOut(true);
     try {
@@ -251,18 +283,22 @@ function PosPage() {
               <div className="absolute left-3 right-3 top-[54px] z-20 overflow-hidden rounded-lg border bg-popover shadow-md">
                 {results.map((v) => {
                   const p = app.products.find((x) => x.id === v.productId);
+                  const stock = v.stock[branchId] ?? 0;
+                  const outOfStock = !isQuotation && stock <= 0;
                   return (
                     <button
                       key={v.id}
                       type="button"
                       onClick={() => addVariant(v.id)}
-                      className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-accent/60"
+                      disabled={outOfStock}
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <MediaThumb mediaId={p?.mediaId} className="h-9 w-9" alt={p?.name ?? "Product"} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm">{p?.name}</span>
                         <span className="block truncate text-xs text-muted-foreground">
                           {v.name} · {v.barcode || v.modelNo}
+                          {outOfStock ? " · Out of stock" : ""}
                         </span>
                       </span>
                       <Money
@@ -325,6 +361,7 @@ function PosPage() {
                           variant="outline"
                           size="icon"
                           className="h-7 w-7"
+                          disabled={!isQuotation && l.qty >= l.maxStock}
                           onClick={() => patch(l.id, { qty: l.qty + 1 })}
                         >
                           <Plus className="h-3 w-3" />

@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { DecimalTextInput, NumericInput } from "@/components/inventory/numeric-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -182,7 +183,7 @@ export function AdjustStockDialog({
             </div>
             <div className="space-y-1.5">
               <Label>Quantity</Label>
-              <Input type="number" value={qty} onChange={(e) => setQty(Number(e.target.value))} />
+              <NumericInput value={qty} onChange={(e) => setQty(Number(e.target.value) || 0)} />
             </div>
             <div className="space-y-1.5">
               <Label>Date</Label>
@@ -377,11 +378,11 @@ export function RestockDialog({
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label>Quantity ({app.unitSymbol(variant?.unitId ?? "")})</Label>
-              <Input type="number" value={qty} onChange={(e) => setQty(Number(e.target.value))} />
+              <NumericInput value={qty} onChange={(e) => setQty(Number(e.target.value) || 0)} />
             </div>
             <div className="space-y-1.5">
               <Label>Unit cost</Label>
-              <Input type="number" value={cost} onChange={(e) => setCost(Number(e.target.value))} />
+              <DecimalTextInput value={cost} onChange={setCost} />
             </div>
             <div className="space-y-1.5">
               <Label>Date</Label>

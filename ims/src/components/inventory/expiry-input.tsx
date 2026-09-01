@@ -28,10 +28,18 @@ function daysFromToday(adIso: string): number | "" {
 }
 
 function adIsoFromDays(days: number): string {
+  // Build the ISO string from local date parts, not toISOString() — that
+  // converts to UTC, which silently shifts the date by one day for any
+  // timezone ahead of UTC (e.g. Nepal, UTC+5:45) once setHours(0,0,0,0) has
+  // already pinned this to LOCAL midnight. That mismatch is what caused
+  // "type 1, get date that resolves back to 0 days" round-trip bug.
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 /** Expiry date entry with two modes: pick a Nepali (BS) calendar date, or
