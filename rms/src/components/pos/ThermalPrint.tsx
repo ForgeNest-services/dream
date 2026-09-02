@@ -185,11 +185,14 @@ export function BillReceipt({
       <span>{value}</span>
     </div>
   );
+  // No "PENDING" fallback — a printed bill (paid or a pre-payment preview
+  // for the guest to review) never shows an unpaid/pending payment state;
+  // the line is simply omitted until there's a real payment method.
   const paymentLabel = order.paymentMethod
     ? order.paymentMethod === "khata"
       ? "KHATA (on tab)"
       : order.paymentMethod.toUpperCase()
-    : "PENDING";
+    : null;
   return (
     <div className="thermal-receipt mx-auto p-2">
       {isReprint && (
@@ -247,14 +250,17 @@ export function BillReceipt({
         <span>TOTAL</span>
         <span>{NPR(totals.total)}</span>
       </div>
-      <Divider />
-      <p>Payment: {paymentLabel}</p>
-      {order.status === "paid" && tenant?.pan && (
+      {paymentLabel && (
+        <>
+          <Divider />
+          <p>Payment: {paymentLabel}</p>
+        </>
+      )}
+      {tenant?.pan && (
         <>
           <Divider />
           {/* Mandatory Dynamic QR — Electronic Billing Procedure 2082,
-              clause 6.2(ङ). Only rendered for a paid (issued) bill; a
-              pre-payment print/preview isn't a real bill yet. */}
+              clause 6.2(ङ). Always rendered, paid or not. */}
           <div className="mt-1 flex flex-col items-center gap-1">
             <IrdQrCode
               data={buildIrdQrPayload({
@@ -277,11 +283,14 @@ export function BillReceipt({
         </>
       )}
       <p className="mt-2 text-center">Thank you · Pheri aaunuhola!</p>
-      {/* Promotional footer — "Powered By Srota" branding + a QR that opens
-          srotaapps.com. Payment QR intentionally removed from the receipt:
-          on-screen payment happens through the mark-paid dialog (which shows
-          a scannable QR big enough to actually work), so putting it on the
-          printed bill was redundant and ate valuable footer real-estate. */}
+      {/* Promotional footer — "Powered By Srota" branding only. The
+          marketing QR (srotaapps.com) was removed: this is a real IRD tax
+          invoice now, and a second, unrelated QR next to the mandatory
+          compliance one (above) was confusing — easy to scan the wrong one
+          and get nothing useful for verifying the bill. Payment QR was
+          already removed earlier for the same "keep the bill clean"
+          reason — on-screen payment already has its own QR in the
+          mark-paid dialog. */}
       <div className="mt-2 flex flex-col items-center gap-1 border-t border-dashed border-black pt-1.5">
         <p className="text-[9px] uppercase tracking-widest opacity-60">Powered By</p>
         <img
@@ -289,12 +298,6 @@ export function BillReceipt({
           alt="Srota RMS"
           className="h-10 w-auto opacity-80"
         />
-        <img
-          src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https%3A%2F%2Fsrotaapps.com"
-          alt="Scan to visit srotaapps.com"
-          className="mt-1 size-20"
-        />
-        <p className="text-[9px] opacity-70">srotaapps.com</p>
       </div>
     </div>
   );
