@@ -33,7 +33,8 @@ services:
     networks:
       - srota-network
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
+      test:
+        ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
