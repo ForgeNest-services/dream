@@ -43,6 +43,22 @@ def list_branches(
     )
 
 
+_BRANCH_ERROR_MAP = {
+    "BRANCH_NOT_FOUND": ("BRANCH_NOT_FOUND", "Branch not found.", 404),
+    "BRANCH_CODE_TAKEN": (
+        "BRANCH_CODE_TAKEN",
+        "Another branch already uses this code — pick a different one.",
+        409,
+    ),
+}
+
+
+def _branch_error(result: dict):
+    code = result["error_code"]
+    mapped = _BRANCH_ERROR_MAP.get(code, ("SERVER_ERROR", "Failed to process request.", 500))
+    return error_response(*mapped)
+
+
 @router.post("", dependencies=[Depends(require_tenant_user)])
 def create_branch(
     data: CreateBranchRequest,
@@ -54,10 +70,13 @@ def create_branch(
         db,
         tenant_id=user.tenant_id,
         name=data.name,
+        code=data.code,
         address=data.address,
         city=data.city,
         phone=data.phone,
     )
+    if not result["success"]:
+        return _branch_error(result)
     return success_response(
         data=BranchData.model_validate(result["branch"]).model_dump(mode="json"),
         message="Branch created",
@@ -78,12 +97,13 @@ def update_branch(
         tenant_id=user.tenant_id,
         branch_id=branch_id,
         name=data.name,
+        code=data.code,
         address=data.address,
         city=data.city,
         phone=data.phone,
     )
     if not result["success"]:
-        return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
+        return _branch_error(result)
     return success_response(
         data=BranchData.model_validate(result["branch"]).model_dump(mode="json"),
         message="Branch updated",

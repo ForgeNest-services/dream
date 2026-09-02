@@ -308,11 +308,17 @@ interface AppState extends SeedData {
   branchesReady: boolean;
 }
 
+export interface LoginResult {
+  ok: boolean;
+  code?: string;
+  message?: string;
+}
+
 interface AppContextValue extends AppState {
   effectiveRole: User["role"];
   modules: ModuleKey[];
   can: (p: Permission) => boolean;
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<LoginResult>;
   logout: () => void;
   setCurrency: (c: string) => void;
   setDateSystem: (d: DateSystem) => void;
@@ -450,10 +456,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const login = useCallback(async (username: string, password: string) => {
+  const login = useCallback(async (username: string, password: string): Promise<LoginResult> => {
     try {
       const res = await authApi.login(username.trim(), password);
-      if (!res.success || !res.data) return false;
+      if (!res.success || !res.data) {
+        return {
+          ok: false,
+          code: res.error?.code,
+          message: res.error?.message,
+        };
+      }
       const { token, role, branch_id, expires_at } = res.data;
       authStorage.save({
         token,
@@ -476,9 +488,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         currentUser: u,
         branchId: role === "owner" ? "all" : (branch_id ?? "all"),
       }));
-      return true;
+      return { ok: true };
     } catch {
-      return false;
+      return { ok: false };
     }
   }, []);
 

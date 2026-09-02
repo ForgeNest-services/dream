@@ -565,7 +565,7 @@ function BillsTable({
       <tbody>
         {orders.map((o) => (
           <tr key={o.id} className="border-b border-border/70 align-top hover:bg-secondary/30">
-            <td className="py-3 pr-3 font-medium">#{o.bill_number}</td>
+            <td className="py-3 pr-3 font-medium">{o.bill_code ?? `#${o.bill_number}`}</td>
             <td className="py-3 pr-3">{orderLabel(o)}</td>
             <td className="py-3 pr-3 text-muted-foreground">
               {formatDateWithStoredBs(new Date(o.placed_at).getTime(), o.placed_at_bs)}

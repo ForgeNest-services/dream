@@ -18,7 +18,7 @@ import { Spinner } from '@/components/shared/Spinner';
 import { Button } from '@/components/ui/Button';
 import { FormInput } from '@/components/ui/FormInput';
 
-type BranchFormValues = { name: string; address?: string; city?: string; phone?: string };
+type BranchFormValues = { name: string; code?: string; address?: string; city?: string; phone?: string };
 
 export function BranchesContent() {
   const { branches, isLoading, isMutating, create, update, remove } = useBranches();
@@ -86,6 +86,7 @@ export function BranchesContent() {
           onSubmit={async (values) => {
             const ok = await create({
               name: values.name,
+              code: values.code || undefined,
               address: values.address || null,
               city: values.city || null,
               phone: values.phone || null,
@@ -104,6 +105,7 @@ export function BranchesContent() {
           onSubmit={async (values) => {
             const ok = await update(editing.id, {
               name: values.name,
+              code: values.code || undefined,
               address: values.address || null,
               city: values.city || null,
               phone: values.phone || null,
@@ -177,9 +179,24 @@ function BranchCard({
           <MdOutlineBusiness size={22} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: '15px', fontWeight: '700', color: colors.neutral[900], margin: 0 }}>
-            {branch.name}
-          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' }}>
+            <p style={{ fontSize: '15px', fontWeight: '700', color: colors.neutral[900], margin: 0 }}>
+              {branch.name}
+            </p>
+            <span
+              style={{
+                fontSize: '10px',
+                fontWeight: '700',
+                color: colors.neutral[600],
+                backgroundColor: colors.neutral[100],
+                padding: '2px 6px',
+                borderRadius: radius.sm,
+                letterSpacing: '0.3px',
+              }}
+            >
+              {branch.code}
+            </span>
+          </div>
           {isMain && (
             <span
               style={{
@@ -332,6 +349,7 @@ function BranchFormModal({
   } = useForm<BranchFormValues>({
     defaultValues: {
       name: initial?.name ?? '',
+      code: initial?.code ?? '',
       address: initial?.address ?? '',
       city: initial?.city ?? '',
       phone: initial?.phone ?? '',
@@ -387,6 +405,19 @@ function BranchFormModal({
             error={errors.name?.message}
             disabled={isSaving}
           />
+          <FormInput
+            {...register('code', {
+              maxLength: { value: 10, message: 'Max 10 characters' },
+              pattern: { value: /^[A-Za-z0-9]*$/, message: 'Letters and numbers only' },
+            })}
+            label="Branch code"
+            placeholder="Auto-generated if left blank"
+            error={errors.code?.message}
+            disabled={isSaving}
+          />
+          <p style={{ fontSize: '11px', color: colors.neutral[500], marginTop: `-${spacing.sm}`, marginBottom: spacing.md }}>
+            Appears in this branch&apos;s bill numbers once you have more than one branch (IRD requirement) — e.g. INV-KTM-83/84-00007.
+          </p>
           <FormInput {...register('address')} label="Address" placeholder="Optional" disabled={isSaving} />
           <FormInput {...register('city')} label="City" placeholder="Optional" disabled={isSaving} />
           <FormInput {...register('phone')} label="Phone" placeholder="Optional" disabled={isSaving} />

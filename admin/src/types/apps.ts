@@ -45,6 +45,10 @@ export interface Branch {
   id: string;
   tenant_id: string;
   name: string;
+  // IRD: Electronic Billing Procedure 2082, clause 6.2ग — identifies this
+  // outlet in printed bill numbers once the tenant has 2+ branches (e.g.
+  // INV-KTM-83/84-00007). Auto-derived from the name if not set explicitly.
+  code: string;
   address: string | null;
   city: string | null;
   phone: string | null;
@@ -55,6 +59,7 @@ export interface Branch {
 
 export interface CreateBranchPayload {
   name: string;
+  code?: string;
   address?: string | null;
   city?: string | null;
   phone?: string | null;
@@ -62,6 +67,7 @@ export interface CreateBranchPayload {
 
 export interface UpdateBranchPayload {
   name?: string;
+  code?: string;
   address?: string | null;
   city?: string | null;
   phone?: string | null;

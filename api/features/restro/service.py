@@ -145,6 +145,24 @@ class RestroAuthService:
             logger.warning(f"Restro login failed: bad password for '{username}'")
             return {"success": False, "error_code": "INVALID_CREDENTIALS"}
 
+        from features.subscriptions.service import SubscriptionService
+        if not SubscriptionService.is_accessible(db, cred.tenant_id, "srota_rms"):
+            AuditRepository.write(
+                db,
+                tenant_id=cred.tenant_id,
+                app_code="restro",
+                entity_type="credential",
+                entity_id=cred.id,
+                action="login_blocked",
+                performed_by=cred.id,
+                performer_type="staff",
+                after_state={"username": username, "reason": "subscription_expired"},
+                terminal_ip=terminal_ip,
+            )
+            db.commit()
+            logger.warning(f"Restro login blocked (subscription expired): {username}")
+            return {"success": False, "error_code": "SUBSCRIPTION_EXPIRED"}
+
         token, expires_at = issue_staff_token(
             tenant_id=cred.tenant_id,
             role=cred.role,

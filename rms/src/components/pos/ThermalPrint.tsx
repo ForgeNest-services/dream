@@ -106,7 +106,7 @@ export function KotReceipt({
       <Divider />
       {slipNumber != null && <p>Slip  : #{slipNumber}</p>}
       <p>Table : {tableLabel}</p>
-      <p>Bill  : #{order.billNumber}</p>
+      <p>Bill  : {order.billCode ?? `#${order.billNumber}`}</p>
       <p>
         Time : {nptTime(order.placedAt)} · {bsFromOrder(order)}
       </p>
@@ -202,7 +202,7 @@ export function BillReceipt({
       )}
       <TenantHeader tenant={tenant} settings={settings} showAddress={true} />
       <Divider />
-      <p>Bill  : #{order.billNumber}</p>
+      <p>Bill  : {order.billCode ?? `#${order.billNumber}`}</p>
       {/* IRD: Electronic Billing Procedure 2082, clause 6.2घ — the e-bill
           must reference the Order Slip(s) it was built from. */}
       {(() => {
@@ -260,7 +260,7 @@ export function BillReceipt({
               data={buildIrdQrPayload({
                 sellerPan: tenant.pan,
                 isVatRegistered: !!tenant.is_vat_registered,
-                billNumber: order.billNumber,
+                billNumber: order.billCode ?? order.billNumber,
                 billDateBs: bsFromOrder(order),
                 buyerPan: order.buyerPan,
                 taxableAmount: totals.taxable,

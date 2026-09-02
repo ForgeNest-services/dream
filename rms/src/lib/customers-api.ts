@@ -52,6 +52,7 @@ export interface KhataHistoryDto {
 export interface CustomerOrderEntryDto {
   id: string;
   bill_number: number;
+  bill_code: string | null;
   type: "dine-in" | "delivery";
   status: "draft" | "paid" | "cancelled";
   payment_method: "cash" | "qr" | "khata" | null;

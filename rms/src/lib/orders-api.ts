@@ -38,6 +38,10 @@ export interface OrderDto {
   table_id: string | null;
   customer_id: string | null;
   bill_number: number;
+  // IRD: Electronic Billing Procedure 2082, clause 6.2ग — printed/display
+  // bill number, e.g. "RMS-KTM-83/84-00005". Null only for a historical
+  // row from before this existed.
+  bill_code: string | null;
   type: OrderType;
   status: OrderStatus;
   kitchen_status: KitchenStatus;

@@ -41,9 +41,13 @@ function LoginPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const ok = await app.login(username, password);
-      if (ok) {
+      const result = await app.login(username, password);
+      if (result.ok) {
         void navigate({ to: "/dashboard", replace: true });
+      } else if (result.code === "SUBSCRIPTION_EXPIRED") {
+        toast.error("Subscription expired", {
+          description: result.message ?? "This business's IMS subscription has expired. Contact the business owner.",
+        });
       } else {
         toast.error("Invalid credentials", {
           description: "Check your username and password and try again.",

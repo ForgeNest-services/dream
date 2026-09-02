@@ -66,8 +66,17 @@ class RestroOrder(Base):
     table_id = Column(String(36), ForeignKey("public.restro_tables.id"), nullable=True, index=True)
     # Human-friendly sequential bill number, unique per branch. Starts at 1.
     # See OrderRepository.create — computed under the same DB session so a
-    # concurrent conflict on the UNIQUE index triggers a retry.
+    # concurrent conflict on the UNIQUE index triggers a retry. Kept as a
+    # plain Integer (not the formatted string below) — search-by-number and
+    # sort order both depend on it staying a real orderable int.
     bill_number = Column(Integer, nullable=False)
+    # Printed/displayed bill number — "RMS-<branch code>-83/84-00005" — IRD:
+    # Electronic Billing Procedure 2082, clause 6.2ग requires the outlet's
+    # code appear in the bill number once a tenant has 2+ branches. Built
+    # from bill_number + fiscal_year + the branch's code at creation time
+    # and stored (never recomputed later — a branch's code could change,
+    # and an already-issued bill's printed number must not).
+    bill_code = Column(String(50), nullable=True)
     # Nepali fiscal year of this bill — e.g. "2081-82". Populated at create
     # time; required for per-year serial reset (IRD requirement).
     fiscal_year = Column(String(10), nullable=True)

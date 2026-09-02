@@ -380,6 +380,85 @@ def ensure_ims_branch_settings_qr_schema() -> None:
         db.close()
 
 
+def ensure_restro_bill_code_schema() -> None:
+    """Back-fill the bill_code column onto restro_orders — the printed/
+    displayed bill number ("RMS-<branch code>-83/84-00005"). IRD: Electronic
+    Billing Procedure 2082, clause 6.2ग requires the outlet's code appear in
+    the bill number once a tenant has 2+ branches. bill_number itself (the
+    plain Integer counter) is untouched — this is purely an additive display
+    column, computed per-row from bill_number/fiscal_year/branches.code.
+    Must run AFTER ensure_branch_code_schema (needs branches.code to exist).
+    Safe to re-run — only touches rows where bill_code IS NULL."""
+    from utils.bikram_sambat import format_invoice_number
+
+    db = AdminSessionLocal()
+    try:
+        db.execute(text("ALTER TABLE public.restro_orders ADD COLUMN IF NOT EXISTS bill_code VARCHAR(50)"))
+        db.commit()
+
+        rows = db.execute(text(
+            "SELECT o.id, o.bill_number, o.fiscal_year, o.is_credit_note, b.code AS branch_code "
+            "FROM public.restro_orders o "
+            "JOIN public.branches b ON b.id = o.branch_id "
+            "WHERE o.bill_code IS NULL AND o.fiscal_year IS NOT NULL"
+        )).fetchall()
+        for row in rows:
+            series = "RMS-CN" if row.is_credit_note else "RMS"
+            code = format_invoice_number(series, row.fiscal_year, row.bill_number, row.branch_code)
+            db.execute(
+                text("UPDATE public.restro_orders SET bill_code = :code WHERE id = :id"),
+                {"code": code, "id": row.id},
+            )
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill restro bill_code schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
+def ensure_branch_code_schema() -> None:
+    """Back-fill the `code` column onto branches — IRD: Electronic Billing
+    Procedure 2082, clause 6.2ग requires each billing outlet's code appear
+    in a tenant's printed bill numbers once it has 2+ branches. Adds the
+    column nullable, derives a code per existing row via the same
+    derive_unique_code logic new branches use (processed one row at a time,
+    tenant-ordered, so each newly-assigned code is visible to the next
+    row's uniqueness check), then sets NOT NULL + the unique index. Safe to
+    re-run — only touches rows where code IS NULL."""
+    from features.branches.service import derive_unique_code
+
+    db = AdminSessionLocal()
+    try:
+        db.execute(text("ALTER TABLE public.branches ADD COLUMN IF NOT EXISTS code VARCHAR(10)"))
+        db.commit()
+
+        rows = db.execute(text(
+            "SELECT id, tenant_id, name FROM public.branches WHERE code IS NULL ORDER BY tenant_id, created_at"
+        )).fetchall()
+        for row in rows:
+            code = derive_unique_code(db, row.tenant_id, row.name)
+            db.execute(
+                text("UPDATE public.branches SET code = :code WHERE id = :id"),
+                {"code": code, "id": row.id},
+            )
+            db.commit()
+
+        db.execute(text("ALTER TABLE public.branches ALTER COLUMN code SET NOT NULL"))
+        db.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_branch_tenant_code "
+            "ON public.branches (tenant_id, code)"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to backfill branch code schema: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
 def backfill_branch_settings_vat_mismatch() -> None:
     """One-time data correction, not a schema change: create_default() on
     both ims_branch_settings and restro_branch_settings used to hardcode
@@ -616,12 +695,146 @@ _IMMUTABLE_TABLES: dict[str, set[str]] = {
         "paid_amount", "status", "is_bill_printed", "printed_time",
         "printed_by", "is_reprint", "reprint_number", "cbms_synced",
         "cbms_synced_at",
+        # IMSInvoiceService.convert() — turning a saved quotation into a
+        # real sale. A quotation isn't an issued bill yet (no IRD serial,
+        # no VAT breakdown), so this conversion IS the actual point of
+        # issuance — it just lands on the quotation's existing row instead
+        # of a fresh INSERT. One-time, audited transition (see
+        # AuditRepository.write in convert()), not an edit of an
+        # already-issued bill's facts.
+        "number", "kind", "gross_amount", "discount_amount", "taxable_amount",
+        "exempt_amount", "vat_amount", "total_amount", "payment_method",
+        "seller_name", "seller_address", "seller_pan",
     },
     "ims_invoice_lines": {"tax_rate", "vat_amount"},
     "ims_stock_movements": set(),
     "ims_ledger_entries": set(),
     "audit_log": set(),
 }
+
+
+def ensure_restro_immutability_trigger() -> None:
+    """IRD: Electronic Billing Procedure 2082, clause 6.3घ — issued
+    transaction data can't be modified from the back-end either. RMS's
+    restro_orders can't use the simple column-GRANT approach IMS uses
+    (see _IMMUTABLE_TABLES) because the SAME columns (status, totals,
+    discount, ...) are legitimately written many times while an order is
+    still status='draft' (cart-building), then must freeze permanently the
+    instant it becomes 'paid' or 'cancelled' — Postgres column grants have
+    no concept of "writable only in this row's current state". A
+    BEFORE UPDATE trigger does: once OLD.status is 'paid' or 'cancelled',
+    any attempt to change a column outside the explicit follow-on allowlist
+    (print/reprint tracking, CBMS sync flags, updated_at) raises and aborts
+    the whole UPDATE. restro_order_lines gets the same treatment via its
+    parent order's status (a paid/cancelled order's lines never change).
+
+    This is real row-level enforcement — even the DATABASE_ADMIN_URL
+    superuser trips it (triggers apply regardless of role), which is
+    stricter than the column-GRANT approach but matches what RMS's write
+    pattern actually needs. Idempotent — CREATE OR REPLACE + drop-if-exists
+    before creating the trigger itself, safe to re-run every startup."""
+    db = AdminSessionLocal()
+    try:
+        db.execute(text("""
+            CREATE OR REPLACE FUNCTION public.restro_orders_immutability() RETURNS trigger AS $$
+            BEGIN
+                IF TG_OP = 'DELETE' THEN
+                    IF OLD.status IN ('paid', 'cancelled') THEN
+                        RAISE EXCEPTION 'restro_orders: cannot delete an issued (paid/cancelled) order — IRD Electronic Billing Procedure 2082, clause 6.3घ'
+                            USING ERRCODE = '23514';
+                    END IF;
+                    RETURN OLD;
+                END IF;
+                IF OLD.status IN ('paid', 'cancelled') THEN
+                    IF NEW.status IS DISTINCT FROM OLD.status
+                        OR NEW.kitchen_status IS DISTINCT FROM OLD.kitchen_status
+                        OR NEW.bill_number IS DISTINCT FROM OLD.bill_number
+                        OR NEW.bill_code IS DISTINCT FROM OLD.bill_code
+                        OR NEW.fiscal_year IS DISTINCT FROM OLD.fiscal_year
+                        OR NEW.customer_id IS DISTINCT FROM OLD.customer_id
+                        OR NEW.kind IS DISTINCT FROM OLD.kind
+                        OR NEW.placed_at IS DISTINCT FROM OLD.placed_at
+                        OR NEW.paid_at IS DISTINCT FROM OLD.paid_at
+                        OR NEW.settled_at IS DISTINCT FROM OLD.settled_at
+                        OR NEW.placed_at_bs IS DISTINCT FROM OLD.placed_at_bs
+                        OR NEW.paid_at_bs IS DISTINCT FROM OLD.paid_at_bs
+                        OR NEW.settled_at_bs IS DISTINCT FROM OLD.settled_at_bs
+                        OR NEW.discount_type IS DISTINCT FROM OLD.discount_type
+                        OR NEW.discount_value IS DISTINCT FROM OLD.discount_value
+                        OR NEW.discount_amount IS DISTINCT FROM OLD.discount_amount
+                        OR NEW.subtotal_amount IS DISTINCT FROM OLD.subtotal_amount
+                        OR NEW.taxable_amount IS DISTINCT FROM OLD.taxable_amount
+                        OR NEW.exempt_amount IS DISTINCT FROM OLD.exempt_amount
+                        OR NEW.vat_amount IS DISTINCT FROM OLD.vat_amount
+                        OR NEW.total_amount IS DISTINCT FROM OLD.total_amount
+                        OR NEW.payment_method IS DISTINCT FROM OLD.payment_method
+                        OR NEW.seller_name IS DISTINCT FROM OLD.seller_name
+                        OR NEW.seller_address IS DISTINCT FROM OLD.seller_address
+                        OR NEW.seller_pan IS DISTINCT FROM OLD.seller_pan
+                        OR NEW.buyer_name IS DISTINCT FROM OLD.buyer_name
+                        OR NEW.buyer_pan IS DISTINCT FROM OLD.buyer_pan
+                        OR NEW.waiter_name IS DISTINCT FROM OLD.waiter_name
+                        OR NEW.waiter_cred_id IS DISTINCT FROM OLD.waiter_cred_id
+                        OR NEW.delivery_status IS DISTINCT FROM OLD.delivery_status
+                        OR NEW.is_credit_note IS DISTINCT FROM OLD.is_credit_note
+                        OR NEW.original_order_id IS DISTINCT FROM OLD.original_order_id
+                        OR NEW.note_reason IS DISTINCT FROM OLD.note_reason
+                        OR NEW.table_id IS DISTINCT FROM OLD.table_id
+                    THEN
+                        RAISE EXCEPTION 'restro_orders: cannot modify an issued (paid/cancelled) order — IRD Electronic Billing Procedure 2082, clause 6.3घ'
+                            USING ERRCODE = '23514';
+                    END IF;
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+        """))
+        db.execute(text(
+            "DROP TRIGGER IF EXISTS trg_restro_orders_immutability ON public.restro_orders"
+        ))
+        db.execute(text("""
+            CREATE TRIGGER trg_restro_orders_immutability
+            BEFORE UPDATE OR DELETE ON public.restro_orders
+            FOR EACH ROW EXECUTE FUNCTION public.restro_orders_immutability();
+        """))
+
+        db.execute(text("""
+            CREATE OR REPLACE FUNCTION public.restro_order_lines_immutability() RETURNS trigger AS $$
+            DECLARE
+                parent_status varchar;
+            BEGIN
+                SELECT status INTO parent_status FROM public.restro_orders WHERE id = OLD.order_id;
+                IF parent_status IN ('paid', 'cancelled') THEN
+                    IF TG_OP = 'DELETE' THEN
+                        RAISE EXCEPTION 'restro_order_lines: cannot delete a line on an issued (paid/cancelled) order — IRD Electronic Billing Procedure 2082, clause 6.3घ'
+                            USING ERRCODE = '23514';
+                    END IF;
+                    RAISE EXCEPTION 'restro_order_lines: cannot modify a line on an issued (paid/cancelled) order — IRD Electronic Billing Procedure 2082, clause 6.3घ'
+                        USING ERRCODE = '23514';
+                END IF;
+                IF TG_OP = 'DELETE' THEN
+                    RETURN OLD;
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+        """))
+        db.execute(text(
+            "DROP TRIGGER IF EXISTS trg_restro_order_lines_immutability ON public.restro_order_lines"
+        ))
+        db.execute(text("""
+            CREATE TRIGGER trg_restro_order_lines_immutability
+            BEFORE UPDATE OR DELETE ON public.restro_order_lines
+            FOR EACH ROW EXECUTE FUNCTION public.restro_order_lines_immutability();
+        """))
+        db.commit()
+        logger.info("restro_orders/restro_order_lines immutability triggers ready")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to create restro immutability triggers: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
 
 
 def ensure_app_role() -> None:

@@ -107,7 +107,7 @@ export function exportReportXlsx(ctx: ExportContext): void {
   const billRows: (string | number)[][] = [
     ["Bill #", "Date (BS)", "Type", "Status", "Payment", "Items", "Total"],
     ...ctx.orders.map((o) => [
-      `#${o.bill_number}`,
+      o.bill_code ?? `#${o.bill_number}`,
       o.placed_at_bs,
       o.type,
       o.status,
@@ -253,7 +253,7 @@ export function exportReportPdf(ctx: ExportContext): void {
     startY: 60,
     head: [["Bill #", "Date", "Type", "Status", "Pay", "Items", "Total"]],
     body: ctx.orders.map((o) => [
-      `#${o.bill_number}`,
+      o.bill_code ?? `#${o.bill_number}`,
       o.placed_at_bs,
       o.type,
       o.status,

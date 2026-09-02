@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { ArrowLeft, Loader2, Minus, Plus, Printer, Receipt, Search, Send, Trash2, UtensilsCrossed, Wallet, X } from "lucide-react";
 import placeholder from "@/assets/menu-placeholder.jpg";
 import { Button } from "@/components/ui/button";
@@ -191,6 +192,14 @@ export function OrderScreen(props: OrderScreenProps) {
       qty: 1,
       note: "",
     };
+    // The running bill panel is off-screen below the fold on mobile (menu
+    // and bill share one viewport via the menu/bill tab toggle, see
+    // mobileView state below), so tapping an item gives no visible
+    // confirmation there the way it does on desktop where both panels show
+    // at once. A toast is the only feedback a phone user gets.
+    toast.success(`${item.name}${variantName ? ` (${variantName})` : ""} added`, {
+      duration: 1200,
+    });
     if (props.mode === "dine-in") return addLine(props.table.id, line);
     return addLineToOrder(props.orderId, line);
   };

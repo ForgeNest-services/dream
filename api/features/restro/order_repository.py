@@ -12,7 +12,7 @@ from shared_models import (
     RestroCustomer,
     RestroInvoiceSerial,
 )
-from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad
+from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad, format_invoice_number
 
 
 ORDER_TYPES = {"dine-in", "delivery"}
@@ -70,6 +70,7 @@ class OrderRepository:
         waiter_cred_id: str | None,
         table_id: str | None = None,
         customer_id: str | None = None,
+        branch_code: str | None = None,
     ) -> RestroOrder:
         # Snapshot placed_at + its BS equivalent together. Using an explicit
         # timestamp (instead of relying on the model default) so both columns
@@ -78,6 +79,11 @@ class OrderRepository:
         now = datetime.now(timezone.utc)
         fy = fiscal_year_from_ad(now) or ""
         bill_num = OrderRepository._next_bill_number(db, branch_id, fy)
+        # IRD: Electronic Billing Procedure 2082, clause 6.2ग — the printed
+        # bill number must carry this outlet's code. bill_number itself
+        # stays a plain int (search/sort depend on it); bill_code is the
+        # formatted string actually shown/printed.
+        bill_code = format_invoice_number("RMS", fy, bill_num, branch_code) if fy else None
 
         order = RestroOrder(
             tenant_id=tenant_id,
@@ -88,6 +94,7 @@ class OrderRepository:
             table_id=table_id,
             customer_id=customer_id,
             bill_number=bill_num,
+            bill_code=bill_code,
             fiscal_year=fy,
             placed_at=now,
             placed_at_bs=to_bs_iso(now) or "",

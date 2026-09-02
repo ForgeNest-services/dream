@@ -21,8 +21,8 @@ from features.restro.branch_settings_service import BranchSettingsService
 from features.branches.repository import BranchRepository
 from features.auth.repository import TenantRepository
 from features.hotel_pms.audit_repository import AuditRepository
-from shared_models import RestroOrder
-from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad
+from shared_models import RestroOrder, RestroOrderLine
+from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad, format_invoice_number
 from utils.logger import logger
 
 
@@ -185,7 +185,8 @@ class OrderService:
         table_id: str | None = None,
         customer_id: str | None = None,
     ) -> dict:
-        if not OrderService._assert_branch(db, tenant_id, branch_id):
+        branch = BranchRepository.get_by_id(db, tenant_id, branch_id)
+        if not branch:
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
         if type not in ORDER_TYPES:
             return {"success": False, "error_code": "INVALID_TYPE"}
@@ -229,6 +230,7 @@ class OrderService:
                 customer_id=customer_id,
                 waiter_name=waiter_name,
                 waiter_cred_id=waiter_cred_id,
+                branch_code=branch.code,
             )
             logger.info(
                 f"Order created: {order.id}",
@@ -874,12 +876,17 @@ class OrderService:
         now = datetime.now(timezone.utc)
         fy = fiscal_year_from_ad(now) or ""
         bill_num = OrderRepository._next_bill_number(db, branch_id, fy)
+        branch = BranchRepository.get_by_id(db, tenant_id, branch_id)
+        # IRD: Electronic Billing Procedure 2082, clause 6.2ग — same
+        # outlet-code requirement as OrderRepository.create.
+        bill_code = format_invoice_number("RMS-CN", fy, bill_num, branch.code if branch else None)
 
         cn = RestroOrder(
             tenant_id=tenant_id,
             branch_id=branch_id,
             table_id=None,
             bill_number=bill_num,
+            bill_code=bill_code,
             fiscal_year=fy,
             customer_id=original.customer_id,
             type=original.type,
@@ -909,6 +916,29 @@ class OrderService:
             note_reason=reason,
         )
         db.add(cn)
+        db.flush()
+
+        # Mirror each original line onto the credit note — negate qty (not
+        # price), so the printed document reads as "returned: -2 x Steam
+        # Momo @ Rs 180" instead of showing a bare total with no items.
+        # Matches the same fix on IMS's issue_credit_note. No stock
+        # restoration here (unlike IMS): menu items have no stock/qty field
+        # of their own — RestroInventoryItem tracks raw ingredients, and
+        # there's no built recipe/consumption link from an order line back
+        # to ingredient quantities, so there's nothing to restore.
+        for line in original.lines:
+            if line.is_voided:
+                continue
+            db.add(RestroOrderLine(
+                order_id=cn.id,
+                menu_item_id=line.menu_item_id,
+                name=line.name,
+                variant_name=line.variant_name,
+                price=line.price,
+                qty=-line.qty,
+                note=line.note,
+                sent=True,
+            ))
         db.flush()
 
         AuditRepository.write(

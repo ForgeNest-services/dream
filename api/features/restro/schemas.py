@@ -391,6 +391,10 @@ class OrderData(BaseModel):
     table_id: str | None
     customer_id: str | None
     bill_number: int
+    # IRD: Electronic Billing Procedure 2082, clause 6.2ग — printed/display
+    # bill number, e.g. "RMS-KTM-83/84-00005". Null only for a not-yet-
+    # backfilled historical row (see ensure_restro_bill_code_schema).
+    bill_code: str | None
     type: str
     status: str
     kitchen_status: str
@@ -616,6 +620,7 @@ class CustomerOrderEntry(BaseModel):
 
     id: str
     bill_number: int
+    bill_code: str | None
     type: str
     status: str
     payment_method: str | None
@@ -929,3 +934,22 @@ class RMSCreditNoteRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError("Reason is required for credit notes")
         return v.strip()
+
+
+class AuditLogEntryData(BaseModel):
+    """IRD: Electronic Billing Procedure 2082, clause 6.3ग — the User
+    Activity Log, viewable/filterable from the front-end."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    app_code: str
+    entity_type: str
+    entity_id: str
+    action: str
+    performed_by: str
+    performer_type: str
+    before_state: dict | None
+    after_state: dict | None
+    reason: str | None
+    terminal_ip: str | None
+    created_at: datetime

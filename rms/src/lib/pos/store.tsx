@@ -10,6 +10,7 @@ import {
 import { toast } from "sonner";
 import { authStorage, type StoredSession } from "./auth-storage";
 import { authApi } from "../auth-api";
+import { ApiError } from "../api-client";
 import { branchesApi, type BranchDto } from "../branches-api";
 import { categoriesApi } from "../categories-api";
 import { menuItemsApi, type MenuItemDto } from "../menu-items-api";
@@ -138,6 +139,7 @@ function toOrder(o: OrderDto): Order {
   if (o.kind === "tax" || o.kind === "abbreviated") order.kind = o.kind;
   if (o.buyer_pan) order.buyerPan = o.buyer_pan;
   if (o.slip_numbers) order.slipNumbers = o.slip_numbers;
+  if (o.bill_code) order.billCode = o.bill_code;
   return order;
 }
 
@@ -241,7 +243,7 @@ export function toMenuItem(m: MenuItemDto): MenuItem {
   };
 }
 
-type LoginResult = { ok: true } | { ok: false; message: string };
+type LoginResult = { ok: true } | { ok: false; message: string; code?: string };
 
 type Ctx = {
   session: StoredSession | null;
@@ -587,7 +589,9 @@ export function PosProvider({ children }: { children: ReactNode }) {
     try {
       const response = await authApi.login(username, password);
       const data = response.data;
-      if (!data) return { ok: false, message: "Empty response from server" };
+      if (!data) {
+        return { ok: false, message: response.error?.message ?? "Empty response from server", code: response.error?.code };
+      }
       const stored: StoredSession = {
         token: data.token,
         role: data.role as Role,
@@ -601,6 +605,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
       setViewAsRoleState(null);
       return { ok: true };
     } catch (err) {
+      if (err instanceof ApiError) return { ok: false, message: err.message, code: err.code };
       const message = err instanceof Error ? err.message : "Login failed";
       return { ok: false, message };
     }

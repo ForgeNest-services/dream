@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Building2, Check, Info, Loader2, Lock } from "lucide-react";
+import { Building2, Check, ChevronLeft, ChevronRight, Info, Loader2, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,8 @@ import {
 import { usePos } from "@/lib/pos/store";
 import type { Settings } from "@/lib/pos/data";
 import type { TenantInfoDto } from "@/lib/tenant-api";
+import type { PageMeta } from "@/lib/api-client";
+import { auditLogApi, type AuditLogEntryDto } from "@/lib/audit-log-api";
 import { cbmsApi, type CbmsSyncLogEntry } from "@/lib/cbms-api";
 import { MenuQrPrintButton } from "./MenuQrPrint";
 import { UsersSection } from "./UsersSection";
@@ -168,6 +170,8 @@ export function SettingsView() {
         />
 
         <CbmsCredentialsCard isOwner={actualRole === "owner"} />
+
+        {(actualRole === "owner" || actualRole === "manager") && <AuditLogCard />}
 
         <div className="pos-card p-5">
           <h2 className="font-display text-xl">Payment QR</h2>
@@ -495,6 +499,167 @@ function CbmsCredentialsCard({ isOwner }: { isOwner: boolean }) {
             ))}
           </tbody>
         </table>
+      )}
+    </div>
+  );
+}
+
+const AUDIT_ACTION_LABELS: Record<string, string> = {
+  login: "Logged in",
+  login_failed: "Login failed",
+  logout: "Logged out",
+  mark_paid: "Bill paid",
+  cancel: "Order cancelled",
+  credit_note: "Credit note issued",
+  set_discount: "Discount changed",
+  update_qty: "Line quantity changed",
+  void: "Line voided",
+};
+
+// IRD: Electronic Billing Procedure 2082, clause 6.3ग — the User Activity
+// Log must be viewable and filterable from the front-end. Owner/Manager
+// only (matches the backend's role gate on GET /restro/audit-log).
+function AuditLogCard() {
+  const [entries, setEntries] = useState<AuditLogEntryDto[] | null>(null);
+  const [meta, setMeta] = useState<PageMeta | null>(null);
+  const [entityType, setEntityType] = useState("");
+  const [action, setAction] = useState("");
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    auditLogApi
+      .list({
+        entity_type: entityType || undefined,
+        action: action || undefined,
+        q: q || undefined,
+        page,
+        per_page: 25,
+      })
+      .then((res) => {
+        if (res.success) {
+          setEntries(res.data ?? []);
+          setMeta(res.meta ?? null);
+        }
+      })
+      .catch(() => {
+        // Non-fatal — the rest of Settings still renders.
+      });
+  }, [entityType, action, q, page]);
+
+  const totalPages = meta?.total_pages ?? 1;
+
+  return (
+    <div className="pos-card p-5 xl:col-span-2">
+      <h2 className="font-display text-xl">User Activity Log</h2>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Every login, bill, discount, cancellation, and credit note is recorded here permanently —
+        this list can be filtered but nothing in it can be edited or removed (IRD requirement).
+      </p>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <select
+          value={entityType}
+          onChange={(e) => {
+            setEntityType(e.target.value);
+            setPage(1);
+          }}
+          className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+        >
+          <option value="">All types</option>
+          <option value="order">Orders</option>
+          <option value="order_line">Order lines</option>
+          <option value="credential">Logins</option>
+        </select>
+        <select
+          value={action}
+          onChange={(e) => {
+            setAction(e.target.value);
+            setPage(1);
+          }}
+          className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+        >
+          <option value="">All actions</option>
+          {Object.entries(AUDIT_ACTION_LABELS).map(([k, label]) => (
+            <option key={k} value={k}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <Input
+          value={q}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setPage(1);
+          }}
+          placeholder="Search bill #, staff, reason…"
+          className="h-8 max-w-[220px] text-xs"
+        />
+      </div>
+
+      {entries === null ? (
+        <p className="mt-3 text-xs text-muted-foreground">Loading…</p>
+      ) : entries.length === 0 ? (
+        <p className="mt-3 text-xs text-muted-foreground">No activity matches this filter.</p>
+      ) : (
+        <>
+          <table className="mt-3 w-full text-xs">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="py-1 text-left font-medium">When</th>
+                <th className="py-1 text-left font-medium">Action</th>
+                <th className="py-1 text-left font-medium">Document / Entity</th>
+                <th className="py-1 text-left font-medium">Reason</th>
+                <th className="py-1 text-left font-medium">IP</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr key={e.id} className="border-t border-border/60">
+                  <td className="py-1.5 whitespace-nowrap">
+                    {new Date(e.created_at).toLocaleString()}
+                  </td>
+                  <td className="py-1.5">{AUDIT_ACTION_LABELS[e.action] ?? e.action}</td>
+                  <td className="py-1.5">
+                    {(e.after_state?.bill_number as number | undefined) !== undefined
+                      ? `Bill #${e.after_state?.bill_number}`
+                      : ((e.after_state?.username as string | undefined) ??
+                        `${e.entity_type} · ${e.entity_id.slice(0, 8)}`)}
+                  </td>
+                  <td className="py-1.5">{e.reason ?? "—"}</td>
+                  <td className="py-1.5">{e.terminal_ip ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {meta && totalPages > 1 && (
+            <div className="mt-3 flex items-center justify-end gap-2 text-xs">
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-8"
+                aria-label="Previous page"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <span className="min-w-[70px] text-center text-muted-foreground">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-8"
+                aria-label="Next page"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

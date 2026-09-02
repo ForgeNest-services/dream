@@ -8,6 +8,10 @@ class BranchData(BaseModel):
     id: str
     tenant_id: str
     name: str
+    # IRD: Electronic Billing Procedure 2082, clause 6.2ग — identifies this
+    # outlet in printed bill numbers once a tenant has 2+ branches. Unique
+    # per tenant, auto-derived from the name on creation, editable after.
+    code: str
     address: str | None
     city: str | None
     phone: str | None
@@ -35,6 +39,10 @@ class TenantInfoData(BaseModel):
 
 class CreateBranchRequest(BaseModel):
     name: str
+    # Optional — auto-derived from `name` if omitted (see
+    # BranchService.derive_unique_code). Owner can override at creation or
+    # edit it later via UpdateBranchRequest.
+    code: str | None = None
     address: str | None = None
     city: str | None = None
     phone: str | None = None
@@ -42,6 +50,7 @@ class CreateBranchRequest(BaseModel):
 
 class UpdateBranchRequest(BaseModel):
     name: str | None = None
+    code: str | None = None
     address: str | None = None
     city: str | None = None
     phone: str | None = None

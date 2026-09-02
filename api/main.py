@@ -26,6 +26,9 @@ from core.seed import (
     ensure_ird_schema,
     ensure_org_tax_settings_schema,
     ensure_app_role,
+    ensure_branch_code_schema,
+    ensure_restro_bill_code_schema,
+    ensure_restro_immutability_trigger,
 )
 from core.storage import ensure_bucket
 import shared_models
@@ -51,6 +54,30 @@ async def lifespan(app: FastAPI):
         logger.info("Database tables initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize database tables: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Backfilling branch code schema...")
+        ensure_branch_code_schema()
+        logger.info("Branch code schema backfill completed")
+    except Exception as e:
+        logger.error(f"Failed to backfill branch code schema: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Backfilling restro bill_code schema...")
+        ensure_restro_bill_code_schema()
+        logger.info("restro bill_code schema backfill completed")
+    except Exception as e:
+        logger.error(f"Failed to backfill restro bill_code schema: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Ensuring restro immutability triggers (IRD)...")
+        ensure_restro_immutability_trigger()
+        logger.info("restro immutability triggers ready")
+    except Exception as e:
+        logger.error(f"Failed to ensure restro immutability triggers: {type(e).__name__}: {str(e)}")
         raise
 
     try:

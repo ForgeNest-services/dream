@@ -66,6 +66,7 @@ from features.restro.schemas import (
     CreateExpenseRequest,
     UpdateExpenseRequest,
     RMSCreditNoteRequest,
+    AuditLogEntryData,
 )
 from shared_models import Tenant
 from features.restro.service import RestroCredentialService, RestroAuthService
@@ -74,6 +75,7 @@ from features.restro.menu_item_service import MenuItemService
 from features.restro.zone_service import ZoneService
 from features.restro.table_service import TableService
 from features.restro.order_service import OrderService
+from features.hotel_pms.audit_repository import AuditRepository
 from features.restro.order_repository import OrderRepository
 from features.restro.inventory_service import InventoryService
 from features.restro.employee_service import EmployeeService
@@ -333,6 +335,12 @@ def staff_login(data: StaffLoginRequest, request: Request, db: Session = Depends
     result = RestroAuthService.login(db, data.username, data.password, terminal_ip=_client_ip(request))
 
     if not result["success"]:
+        if result["error_code"] == "SUBSCRIPTION_EXPIRED":
+            return error_response(
+                "SUBSCRIPTION_EXPIRED",
+                "This business's RMS subscription has expired. Contact the business owner.",
+                402,
+            )
         return error_response(
             "INVALID_CREDENTIALS",
             "Incorrect username or password.",
@@ -2509,6 +2517,7 @@ def customer_history(
         CustomerOrderEntry(
             id=o.id,
             bill_number=o.bill_number,
+            bill_code=o.bill_code,
             type=o.type,
             status=o.status,
             payment_method=o.payment_method,
@@ -2894,6 +2903,45 @@ def export_restro_monthly_vat_summary(
     ]
     tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
     return _restro_export_response(format, "Monthly VAT Summary", columns, rows, _restro_business_header_lines(tenant))
+
+
+# ---------------------------------------------------------------------------
+# Audit log — IRD: Electronic Billing Procedure 2082, clause 6.3ग requires
+# the User Activity Log be viewable/filterable via the front-end. Owner/
+# Manager only (same gating as reports/CBMS sync) — front-line staff don't
+# get to see who did what.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/audit-log")
+def list_restro_audit_log(
+    entity_type: str | None = None,
+    action: str | None = None,
+    performed_by: str | None = None,
+    q: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can view the activity log")
+    paging = parse_paging(page, per_page)
+    rows, total = AuditRepository.list_for_app(
+        db,
+        tenant_id=staff["tenant_id"],
+        app_code="restro",
+        entity_type=entity_type,
+        action=action,
+        performed_by=performed_by,
+        q=q,
+        offset=paging["offset"],
+        limit=paging["limit"],
+    )
+    return success_response(
+        data=[AuditLogEntryData.model_validate(r).model_dump(mode="json") for r in rows],
+        meta=build_meta(total, paging["page"], paging["per_page"]),
+    )
 
 
 @router.get("/public/branches/{branch_id}/menu")

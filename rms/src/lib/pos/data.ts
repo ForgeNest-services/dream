@@ -118,6 +118,11 @@ export type Order = {
   // Sequential per-branch number for receipts and searches. Populated by
   // the server on create — always > 0.
   billNumber: number;
+  // IRD: Electronic Billing Procedure 2082, clause 6.2ग — the actual
+  // printed/displayed bill number, e.g. "RMS-KTM-83/84-00005". Use this on
+  // receipts/KOT, not the plain billNumber above (which stays internal —
+  // search/sort still key off it). Undefined only for a pre-migration row.
+  billCode?: string;
   tableId: string;
   type: "dine-in" | "delivery";
   // Present when customer_id is set on the order — always for delivery,

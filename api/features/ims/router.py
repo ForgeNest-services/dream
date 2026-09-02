@@ -106,6 +106,12 @@ def staff_login(data: StaffLoginRequest, request: Request, db: Session = Depends
     result = IMSAuthService.login(db, data.username, data.password, terminal_ip=_client_ip(request))
 
     if not result["success"]:
+        if result["error_code"] == "SUBSCRIPTION_EXPIRED":
+            return error_response(
+                "SUBSCRIPTION_EXPIRED",
+                "This business's IMS subscription has expired. Contact the business owner.",
+                402,
+            )
         return error_response(
             "INVALID_CREDENTIALS",
             "Incorrect username or password.",

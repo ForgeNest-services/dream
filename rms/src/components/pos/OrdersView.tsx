@@ -231,6 +231,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
     waiter: o.waiter_name,
     ...(o.kind ? { kind: o.kind } : {}),
     ...(o.buyer_pan ? { buyerPan: o.buyer_pan } : {}),
+    ...(o.bill_code ? { billCode: o.bill_code } : {}),
   });
 
   const clearFilters = () => {
@@ -327,7 +328,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
               const mapped = toOrder(o);
               return (
                 <tr key={o.id} className="border-b border-border/70">
-                  <td className="py-3 pr-3">#{o.bill_number}</td>
+                  <td className="py-3 pr-3">{o.bill_code ?? `#${o.bill_number}`}</td>
                   <td className="py-3 pr-3">{label(o)}</td>
                   <td className="py-3 pr-3 text-muted-foreground">
                     {formatDateWithStoredBs(parseApiDate(o.placed_at) ?? 0, o.placed_at_bs)}
