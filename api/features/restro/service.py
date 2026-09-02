@@ -5,6 +5,7 @@ from features.restro.repository import RestroCredentialRepository
 from features.branches.repository import BranchRepository
 from features.restro.auth import issue_staff_token
 from features.restro.roles import RestroRole
+from features.hotel_pms.audit_repository import AuditRepository
 from utils.logger import logger
 
 BRANCH_SCOPED_ROLES = {RestroRole.MANAGER.value, RestroRole.WAITER.value, RestroRole.CHEF.value}
@@ -117,15 +118,50 @@ class RestroCredentialService:
 
 class RestroAuthService:
     @staticmethod
-    def login(db: Session, username: str, password: str) -> dict:
+    def login(db: Session, username: str, password: str, terminal_ip: str | None = None) -> dict:
         cred = RestroCredentialRepository.get_by_username(db, username)
         if not cred:
             logger.warning(f"Restro login failed: unknown username '{username}'")
             return {"success": False, "error_code": "INVALID_CREDENTIALS"}
 
         if not verify_password(password, cred.password_hash):
+            # IRD: Electronic Billing Procedure 2082, clause 6.3ख — all user
+            # activity, not just successful logins, belongs in the activity
+            # log. tenant_id is known even on a bad password (username
+            # resolved), so this is attributable, unlike an unknown username.
+            AuditRepository.write(
+                db,
+                tenant_id=cred.tenant_id,
+                app_code="restro",
+                entity_type="credential",
+                entity_id=cred.id,
+                action="login_failed",
+                performed_by=cred.id,
+                performer_type="staff",
+                after_state={"username": username},
+                terminal_ip=terminal_ip,
+            )
+            db.commit()
             logger.warning(f"Restro login failed: bad password for '{username}'")
             return {"success": False, "error_code": "INVALID_CREDENTIALS"}
+
+        from features.subscriptions.service import SubscriptionService
+        if not SubscriptionService.is_accessible(db, cred.tenant_id, "srota_rms"):
+            AuditRepository.write(
+                db,
+                tenant_id=cred.tenant_id,
+                app_code="restro",
+                entity_type="credential",
+                entity_id=cred.id,
+                action="login_blocked",
+                performed_by=cred.id,
+                performer_type="staff",
+                after_state={"username": username, "reason": "subscription_expired"},
+                terminal_ip=terminal_ip,
+            )
+            db.commit()
+            logger.warning(f"Restro login blocked (subscription expired): {username}")
+            return {"success": False, "error_code": "SUBSCRIPTION_EXPIRED"}
 
         token, expires_at = issue_staff_token(
             tenant_id=cred.tenant_id,
@@ -133,6 +169,19 @@ class RestroAuthService:
             cred_id=cred.id,
             branch_id=cred.branch_id,
         )
+        AuditRepository.write(
+            db,
+            tenant_id=cred.tenant_id,
+            app_code="restro",
+            entity_type="credential",
+            entity_id=cred.id,
+            action="login",
+            performed_by=cred.id,
+            performer_type="staff",
+            after_state={"username": username, "role": cred.role, "branch_id": cred.branch_id},
+            terminal_ip=terminal_ip,
+        )
+        db.commit()
         logger.info(f"Restro staff login: {username} (role={cred.role})")
         return {
             "success": True,
@@ -142,3 +191,21 @@ class RestroAuthService:
             "branch_id": cred.branch_id,
             "expires_at": expires_at,
         }
+
+    @staticmethod
+    def logout(db: Session, tenant_id: str, cred_id: str, terminal_ip: str | None = None) -> None:
+        """No server-side session to invalidate (stateless 8h JWTs, no
+        refresh — see CLAUDE.md §2.6) — this exists purely so the activity
+        log has a real logout event, not just an inferred token-expiry gap."""
+        AuditRepository.write(
+            db,
+            tenant_id=tenant_id,
+            app_code="restro",
+            entity_type="credential",
+            entity_id=cred_id,
+            action="logout",
+            performed_by=cred_id,
+            performer_type="staff",
+            terminal_ip=terminal_ip,
+        )
+        db.commit()

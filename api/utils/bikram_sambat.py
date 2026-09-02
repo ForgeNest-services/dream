@@ -160,13 +160,26 @@ def next_fiscal_year_start_ad(fy: str) -> date | None:
     return bs_iso_to_ad(f"{next_bs_year:04d}-04-01")
 
 
-def format_invoice_number(series: str, fy: str, serial: int) -> str:
+def format_invoice_number(series: str, fy: str, serial: int, branch_code: str | None = None) -> str:
     """Build an IRD-compliant invoice number.
 
+    branch_code (Branch.code) is required by the Electronic Billing
+    Procedure 2082, clause 6.2ग once a tenant issues bills from more than
+    one location — the code identifies which outlet issued the bill.
+    Included whenever available (not just when the tenant currently has
+    2+ branches — a tenant that adds a second branch later must not have
+    its EARLIER bills silently look like they came from a different
+    numbering scheme than its later ones).
+
     >>> format_invoice_number("INV", "2081-82", 1)  -> 'INV-81/82-00001'
-    >>> format_invoice_number("CN",  "2081-82", 3)  -> 'CN-81/82-00003'
+    >>> format_invoice_number("INV", "2081-82", 1, "KTM")  -> 'INV-KTM-81/82-00001'
+    >>> format_invoice_number("CN",  "2081-82", 3, "KTM")  -> 'CN-KTM-81/82-00003'
     """
-    return f"{series}-{fiscal_year_prefix(fy)}-{serial:05d}"
+    parts = [series]
+    if branch_code:
+        parts.append(branch_code)
+    parts.append(fiscal_year_prefix(fy))
+    return f"{'-'.join(parts)}-{serial:05d}"
 
 
 def format_bs_pretty(g_or_dt: date | datetime | None) -> str:

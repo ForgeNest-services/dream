@@ -20,20 +20,47 @@ class BranchSettingsService:
         first read — the frontend never has to know whether a row exists."""
         if not BranchSettingsService._assert_branch(db, tenant_id, branch_id):
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
+        tenant = TenantRepository.get_by_id(db, tenant_id)
+        tenant_is_vat_registered = bool(tenant and tenant.is_vat_registered)
+
         settings = BranchSettingsRepository.get(db, tenant_id, branch_id)
         if not settings:
             # VAT can only ever start on for a tenant that's actually
             # VAT-registered. A tenant that registers for VAT later gets a
-            # settings row here first (PAN-only), then flips vat_enabled on
-            # themselves via Settings once they are.
-            tenant = TenantRepository.get_by_id(db, tenant_id)
-            vat_enabled = bool(tenant and tenant.is_vat_registered)
+            # settings row here first (PAN-only), then this same sync logic
+            # (below) flips vat_enabled back on automatically once they are.
             settings = BranchSettingsRepository.create_default(
-                db, tenant_id, branch_id, vat_enabled=vat_enabled
+                db, tenant_id, branch_id, vat_enabled=tenant_is_vat_registered
             )
             logger.info(
                 f"Auto-provisioned default settings for branch {branch_id}",
-                extra={"tenant_id": tenant_id, "branch_id": branch_id, "vat_enabled": vat_enabled},
+                extra={
+                    "tenant_id": tenant_id,
+                    "branch_id": branch_id,
+                    "vat_enabled": tenant_is_vat_registered,
+                },
+            )
+            return {"success": True, "settings": settings}
+
+        # Keep vat_enabled in sync with the tenant's actual registration
+        # status in both directions — same fix as IMSBranchSettingsService.
+        # VAT->PAN: auto-disable so a stale enabled flag doesn't outlive the
+        # registration that justified it. PAN->VAT: auto-re-enable, so a
+        # tenant who re-registers for VAT (after a prior VAT->PAN switch
+        # forced this off) gets VAT back on orders without a manual Settings
+        # toggle — vat_enabled has no independent "chose to stay exempt
+        # while registered" meaning, it's purely derived state here.
+        if settings.vat_enabled and not tenant_is_vat_registered:
+            settings = BranchSettingsRepository.update(db, settings, vat_enabled=False)
+            logger.info(
+                f"Auto-disabled VAT for branch {branch_id} — tenant is no longer VAT-registered",
+                extra={"tenant_id": tenant_id},
+            )
+        elif not settings.vat_enabled and tenant_is_vat_registered:
+            settings = BranchSettingsRepository.update(db, settings, vat_enabled=True)
+            logger.info(
+                f"Auto-enabled VAT for branch {branch_id} — tenant is VAT-registered again",
+                extra={"tenant_id": tenant_id},
             )
         return {"success": True, "settings": settings}
 

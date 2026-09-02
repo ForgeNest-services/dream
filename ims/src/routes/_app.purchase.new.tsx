@@ -10,6 +10,7 @@ import { CustomerDialog } from "@/components/parties/party-dialogs";
 import { PartyCombobox } from "@/components/parties/party-combobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DecimalTextInput } from "@/components/inventory/numeric-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -350,11 +351,10 @@ function NewPurchasePage() {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <Label className="text-xs">Paid now</Label>
-                    <Input
-                      type="number"
+                    <DecimalTextInput
                       value={paidAmount}
-                      onChange={(e) => setPaidAmount(Number(e.target.value) || 0)}
-                      className="num text-right"
+                      onChange={setPaidAmount}
+                      className="text-right"
                     />
                   </div>
                   <div className="space-y-1">

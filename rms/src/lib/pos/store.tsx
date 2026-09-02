@@ -10,6 +10,7 @@ import {
 import { toast } from "sonner";
 import { authStorage, type StoredSession } from "./auth-storage";
 import { authApi } from "../auth-api";
+import { ApiError } from "../api-client";
 import { branchesApi, type BranchDto } from "../branches-api";
 import { categoriesApi } from "../categories-api";
 import { menuItemsApi, type MenuItemDto } from "../menu-items-api";
@@ -32,6 +33,7 @@ import { expensesApi, type ExpenseDto } from "../expenses-api";
 import { uploadsApi } from "../uploads-api";
 import { parseApiDate } from "./nepali-date";
 import {
+  round2,
   type Category,
   type Customer,
   type DeliveryStatus,
@@ -134,6 +136,10 @@ function toOrder(o: OrderDto): Order {
     };
   }
   if (o.delivery_status) order.deliveryStatus = o.delivery_status;
+  if (o.kind === "tax" || o.kind === "abbreviated") order.kind = o.kind;
+  if (o.buyer_pan) order.buyerPan = o.buyer_pan;
+  if (o.slip_numbers) order.slipNumbers = o.slip_numbers;
+  if (o.bill_code) order.billCode = o.bill_code;
   return order;
 }
 
@@ -218,8 +224,14 @@ export function toMenuItem(m: MenuItemDto): MenuItem {
     ...(m.image_url ? { image: m.image_url } : {}),
     hasVariants: m.has_variants,
     isCombo: m.is_combo,
-    ...(m.price !== null ? { price: m.price } : {}),
-    variants: m.variants.map((v) => ({ id: v.id, name: v.name, price: v.price })),
+    // price is a Decimal column server-side — serializes as a JSON string
+    // ("100.00"), not a number, despite the DTO type saying otherwise.
+    // Number.isFinite() (used by DecimalTextInput's initial-render check)
+    // rejects strings outright rather than coercing them, so an uncoerced
+    // string silently rendered as a blank input — coerce here, once, at the
+    // DTO boundary, same as line.price below.
+    ...(m.price !== null ? { price: Number(m.price) } : {}),
+    variants: m.variants.map((v) => ({ id: v.id, name: v.name, price: Number(v.price) })),
     components: (m.components ?? []).map((c) => ({
       id: c.id,
       childMenuItemId: c.child_menu_item_id,
@@ -231,7 +243,7 @@ export function toMenuItem(m: MenuItemDto): MenuItem {
   };
 }
 
-type LoginResult = { ok: true } | { ok: false; message: string };
+type LoginResult = { ok: true } | { ok: false; message: string; code?: string };
 
 type Ctx = {
   session: StoredSession | null;
@@ -329,6 +341,8 @@ type Ctx = {
     orderId: string,
     method: "cash" | "qr" | "khata",
     customerId?: string,
+    buyerPan?: string,
+    showVatBreakdown?: boolean,
   ) => Promise<void>;
   setKitchenStatus: (orderId: string, status: KitchenStatus) => Promise<void>;
 
@@ -575,7 +589,9 @@ export function PosProvider({ children }: { children: ReactNode }) {
     try {
       const response = await authApi.login(username, password);
       const data = response.data;
-      if (!data) return { ok: false, message: "Empty response from server" };
+      if (!data) {
+        return { ok: false, message: response.error?.message ?? "Empty response from server", code: response.error?.code };
+      }
       const stored: StoredSession = {
         token: data.token,
         role: data.role as Role,
@@ -589,12 +605,17 @@ export function PosProvider({ children }: { children: ReactNode }) {
       setViewAsRoleState(null);
       return { ok: true };
     } catch (err) {
+      if (err instanceof ApiError) return { ok: false, message: err.message, code: err.code };
       const message = err instanceof Error ? err.message : "Login failed";
       return { ok: false, message };
     }
   }, []);
 
   const logout = useCallback(() => {
+    // IRD: fire-and-forget — records the logout event server-side (clause
+    // 6.3ख). Called before clearing local state since the endpoint is
+    // authenticated; a failure here shouldn't block the actual logout.
+    void authApi.logout().catch(() => {});
     authStorage.writeSession(null);
     setSessionState(null);
     setViewAsRoleState(null);
@@ -1312,11 +1333,18 @@ export function PosProvider({ children }: { children: ReactNode }) {
         toast.error(err instanceof Error ? err.message : "Failed to attach customer");
       }
     },
-    markPaid: async (orderId, method, customerId) => {
+    markPaid: async (orderId, method, customerId, buyerPan, showVatBreakdown) => {
       if (!branchId) return;
       try {
         const current = orders.find((o) => o.id === orderId);
-        const response = await ordersApi.markPaid(branchId, orderId, method, customerId);
+        const response = await ordersApi.markPaid(
+          branchId,
+          orderId,
+          method,
+          customerId,
+          buyerPan,
+          showVatBreakdown,
+        );
         if (response.data) {
           const updated = toOrder(response.data);
           setOrders((p) => p.map((o) => (o.id === updated.id ? updated : o)));
@@ -1634,26 +1662,32 @@ export function usePos() {
   return ctx;
 }
 
-export function useBillTotals(order: Order | undefined, vatEnabled: boolean, vatRate: number) {
-  return useMemo(() => {
-    const subtotal = order?.lines.reduce((s, l) => s + l.price * l.qty, 0) ?? 0;
-    const discount =
-      order?.discountType === "percent"
-        ? (subtotal * (order?.discountValue ?? 0)) / 100
-        : (order?.discountValue ?? 0);
-    const taxable = Math.max(0, subtotal - discount);
-    const vat = vatEnabled ? (taxable * vatRate) / 100 : 0;
-    return { subtotal, discount, vat, total: taxable + vat };
-  }, [order, vatEnabled, vatRate]);
-}
-
-export function billTotals(order: Order | undefined, vatEnabled: boolean, vatRate: number) {
+/** line.price (and MenuItem/Variant.price it's snapshotted from) is stored
+ *  VAT-INCLUSIVE — what the customer actually pays per unit. Discount is a
+ *  cut off that inclusive subtotal (a coupon/offer reduces what the
+ *  customer pays, VAT included, not the pre-VAT taxable amount). VAT is
+ *  then backed OUT of what remains, not added on top — the bill's "Total"
+ *  always equals subtotal - discount; taxable/vat are just that same
+ *  number's breakdown for the printed VAT line. */
+function computeBillTotals(order: Order | undefined, vatEnabled: boolean, vatRate: number) {
   const subtotal = order?.lines.reduce((s, l) => s + l.price * l.qty, 0) ?? 0;
   const discount =
     order?.discountType === "percent"
       ? (subtotal * (order?.discountValue ?? 0)) / 100
       : (order?.discountValue ?? 0);
-  const taxable = Math.max(0, subtotal - discount);
-  const vat = vatEnabled ? (taxable * vatRate) / 100 : 0;
-  return { subtotal, discount, vat, total: taxable + vat };
+  const total = Math.max(0, subtotal - discount);
+  const taxable = vatEnabled ? round2(total / (1 + vatRate / 100)) : total;
+  const vat = vatEnabled ? round2(total - taxable) : 0;
+  return { subtotal, discount, taxable, vat, total };
+}
+
+export function useBillTotals(order: Order | undefined, vatEnabled: boolean, vatRate: number) {
+  return useMemo(
+    () => computeBillTotals(order, vatEnabled, vatRate),
+    [order, vatEnabled, vatRate],
+  );
+}
+
+export function billTotals(order: Order | undefined, vatEnabled: boolean, vatRate: number) {
+  return computeBillTotals(order, vatEnabled, vatRate);
 }

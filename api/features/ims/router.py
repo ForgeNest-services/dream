@@ -1,5 +1,6 @@
 from decimal import Decimal
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File, Form, Response
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Response
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_ims_staff
@@ -31,6 +32,7 @@ from features.ims.schemas import (
     UpdatePartyRequest,
     LedgerEntryData,
     RecordPaymentRequest,
+    RecordInvoicePaymentRequest,
     PurchaseData,
     CreatePurchaseRequest,
     CostHistoryEntry,
@@ -38,15 +40,19 @@ from features.ims.schemas import (
     CreateInvoiceRequest,
     ConvertQuotationRequest,
     IMSCreditNoteRequest,
-    IMSCbmsCredentialRequest,
     BranchSettingsData,
     UpdateBranchSettingsRequest,
     StockSummaryRow,
     MarginRow,
     PartyStatementRow,
     DashboardData,
+    AuditLogEntryData,
 )
-from features.ims.cbms_service import CBMSService, sync_invoice_background, sync_credit_note_background
+from rq import Retry
+from core.queue import job_queue
+from jobs.cbms_jobs import sync_document_job
+from features.cbms.credential_service import CBMSCredentialRepository
+from features.ims.cbms_service import build_cbms_payload
 from features.ims.service import IMSCredentialService, IMSAuthService
 from features.ims.category_service import IMSCategoryService
 from features.ims.brand_service import IMSBrandService
@@ -66,8 +72,9 @@ from features.ims.category_repository import IMSCategoryRepository
 from features.ims.unit_repository import IMSUnitRepository
 from features.ims.invoice_repository import IMSInvoiceRepository
 from features.ims.purchase_repository import IMSPurchaseRepository
-from features.ims.reports_export import build_xlsx, build_pdf
+from utils.reports_export import build_xlsx, build_pdf
 from features.auth.repository import TenantRepository
+from features.hotel_pms.audit_repository import AuditRepository
 from utils.bikram_sambat import to_bs_iso
 
 
@@ -82,15 +89,29 @@ def _assert_branch_scope(staff: dict, branch_id: str) -> None:
         raise HTTPException(403, "Not allowed for this branch")
 
 
+def _client_ip(request: Request) -> str | None:
+    """Best-effort real client IP for the audit trail — prefers the
+    original caller from X-Forwarded-For (set by nginx/whatever's in front)
+    over the direct TCP peer, which behind a proxy is just the proxy itself."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    return forwarded.split(",")[0].strip() if forwarded else getattr(request.client, "host", None)
+
+
 # ---------------------------------------------------------------------------
 # Staff-facing (public) - login from ims.dream.com
 # ---------------------------------------------------------------------------
 
 @router.post("/auth/login")
-def staff_login(data: StaffLoginRequest, db: Session = Depends(get_db)):
-    result = IMSAuthService.login(db, data.username, data.password)
+def staff_login(data: StaffLoginRequest, request: Request, db: Session = Depends(get_db)):
+    result = IMSAuthService.login(db, data.username, data.password, terminal_ip=_client_ip(request))
 
     if not result["success"]:
+        if result["error_code"] == "SUBSCRIPTION_EXPIRED":
+            return error_response(
+                "SUBSCRIPTION_EXPIRED",
+                "This business's IMS subscription has expired. Contact the business owner.",
+                402,
+            )
         return error_response(
             "INVALID_CREDENTIALS",
             "Incorrect username or password.",
@@ -107,6 +128,19 @@ def staff_login(data: StaffLoginRequest, db: Session = Depends(get_db)):
         ).model_dump(mode="json"),
         message="Logged in",
     )
+
+
+@router.post("/auth/logout")
+def staff_logout(
+    request: Request,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    # IRD: Electronic Billing Procedure 2082, clause 6.3ख — no server-side
+    # session to invalidate (stateless JWT, see CLAUDE.md §2.6), this just
+    # records the event so the activity log has a real logout entry.
+    IMSAuthService.logout(db, staff["tenant_id"], staff["cred_id"], terminal_ip=_client_ip(request))
+    return success_response(message="Logged out")
 
 
 # ---------------------------------------------------------------------------
@@ -1164,8 +1198,22 @@ _INVOICE_ERROR_MAP = {
     "CONVERSION_FAILED": ("CONVERSION_FAILED", "Failed to convert quotation.", 500),
     "INSUFFICIENT_STOCK": ("INSUFFICIENT_STOCK", "Not enough stock for one or more items.", 409),
     "NOT_AN_INVOICE": ("NOT_AN_INVOICE", "Credit notes can only be issued against tax or abbreviated invoices.", 409),
+    "NOT_A_REGULAR_INVOICE": (
+        "NOT_A_REGULAR_INVOICE",
+        "Credit notes can only be issued against a regular tax or abbreviated invoice — not a quotation or an already-credited document.",
+        409,
+    ),
     "ALREADY_CREDIT_NOTE": ("ALREADY_CREDIT_NOTE", "This document is already a credit note.", 409),
     "CN_FAILED": ("CN_FAILED", "Failed to issue credit note.", 500),
+    "ABBREVIATED_INVOICE_LIMIT_EXCEEDED": (
+        "ABBREVIATED_INVOICE_LIMIT_EXCEEDED",
+        "Abbreviated invoices can't be issued above Rs 10,000 taxable value — switch to a full tax invoice.",
+        422,
+    ),
+    "QUOTATION_NOT_PAYABLE": ("QUOTATION_NOT_PAYABLE", "Quotations can't be paid — convert to a sale first.", 422),
+    "CREDIT_NOTE_NOT_PAYABLE": ("CREDIT_NOTE_NOT_PAYABLE", "Credit notes can't take a payment.", 422),
+    "INVALID_AMOUNT": ("INVALID_AMOUNT", "Enter a payment amount greater than zero.", 422),
+    "ALREADY_PAID": ("ALREADY_PAID", "This invoice is already fully paid.", 409),
 }
 
 
@@ -1230,10 +1278,23 @@ def get_invoice(
     return success_response(data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"))
 
 
+def _enqueue_cbms_sync(source_app: str, document_type: str, document_id: str, tenant_id: str) -> None:
+    """1min/5min/15min backoff — only actually used for the RETRY
+    classification (transient IRD errors); synced/manual outcomes complete
+    without RQ retrying at all. See jobs/cbms_jobs.py."""
+    job_queue.enqueue(
+        sync_document_job,
+        source_app,
+        document_type,
+        document_id,
+        tenant_id,
+        retry=Retry(max=3, interval=[60, 300, 900]),
+    )
+
+
 @router.post("/invoices")
 def create_invoice(
     request: Request,
-    background_tasks: BackgroundTasks,
     data: CreateInvoiceRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
@@ -1262,7 +1323,7 @@ def create_invoice(
     if not result["success"]:
         return _invoice_error(result)
     if result.get("invoice") and result["invoice"].kind in ("tax", "abbreviated"):
-        background_tasks.add_task(sync_invoice_background, result["invoice"].id, staff["tenant_id"])
+        _enqueue_cbms_sync("ims", "invoice", result["invoice"].id, staff["tenant_id"])
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation saved" if data.is_quotation else "Sale recorded",
@@ -1274,7 +1335,6 @@ def create_invoice(
 def convert_quotation(
     request: Request,
     invoice_id: str,
-    background_tasks: BackgroundTasks,
     data: ConvertQuotationRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
@@ -1298,7 +1358,7 @@ def convert_quotation(
     if not result["success"]:
         return _invoice_error(result)
     if result.get("invoice") and result["invoice"].kind in ("tax", "abbreviated"):
-        background_tasks.add_task(sync_invoice_background, result["invoice"].id, staff["tenant_id"])
+        _enqueue_cbms_sync("ims", "invoice", result["invoice"].id, staff["tenant_id"])
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation converted to invoice",
@@ -1309,7 +1369,6 @@ def convert_quotation(
 def issue_credit_note(
     request: Request,
     invoice_id: str,
-    background_tasks: BackgroundTasks,
     data: IMSCreditNoteRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
@@ -1331,16 +1390,58 @@ def issue_credit_note(
         return _invoice_error(result)
     cn = result["invoice"]
     if cn and cn.original_invoice_id:
-        background_tasks.add_task(
-            sync_credit_note_background,
-            cn.id,
-            cn.original_invoice_id,
-            staff["tenant_id"],
-        )
+        _enqueue_cbms_sync("ims", "credit_note", cn.id, staff["tenant_id"])
     return success_response(
         data=InvoiceData.model_validate(cn).model_dump(mode="json"),
         message="Credit note issued",
         status_code=201,
+    )
+
+
+@router.post("/invoices/{invoice_id}/register-print")
+def register_invoice_print(
+    invoice_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """Call right before actually printing/showing an issued invoice —
+    Electronic Billing Procedure 2082, clause 6.2(च): a reprint must be
+    watermarked "Copy of Original (N)". Returns whether this print should
+    carry that watermark."""
+    result = IMSInvoiceService.register_print(db, staff["tenant_id"], invoice_id, staff.get("cred_id"))
+    if not result["success"]:
+        return error_response(result["error_code"], "Invoice not found", 404)
+    return success_response(
+        data={
+            "is_reprint": result["is_reprint"],
+            "reprint_number": result["invoice"].reprint_number,
+        }
+    )
+
+
+@router.post("/invoices/{invoice_id}/record-payment")
+def record_invoice_payment(
+    invoice_id: str,
+    data: RecordInvoicePaymentRequest,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """Settle more of an invoice that was saved unpaid/partial at checkout.
+    Never edits line items or the original totals — only adds a payment on
+    top, same as create()'s own payment-received ledger entry."""
+    result = IMSInvoiceService.record_payment(
+        db,
+        tenant_id=staff["tenant_id"],
+        invoice_id=invoice_id,
+        amount=data.amount,
+        method=data.method,
+        performed_by=staff.get("cred_id"),
+    )
+    if not result["success"]:
+        return _invoice_error(result)
+    return success_response(
+        data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
+        message="Payment recorded",
     )
 
 
@@ -1350,15 +1451,20 @@ def get_cbms_payload(
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
 ):
+    """Preview-only — builds the payload without submitting it. Per the
+    checklist's self-test item: confirm field construction even without a
+    live submit. Password is masked in the response."""
     inv = IMSInvoiceRepository.get_by_id(db, staff["tenant_id"], invoice_id)
     if not inv:
         return error_response("NOT_FOUND", "Invoice not found", 404)
     if inv.kind not in ("tax", "abbreviated"):
         return error_response("NOT_AN_INVOICE", "Only tax/abbreviated invoices can be submitted to CBMS", 400)
-    result = CBMSService.get_payload(db, inv, staff["tenant_id"])
-    if not result["success"]:
-        return error_response(result["error_code"], "CBMS credentials not configured for this tenant", 400)
-    return success_response(data=result["payload"])
+    org = CBMSCredentialRepository.get(db, staff["tenant_id"])
+    if not org:
+        return error_response("CBMS_NOT_CONFIGURED", "CBMS sync not enabled for this tenant", 400)
+    payload = build_cbms_payload(inv, org)
+    payload["password"] = "••••••••"
+    return success_response(data=payload)
 
 
 @router.post("/invoices/{invoice_id}/cbms-sync")
@@ -1367,6 +1473,10 @@ def sync_to_cbms(
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
 ):
+    """Manual resync — runs the same job body inline (not enqueued) so the
+    caller gets an immediate result, matching the sync-status UI's
+    "Resync" button. Auto-sync on invoice/credit-note creation still goes
+    through the RQ queue via _enqueue_cbms_sync above."""
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only owner or manager can sync invoices to CBMS")
     inv = IMSInvoiceRepository.get_by_id(db, staff["tenant_id"], invoice_id)
@@ -1374,43 +1484,74 @@ def sync_to_cbms(
         return error_response("NOT_FOUND", "Invoice not found", 404)
     if inv.kind not in ("tax", "abbreviated"):
         return error_response("NOT_AN_INVOICE", "Only tax/abbreviated invoices can be submitted to CBMS", 400)
-    if inv.is_credit_note:
-        original = None
-        if inv.original_invoice_id:
-            original = IMSInvoiceRepository.get_by_id(db, inv.original_invoice_id, staff["tenant_id"])
-        result = CBMSService.sync_credit_note(db, inv, original, staff["tenant_id"])
-    else:
-        result = CBMSService.sync_invoice(db, inv, staff["tenant_id"])
-    if not result["success"]:
-        return error_response(result["error_code"], result.get("detail", "CBMS sync failed"), 400)
+    document_type = "credit_note" if inv.is_credit_note else "invoice"
+    try:
+        sync_document_job("ims", document_type, invoice_id, staff["tenant_id"])
+    except RuntimeError:
+        # Transient (retry-classified) failure — same outcome an RQ retry
+        # would eventually see; report it to the caller instead of retrying
+        # here, they can click Resync again.
+        return error_response("CBMS_SYNC_TRANSIENT", "CBMS sync failed, safe to retry", 400)
+    db.refresh(inv)
+    if not inv.cbms_synced:
+        return error_response("CBMS_SYNC_FAILED", "CBMS did not accept this document — check the sync log", 400)
     return success_response(data={"synced": True, "message": "Invoice submitted to IRD CBMS successfully"})
 
 
-@router.get("/cbms-credentials")
-def get_cbms_credentials(
+@router.get("/cbms-sync-log")
+def list_ims_cbms_sync_log(
+    status: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """App-scoped view of the shared CbmsSyncLog, filtered to source_app
+    'ims' — staff hold an app JWT, not the platform JWT the shared
+    /tax-settings/sync-log endpoint requires, so this is IMS's own
+    read/resync surface over the same underlying table."""
+    from features.cbms.sync_log import CbmsSyncLogRepository
+
+    paging = parse_paging(page, per_page)
+    items, total = CbmsSyncLogRepository.list_for_tenant(
+        db, staff["tenant_id"], "ims", status, paging["offset"], paging["limit"]
+    )
+    data = [
+        {
+            "id": r.id,
+            "document_type": r.document_type,
+            "document_id": r.document_id,
+            "document_number": r.document_number,
+            "status": r.status,
+            "cbms_response_code": r.cbms_response_code,
+            "attempt_count": r.attempt_count,
+            "last_attempted_at": r.last_attempted_at,
+            "synced_at": r.synced_at,
+        }
+        for r in items
+    ]
+    return success_response(data=data, meta=build_meta(total, paging["page"], paging["per_page"]))
+
+
+@router.post("/cbms-sync-log/{log_id}/resync")
+def resync_ims_document(
+    log_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
 ):
     if staff["role"] not in ("owner", "manager"):
-        raise HTTPException(403, "Only owner or manager can view CBMS credentials")
-    result = CBMSService.get_credentials(db, staff["tenant_id"])
-    if not result["success"] and result["error_code"] == "CBMS_NOT_CONFIGURED":
-        return success_response(data={"configured": False})
-    return success_response(data={"configured": True, **result.get("credentials", {})})
+        raise HTTPException(403, "Only owner or manager can resync CBMS documents")
+    from features.cbms.sync_log import CbmsSyncLogRepository
 
-
-@router.put("/cbms-credentials")
-def save_cbms_credentials(
-    body: IMSCbmsCredentialRequest,
-    staff: dict = Depends(require_ims_staff()),
-    db: Session = Depends(get_db),
-):
-    if staff["role"] != "owner":
-        raise HTTPException(403, "Only the owner can configure CBMS credentials")
-    result = CBMSService.save_credentials(db, staff["tenant_id"], body.ird_username, body.ird_password)
-    if not result["success"]:
-        return error_response(result["error_code"], "Failed to save CBMS credentials", 400)
-    return success_response(data={"saved": True})
+    row = CbmsSyncLogRepository.get_by_id(db, staff["tenant_id"], log_id)
+    if not row or row.source_app != "ims":
+        return error_response("NOT_FOUND", "Sync log entry not found", 404)
+    try:
+        sync_document_job("ims", row.document_type, row.document_id, staff["tenant_id"])
+    except RuntimeError:
+        return error_response("CBMS_SYNC_TRANSIENT", "CBMS sync failed, safe to retry", 400)
+    db.refresh(row)
+    return success_response(data={"status": row.status})
 
 
 # ---------------------------------------------------------------------------
@@ -1735,17 +1876,22 @@ def export_vat_register(
         None, bs_from, bs_to, 0, _EXPORT_LIMIT,
     )
     parties = {p.id: p for p in IMSPartyRepository.list_for_tenant(db, staff["tenant_id"], None, None, 0, _EXPORT_LIMIT)[0]}
-    columns = ["Invoice", "Date (BS)", "Buyer", "Buyer PAN", "Taxable", "VAT", "Total"]
+    # Standard VAT sales register layout — SN/Date/Invoice/Buyer/PAN/
+    # Taxable/VAT/Total (IRD Electronic Billing Procedure convention;
+    # cross-check against the exact prescribed Annexure format before a
+    # real submission — no authoritative template was available to build
+    # against directly, see docs/Srota_IRD_Compliance_Checklist.md).
+    columns = ["SN", "Date (BS)", "Invoice", "Buyer", "Buyer PAN", "Taxable", "VAT", "Total"]
     rows = [
         [
-            i.number, i.date_bs, parties.get(i.customer_id).name if i.customer_id in parties else "—",
+            idx, i.date_bs, i.number, parties.get(i.customer_id).name if i.customer_id in parties else "—",
             (parties.get(i.customer_id).pan if i.customer_id in parties else None) or "—",
             i.taxable_amount, i.vat_amount, i.total_amount,
         ]
-        for i in items
+        for idx, i in enumerate(items, start=1)
     ]
     tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
-    return _export_response(format, "VAT Sales Register", columns, rows, _business_header_lines(tenant))
+    return _export_response(format, "Sales Register", columns, rows, _business_header_lines(tenant))
 
 
 @router.get("/reports/purchases/export")
@@ -1762,17 +1908,149 @@ def export_purchase_report(
     items, _ = IMSPurchaseRepository.list_for_tenant(
         db, staff["tenant_id"], branch_id, None, fiscal_year_id, q, bs_from, bs_to, 0, _EXPORT_LIMIT,
     )
-    parties = {p.id: p.name for p in IMSPartyRepository.list_for_tenant(db, staff["tenant_id"], None, None, 0, _EXPORT_LIMIT)[0]}
-    columns = ["Bill", "Bill No.", "Date (BS)", "Supplier", "Items", "Items Total", "Bill Amount", "Paid"]
+    parties_full = {p.id: p for p in IMSPartyRepository.list_for_tenant(db, staff["tenant_id"], None, None, 0, _EXPORT_LIMIT)[0]}
+    # Standard VAT purchase register layout — SN/Date/Bill No/Supplier/PAN/
+    # Taxable/VAT/Total. VAT per purchase is the sum of its lines'
+    # vat_amount (purchase itself has no VAT breakdown column — only its
+    # lines do, see IMSPurchaseLine.vat_amount).
+    columns = ["SN", "Date (BS)", "Bill No.", "Supplier", "Supplier PAN", "Taxable", "VAT", "Total"]
+    rows = []
+    for idx, p in enumerate(items, start=1):
+        party = parties_full.get(p.party_id) if p.party_id else None
+        line_vat = sum((Decimal(str(line.vat_amount or 0)) for line in p.lines), Decimal("0"))
+        taxable = Decimal(str(p.items_total or 0)) - line_vat
+        rows.append([
+            idx, p.date_bs, p.bill_no or p.number, party.name if party else "Direct",
+            (party.pan if party else None) or "—", taxable, line_vat, p.bill_amount,
+        ])
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, "Purchase Register", columns, rows, _business_header_lines(tenant))
+
+
+@router.get("/reports/annexure-13/export")
+def export_annexure_13(
+    format: str,
+    branch_id: str | None = None,
+    fiscal_year_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """अनुसूची १३ (Annexure 13) — combined sales + purchase VAT summary IRD
+    expects alongside the monthly return. Built to the standard
+    output-VAT/input-VAT/net-payable structure; cross-check against IRD's
+    exact prescribed template before a real submission (no authoritative
+    layout doc was available — see docs/Srota_IRD_Compliance_Checklist.md)."""
+    invoices, _ = IMSInvoiceRepository.list_for_tenant(
+        db, staff["tenant_id"], branch_id, None, fiscal_year_id, None, None,
+        None, bs_from, bs_to, 0, _EXPORT_LIMIT,
+    )
+    purchases, _ = IMSPurchaseRepository.list_for_tenant(
+        db, staff["tenant_id"], branch_id, None, fiscal_year_id, None, bs_from, bs_to, 0, _EXPORT_LIMIT,
+    )
+    output_taxable = sum((Decimal(str(i.taxable_amount or 0)) for i in invoices), Decimal("0"))
+    output_vat = sum((Decimal(str(i.vat_amount or 0)) for i in invoices), Decimal("0"))
+    input_vat = Decimal("0")
+    input_taxable = Decimal("0")
+    for p in purchases:
+        line_vat = sum((Decimal(str(line.vat_amount or 0)) for line in p.lines), Decimal("0"))
+        input_vat += line_vat
+        input_taxable += Decimal(str(p.items_total or 0)) - line_vat
+    net_payable = output_vat - input_vat
+
+    columns = ["Particulars", "Taxable Amount", "VAT Amount"]
     rows = [
-        [
-            p.number, p.bill_no or "—", p.date_bs, parties.get(p.party_id, "Direct") if p.party_id else "Direct",
-            len(p.lines), p.items_total, p.bill_amount, p.paid_amount,
-        ]
-        for p in items
+        ["Output VAT (Sales)", output_taxable, output_vat],
+        ["Input VAT (Purchases)", input_taxable, input_vat],
+        ["Net VAT Payable / (Refundable)", output_taxable - input_taxable, net_payable],
     ]
     tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
-    return _export_response(format, "Purchase Report", columns, rows, _business_header_lines(tenant))
+    return _export_response(format, "Annexure 13", columns, rows, _business_header_lines(tenant))
+
+
+@router.get("/reports/monthly-vat-summary/export")
+def export_monthly_vat_summary(
+    format: str,
+    branch_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """मासिक (monthly) VAT summary return — one row per BS month in range,
+    output VAT (sales) minus input VAT (purchases) = net payable. Standard
+    monthly-return structure; cross-check against IRD's exact template
+    before a real submission."""
+    invoices, _ = IMSInvoiceRepository.list_for_tenant(
+        db, staff["tenant_id"], branch_id, None, None, None, None,
+        None, bs_from, bs_to, 0, _EXPORT_LIMIT,
+    )
+    purchases, _ = IMSPurchaseRepository.list_for_tenant(
+        db, staff["tenant_id"], branch_id, None, None, None, bs_from, bs_to, 0, _EXPORT_LIMIT,
+    )
+    by_month: dict[str, dict[str, Decimal]] = {}
+
+    def bucket(date_bs: str) -> dict[str, Decimal]:
+        month = date_bs[:7] if date_bs and len(date_bs) >= 7 else "—"
+        if month not in by_month:
+            by_month[month] = {"sales_taxable": Decimal("0"), "output_vat": Decimal("0"), "purchase_taxable": Decimal("0"), "input_vat": Decimal("0")}
+        return by_month[month]
+
+    for i in invoices:
+        b = bucket(i.date_bs)
+        b["sales_taxable"] += Decimal(str(i.taxable_amount or 0))
+        b["output_vat"] += Decimal(str(i.vat_amount or 0))
+    for p in purchases:
+        b = bucket(p.date_bs)
+        line_vat = sum((Decimal(str(line.vat_amount or 0)) for line in p.lines), Decimal("0"))
+        b["input_vat"] += line_vat
+        b["purchase_taxable"] += Decimal(str(p.items_total or 0)) - line_vat
+
+    columns = ["Month (BS)", "Sales Taxable", "Output VAT", "Purchase Taxable", "Input VAT", "Net Payable"]
+    rows = [
+        [
+            month, v["sales_taxable"], v["output_vat"], v["purchase_taxable"], v["input_vat"],
+            v["output_vat"] - v["input_vat"],
+        ]
+        for month, v in sorted(by_month.items())
+    ]
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, "Monthly VAT Summary", columns, rows, _business_header_lines(tenant))
+
+
+@router.get("/reports/tds/export")
+def export_tds_report(
+    format: str,
+    branch_id: str | None = None,
+    fiscal_year_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """TDS (Tax Deducted at Source) report on the purchase/supplier side.
+    IMS doesn't track a per-purchase TDS rate/amount yet (no such field
+    exists on IMSPurchase) — this report has the correct standard column
+    shape but TDS Amount is always 0 until that's tracked at purchase-entry
+    time. Flagged here rather than fabricated; a real submission needs that
+    field added first if TDS applies to this tenant's suppliers."""
+    purchases, _ = IMSPurchaseRepository.list_for_tenant(
+        db, staff["tenant_id"], branch_id, None, fiscal_year_id, None, bs_from, bs_to, 0, _EXPORT_LIMIT,
+    )
+    parties_full = {p.id: p for p in IMSPartyRepository.list_for_tenant(db, staff["tenant_id"], None, None, 0, _EXPORT_LIMIT)[0]}
+    columns = ["SN", "Date (BS)", "Bill No.", "Supplier", "Supplier PAN", "Bill Amount", "TDS Rate (%)", "TDS Amount"]
+    rows = [
+        [
+            idx, p.date_bs, p.bill_no or p.number,
+            (parties_full.get(p.party_id).name if p.party_id and p.party_id in parties_full else "Direct"),
+            (parties_full.get(p.party_id).pan if p.party_id and p.party_id in parties_full else None) or "—",
+            p.bill_amount, 0, 0,
+        ]
+        for idx, p in enumerate(purchases, start=1)
+    ]
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(format, "TDS Report", columns, rows, _business_header_lines(tenant))
 
 
 @router.get("/reports/stock-summary/export")
@@ -1906,3 +2184,46 @@ def get_dashboard(
     result = IMSDashboardService.get(db, staff["tenant_id"], branch_id, bs_from, bs_to)
     data = DashboardData(**{k: v for k, v in result.items() if k != "success"})
     return success_response(data=data.model_dump(mode="json"))
+
+
+# ---------------------------------------------------------------------------
+# Audit log — IRD: Electronic Billing Procedure 2082, clause 6.3ग requires
+# the User Activity Log be viewable/filterable via the front-end. Owner/
+# Manager only (same gating as CBMS sync / credit notes) — front-line
+# staff don't get to see who did what.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/audit-log")
+def list_audit_log(
+    entity_type: str | None = None,
+    action: str | None = None,
+    performed_by: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    q: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can view the activity log")
+    paging = parse_paging(page, per_page)
+    rows, total = AuditRepository.list_for_app(
+        db,
+        tenant_id=staff["tenant_id"],
+        app_code="ims",
+        entity_type=entity_type,
+        action=action,
+        performed_by=performed_by,
+        date_from=date_from,
+        date_to=date_to,
+        q=q,
+        offset=paging["offset"],
+        limit=paging["limit"],
+    )
+    return success_response(
+        data=[AuditLogEntryData.model_validate(r).model_dump(mode="json") for r in rows],
+        meta=build_meta(total, paging["page"], paging["per_page"]),
+    )

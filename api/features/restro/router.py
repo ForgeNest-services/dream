@@ -1,8 +1,13 @@
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+from rq import Retry
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_restro_staff
+from core.queue import job_queue
+from jobs.cbms_jobs import sync_document_job
+from features.cbms.credential_service import CBMSCredentialRepository
+from features.restro.cbms_service import build_cbms_payload
 from utils.helpers import success_response, error_response
 from utils.paging import parse_paging, build_meta
 from features.restro.schemas import (
@@ -61,6 +66,7 @@ from features.restro.schemas import (
     CreateExpenseRequest,
     UpdateExpenseRequest,
     RMSCreditNoteRequest,
+    AuditLogEntryData,
 )
 from shared_models import Tenant
 from features.restro.service import RestroCredentialService, RestroAuthService
@@ -69,6 +75,8 @@ from features.restro.menu_item_service import MenuItemService
 from features.restro.zone_service import ZoneService
 from features.restro.table_service import TableService
 from features.restro.order_service import OrderService
+from features.hotel_pms.audit_repository import AuditRepository
+from features.restro.order_repository import OrderRepository
 from features.restro.inventory_service import InventoryService
 from features.restro.employee_service import EmployeeService
 from features.restro.customer_service import CustomerService
@@ -323,10 +331,16 @@ def get_tenant_info(
 # ---------------------------------------------------------------------------
 
 @router.post("/auth/login")
-def staff_login(data: StaffLoginRequest, db: Session = Depends(get_db)):
-    result = RestroAuthService.login(db, data.username, data.password)
+def staff_login(data: StaffLoginRequest, request: Request, db: Session = Depends(get_db)):
+    result = RestroAuthService.login(db, data.username, data.password, terminal_ip=_client_ip(request))
 
     if not result["success"]:
+        if result["error_code"] == "SUBSCRIPTION_EXPIRED":
+            return error_response(
+                "SUBSCRIPTION_EXPIRED",
+                "This business's RMS subscription has expired. Contact the business owner.",
+                402,
+            )
         return error_response(
             "INVALID_CREDENTIALS",
             "Incorrect username or password.",
@@ -343,6 +357,19 @@ def staff_login(data: StaffLoginRequest, db: Session = Depends(get_db)):
         ).model_dump(mode="json"),
         message="Logged in",
     )
+
+
+@router.post("/auth/logout")
+def staff_logout(
+    request: Request,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    # IRD: Electronic Billing Procedure 2082, clause 6.3ख — no server-side
+    # session to invalidate (stateless JWT, see CLAUDE.md §2.6), this just
+    # records the event so the activity log has a real logout entry.
+    RestroAuthService.logout(db, staff["tenant_id"], staff["cred_id"], terminal_ip=_client_ip(request))
+    return success_response(message="Logged out")
 
 
 # ---------------------------------------------------------------------------
@@ -1317,6 +1344,11 @@ _ORDER_ERROR_MAP = {
     "CREATION_FAILED": ("CREATION_FAILED", "Failed to create order.", 500),
     "ORDER_NOT_PAID": ("ORDER_NOT_PAID", "Only paid orders can have a credit note issued.", 409),
     "ALREADY_CREDIT_NOTE": ("ALREADY_CREDIT_NOTE", "This order is already a credit note.", 409),
+    "ABBREVIATED_INVOICE_LIMIT_EXCEEDED": (
+        "ABBREVIATED_INVOICE_LIMIT_EXCEEDED",
+        "Abbreviated bills can't be issued above Rs 10,000 taxable value — switch to a full VAT bill.",
+        422,
+    ),
 }
 
 
@@ -1325,10 +1357,24 @@ def _order_error(code: str):
     return error_response(*mapped)
 
 
-def _order_payload(order) -> dict:
+def _order_payload(order, slip_numbers: list[int] | None = None) -> dict:
     """Serialize an Order (with lines relationship loaded) to the response
-    shape. Kept centralized so every endpoint returns identical structure."""
-    return OrderData.model_validate(order).model_dump(mode="json")
+    shape. Kept centralized so every endpoint returns identical structure.
+    `slip_numbers` (IRD: Electronic Billing Procedure 2082, clause 6.2घ) is
+    opt-in per call site — fetched only where actually consumed (single-order
+    fetch, send-to-kitchen) to avoid an N+1 query on list/board views."""
+    payload = OrderData.model_validate(order).model_dump(mode="json")
+    if slip_numbers is not None:
+        payload["slip_numbers"] = slip_numbers
+    return payload
+
+
+def _client_ip(request: Request) -> str | None:
+    """Best-effort real client IP for the audit trail — prefers the
+    original caller from X-Forwarded-For (set by nginx/whatever's in front)
+    over the direct TCP peer, which behind a proxy is just the proxy itself."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    return forwarded.split(",")[0].strip() if forwarded else getattr(request.client, "host", None)
 
 
 @router.get("/branches/{branch_id}/orders")
@@ -1437,7 +1483,8 @@ def get_order(
     result = OrderService.get(db, staff["tenant_id"], branch_id, order_id)
     if not result["success"]:
         return _order_error(result["error_code"])
-    return success_response(data=_order_payload(result["order"]))
+    slip_numbers = OrderRepository.get_slip_numbers(db, order_id)
+    return success_response(data=_order_payload(result["order"], slip_numbers))
 
 
 @router.post("/branches/{branch_id}/orders")
@@ -1508,6 +1555,7 @@ def update_order_line(
     order_id: str,
     line_id: str,
     data: UpdateOrderLineRequest,
+    request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
@@ -1520,6 +1568,8 @@ def update_order_line(
         line_id=line_id,
         qty=data.qty,
         note=data.note,
+        performed_by=staff.get("cred_id"),
+        terminal_ip=_client_ip(request),
     )
     if not result["success"]:
         return _order_error(result["error_code"])
@@ -1534,6 +1584,7 @@ def void_order_line(
     order_id: str,
     line_id: str,
     data: VoidOrderLineRequest,
+    request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
@@ -1545,6 +1596,8 @@ def void_order_line(
         order_id=order_id,
         line_id=line_id,
         reason=data.reason,
+        performed_by=staff.get("cred_id"),
+        terminal_ip=_client_ip(request),
     )
     if not result["success"]:
         return _order_error(result["error_code"])
@@ -1583,13 +1636,18 @@ def send_order_to_kitchen(
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.send_to_kitchen(
-        db, tenant_id=staff["tenant_id"], branch_id=branch_id, order_id=order_id
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        created_by=staff.get("cred_id"),
     )
     if not result["success"]:
         return _order_error(result["error_code"])
     order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    slip_numbers = OrderRepository.get_slip_numbers(db, order_id)
     return success_response(
-        data=_order_payload(order),
+        data=_order_payload(order, slip_numbers),
         message=f"Sent {result['marked']} line(s) to kitchen",
     )
 
@@ -1621,6 +1679,7 @@ def set_order_discount(
     branch_id: str,
     order_id: str,
     data: SetDiscountRequest,
+    request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
@@ -1632,6 +1691,8 @@ def set_order_discount(
         order_id=order_id,
         discount_type=data.discount_type,
         discount_value=data.discount_value,
+        performed_by=staff.get("cred_id"),
+        terminal_ip=_client_ip(request),
     )
     if not result["success"]:
         return _order_error(result["error_code"])
@@ -1661,6 +1722,19 @@ def set_order_customer(
     return success_response(data=_order_payload(order), message="Customer updated")
 
 
+def _enqueue_cbms_sync(document_type: str, document_id: str, tenant_id: str) -> None:
+    """1min/5min/15min backoff — see jobs/cbms_jobs.py; only the RETRY
+    classification (transient IRD errors) actually gets requeued."""
+    job_queue.enqueue(
+        sync_document_job,
+        "restro",
+        document_type,
+        document_id,
+        tenant_id,
+        retry=Retry(max=3, interval=[60, 300, 900]),
+    )
+
+
 @router.post("/branches/{branch_id}/orders/{order_id}/mark-paid")
 def mark_order_paid(
     branch_id: str,
@@ -1671,9 +1745,7 @@ def mark_order_paid(
     db: Session = Depends(get_db),
 ):
     _assert_branch_scope(staff, branch_id)
-    forwarded = request.headers.get("X-Forwarded-For")
-    client_ip = (forwarded.split(",")[0].strip() if forwarded
-                 else getattr(request.client, "host", None))
+    client_ip = _client_ip(request)
     result = OrderService.mark_paid(
         db,
         tenant_id=staff["tenant_id"],
@@ -1682,12 +1754,14 @@ def mark_order_paid(
         payment_method=data.payment_method,
         customer_id=data.customer_id,
         buyer_pan=data.buyer_pan,
+        show_vat_breakdown=data.show_vat_breakdown,
         terminal_ip=client_ip,
         performed_by=staff.get("cred_id"),
     )
     if not result["success"]:
         return _order_error(result["error_code"])
     order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
+    _enqueue_cbms_sync("invoice", order.id, staff["tenant_id"])
     return success_response(data=_order_payload(order), message="Marked as paid")
 
 
@@ -1695,12 +1769,18 @@ def mark_order_paid(
 def cancel_order(
     branch_id: str,
     order_id: str,
+    request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.cancel(
-        db, tenant_id=staff["tenant_id"], branch_id=branch_id, order_id=order_id
+        db,
+        tenant_id=staff["tenant_id"],
+        branch_id=branch_id,
+        order_id=order_id,
+        performed_by=staff.get("cred_id"),
+        terminal_ip=_client_ip(request),
     )
     if not result["success"]:
         return _order_error(result["error_code"])
@@ -1720,9 +1800,7 @@ def issue_order_credit_note(
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only owner or manager can issue credit notes")
     _assert_branch_scope(staff, branch_id)
-    forwarded = request.headers.get("X-Forwarded-For")
-    client_ip = (forwarded.split(",")[0].strip() if forwarded
-                 else getattr(request.client, "host", None))
+    client_ip = _client_ip(request)
     result = OrderService.issue_credit_note(
         db,
         tenant_id=staff["tenant_id"],
@@ -1734,11 +1812,142 @@ def issue_order_credit_note(
     )
     if not result["success"]:
         return _order_error(result["error_code"])
+    _enqueue_cbms_sync("credit_note", result["order"].id, staff["tenant_id"])
     return success_response(
         data=_order_payload(result["order"]),
         message="Credit note issued",
         status_code=201,
     )
+
+
+@router.post("/branches/{branch_id}/orders/{order_id}/register-print")
+def register_order_print(
+    branch_id: str,
+    order_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Call right before actually printing/showing a paid bill — see
+    OrderService.register_print. Returns whether this print should carry the
+    "Copy of Original (N)" watermark."""
+    _assert_branch_scope(staff, branch_id)
+    result = OrderService.register_print(
+        db, staff["tenant_id"], branch_id, order_id, staff.get("cred_id")
+    )
+    if not result["success"]:
+        return _order_error(result["error_code"])
+    return success_response(
+        data={"is_reprint": result["is_reprint"], "print_count": result["print_count"]}
+    )
+
+
+@router.get("/branches/{branch_id}/orders/{order_id}/cbms-payload")
+def get_order_cbms_payload(
+    branch_id: str,
+    order_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Preview-only — builds the payload without submitting it. Per the
+    checklist's self-test item: confirm field construction even without a
+    live submit. Password is masked in the response."""
+    _assert_branch_scope(staff, branch_id)
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id).get("order")
+    if not order:
+        return error_response("NOT_FOUND", "Order not found", 404)
+    if order.status != "paid":
+        return error_response("NOT_PAID", "Only paid bills can be submitted to CBMS", 400)
+    org = CBMSCredentialRepository.get(db, staff["tenant_id"])
+    if not org:
+        return error_response("CBMS_NOT_CONFIGURED", "CBMS sync not enabled for this tenant", 400)
+    payload = build_cbms_payload(order, org)
+    payload["password"] = "••••••••"
+    return success_response(data=payload)
+
+
+@router.post("/branches/{branch_id}/orders/{order_id}/cbms-sync")
+def sync_order_to_cbms(
+    branch_id: str,
+    order_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Manual resync — runs the same job body inline (not enqueued) so the
+    caller gets an immediate result, matching the sync-status UI's
+    "Resync" button. Auto-sync on mark-paid/credit-note still goes through
+    the RQ queue via _enqueue_cbms_sync above."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can sync bills to CBMS")
+    _assert_branch_scope(staff, branch_id)
+    order = OrderService.get(db, staff["tenant_id"], branch_id, order_id).get("order")
+    if not order:
+        return error_response("NOT_FOUND", "Order not found", 404)
+    if order.status != "paid":
+        return error_response("NOT_PAID", "Only paid bills can be submitted to CBMS", 400)
+    document_type = "credit_note" if order.is_credit_note else "invoice"
+    try:
+        sync_document_job("restro", document_type, order_id, staff["tenant_id"])
+    except RuntimeError:
+        return error_response("CBMS_SYNC_TRANSIENT", "CBMS sync failed, safe to retry", 400)
+    db.refresh(order)
+    if not order.cbms_synced:
+        return error_response("CBMS_SYNC_FAILED", "CBMS did not accept this document — check the sync log", 400)
+    return success_response(data={"synced": True, "message": "Bill submitted to IRD CBMS successfully"})
+
+
+@router.get("/cbms-sync-log")
+def list_restro_cbms_sync_log(
+    status: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """App-scoped view of the shared CbmsSyncLog, filtered to source_app
+    'restro' — staff hold an app JWT, not the platform JWT the shared
+    /tax-settings/sync-log endpoint requires."""
+    from features.cbms.sync_log import CbmsSyncLogRepository
+
+    paging = parse_paging(page, per_page)
+    items, total = CbmsSyncLogRepository.list_for_tenant(
+        db, staff["tenant_id"], "restro", status, paging["offset"], paging["limit"]
+    )
+    data = [
+        {
+            "id": r.id,
+            "document_type": r.document_type,
+            "document_id": r.document_id,
+            "document_number": r.document_number,
+            "status": r.status,
+            "cbms_response_code": r.cbms_response_code,
+            "attempt_count": r.attempt_count,
+            "last_attempted_at": r.last_attempted_at,
+            "synced_at": r.synced_at,
+        }
+        for r in items
+    ]
+    return success_response(data=data, meta=build_meta(total, paging["page"], paging["per_page"]))
+
+
+@router.post("/cbms-sync-log/{log_id}/resync")
+def resync_restro_document(
+    log_id: str,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can resync CBMS documents")
+    from features.cbms.sync_log import CbmsSyncLogRepository
+
+    row = CbmsSyncLogRepository.get_by_id(db, staff["tenant_id"], log_id)
+    if not row or row.source_app != "restro":
+        return error_response("NOT_FOUND", "Sync log entry not found", 404)
+    try:
+        sync_document_job("restro", row.document_type, row.document_id, staff["tenant_id"])
+    except RuntimeError:
+        return error_response("CBMS_SYNC_TRANSIENT", "CBMS sync failed, safe to retry", 400)
+    db.refresh(row)
+    return success_response(data={"status": row.status})
 
 
 @router.patch("/branches/{branch_id}/orders/{order_id}/delivery-status")
@@ -2308,6 +2517,7 @@ def customer_history(
         CustomerOrderEntry(
             id=o.id,
             bill_number=o.bill_number,
+            bill_code=o.bill_code,
             type=o.type,
             status=o.status,
             payment_method=o.payment_method,
@@ -2558,6 +2768,180 @@ def reports_top_items(
 # request itself since guests don't have accounts; branch lookup verifies
 # active status and returns 404 otherwise.
 # ---------------------------------------------------------------------------
+
+
+def _restro_business_header_lines(tenant) -> list[str]:
+    """Mirrors ims/router.py's _business_header_lines — same identity block
+    every export prints at the top."""
+    lines = [tenant.name]
+    details = []
+    if tenant.pan:
+        details.append(f"PAN: {tenant.pan}")
+    if tenant.business_address:
+        details.append(tenant.business_address)
+    contact = [c for c in (tenant.business_phone, tenant.business_email) if c]
+    if contact:
+        details.append(" · ".join(contact))
+    lines.extend(details)
+    return lines
+
+
+def _restro_export_response(fmt: str, title: str, columns: list[str], rows: list[list], business_lines: list[str] | None = None):
+    from utils.reports_export import build_xlsx, build_pdf
+    from fastapi import Response as _Response
+
+    if fmt not in ("xlsx", "pdf"):
+        return error_response("INVALID_FORMAT", "format must be 'xlsx' or 'pdf'.", 422)
+    if fmt == "xlsx":
+        content = build_xlsx(title, columns, rows, business_lines)
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ext = "xlsx"
+    else:
+        content = build_pdf(title, columns, rows, business_lines)
+        media_type = "application/pdf"
+        ext = "pdf"
+    safe_title = title.lower().replace(" ", "-").encode("ascii", "ignore").decode("ascii") or "export"
+    return _Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{safe_title}.{ext}"'},
+    )
+
+
+@router.get("/reports/sales-register/export")
+def export_sales_register(
+    format: str,
+    branch_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Standard VAT sales register layout — SN/Date/Bill/Buyer/PAN/Taxable/
+    VAT/Total. Cross-check against IRD's exact prescribed Annexure format
+    before a real submission (see docs/Srota_IRD_Compliance_Checklist.md —
+    no authoritative template was available to build against directly)."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can export reports")
+    if branch_id:
+        _assert_branch_scope(staff, branch_id)
+    from features.auth.repository import TenantRepository
+
+    orders = OrderRepository.list_for_report(db, staff["tenant_id"], branch_id, bs_from, bs_to)
+    columns = ["SN", "Date (BS)", "Bill No.", "Buyer", "Buyer PAN", "Taxable", "VAT", "Total"]
+    rows = [
+        [
+            idx, o.placed_at_bs, o.bill_number, o.buyer_name or "Walk-in", o.buyer_pan or "—",
+            o.taxable_amount or Decimal("0"), o.vat_amount or Decimal("0"), o.total_amount or Decimal("0"),
+        ]
+        for idx, o in enumerate(orders, start=1)
+    ]
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _restro_export_response(format, "Sales Register", columns, rows, _restro_business_header_lines(tenant))
+
+
+@router.get("/reports/annexure-13/export")
+def export_restro_annexure_13(
+    format: str,
+    branch_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """अनुसूची १३ (Annexure 13) — output VAT summary (RMS has no purchase
+    side, so this is sales-only, unlike IMS's combined version). Standard
+    structure; cross-check against IRD's exact template before submission."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can export reports")
+    if branch_id:
+        _assert_branch_scope(staff, branch_id)
+    from features.auth.repository import TenantRepository
+
+    orders = OrderRepository.list_for_report(db, staff["tenant_id"], branch_id, bs_from, bs_to)
+    output_taxable = sum((Decimal(str(o.taxable_amount or 0)) for o in orders), Decimal("0"))
+    output_vat = sum((Decimal(str(o.vat_amount or 0)) for o in orders), Decimal("0"))
+    columns = ["Particulars", "Taxable Amount", "VAT Amount"]
+    rows = [
+        ["Output VAT (Sales)", output_taxable, output_vat],
+        ["Net VAT Payable", output_taxable, output_vat],
+    ]
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _restro_export_response(format, "Annexure 13", columns, rows, _restro_business_header_lines(tenant))
+
+
+@router.get("/reports/monthly-vat-summary/export")
+def export_restro_monthly_vat_summary(
+    format: str,
+    branch_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """मासिक (monthly) VAT summary — one row per BS month, sales-only (no
+    purchase side in RMS). Standard structure; cross-check against IRD's
+    exact template before submission."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can export reports")
+    if branch_id:
+        _assert_branch_scope(staff, branch_id)
+    from features.auth.repository import TenantRepository
+
+    orders = OrderRepository.list_for_report(db, staff["tenant_id"], branch_id, bs_from, bs_to)
+    by_month: dict[str, dict[str, Decimal]] = {}
+    for o in orders:
+        month = o.placed_at_bs[:7] if o.placed_at_bs and len(o.placed_at_bs) >= 7 else "—"
+        if month not in by_month:
+            by_month[month] = {"taxable": Decimal("0"), "vat": Decimal("0")}
+        by_month[month]["taxable"] += Decimal(str(o.taxable_amount or 0))
+        by_month[month]["vat"] += Decimal(str(o.vat_amount or 0))
+    columns = ["Month (BS)", "Sales Taxable", "Output VAT", "Net Payable"]
+    rows = [
+        [month, v["taxable"], v["vat"], v["vat"]]
+        for month, v in sorted(by_month.items())
+    ]
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _restro_export_response(format, "Monthly VAT Summary", columns, rows, _restro_business_header_lines(tenant))
+
+
+# ---------------------------------------------------------------------------
+# Audit log — IRD: Electronic Billing Procedure 2082, clause 6.3ग requires
+# the User Activity Log be viewable/filterable via the front-end. Owner/
+# Manager only (same gating as reports/CBMS sync) — front-line staff don't
+# get to see who did what.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/audit-log")
+def list_restro_audit_log(
+    entity_type: str | None = None,
+    action: str | None = None,
+    performed_by: str | None = None,
+    q: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only Owner or Manager can view the activity log")
+    paging = parse_paging(page, per_page)
+    rows, total = AuditRepository.list_for_app(
+        db,
+        tenant_id=staff["tenant_id"],
+        app_code="restro",
+        entity_type=entity_type,
+        action=action,
+        performed_by=performed_by,
+        q=q,
+        offset=paging["offset"],
+        limit=paging["limit"],
+    )
+    return success_response(
+        data=[AuditLogEntryData.model_validate(r).model_dump(mode="json") for r in rows],
+        meta=build_meta(total, paging["page"], paging["per_page"]),
+    )
 
 
 @router.get("/public/branches/{branch_id}/menu")

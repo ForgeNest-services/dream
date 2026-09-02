@@ -8,7 +8,7 @@ import { billTotals, usePos } from "@/lib/pos/store";
 import { formatDateWithStoredBs, parseApiDate, toBsIso } from "@/lib/pos/nepali-date";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useOrdersList } from "@/hooks/useOrdersList";
-import type { OrderDto } from "@/lib/orders-api";
+import { ordersApi, type OrderDto } from "@/lib/orders-api";
 import type { OrdersSearch } from "@/routes/_app.orders";
 import { OrderScreen } from "./OrderScreen";
 import { ReserveDialog, TableGrid } from "./TableGrid";
@@ -106,6 +106,27 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
   const debouncedQ = useDebouncedValue(qInput, 300);
 
   const [print, setPrint] = useState<Order | null>(null);
+  const [printReprint, setPrintReprint] = useState(false);
+  const [printCount, setPrintCount] = useState<number | undefined>(undefined);
+  // IRD: Electronic Billing Procedure 2082, clause 6.2घ — Order Slip
+  // numbers. The list endpoint this view is fed from doesn't carry them
+  // (avoids an N+1 on the historical bills table), so fetch fresh here.
+  const [printSlipNumbers, setPrintSlipNumbers] = useState<number[] | undefined>(undefined);
+
+  // IRD: reprinting an already-paid bill must be watermarked as a copy —
+  // ask the server (authoritative print_count) before showing it.
+  const openPrint = async (o: OrderDto, mapped: Order) => {
+    if (branchId) {
+      const [printRes, orderRes] = await Promise.all([
+        ordersApi.registerPrint(branchId, o.id),
+        ordersApi.get(branchId, o.id),
+      ]);
+      setPrintReprint(printRes.data?.is_reprint ?? false);
+      setPrintCount(printRes.data?.print_count);
+      setPrintSlipNumbers(orderRes.data?.slip_numbers);
+    }
+    setPrint(mapped);
+  };
 
   // Helper: patch specific URL search params. `replace: true` avoids flooding
   // browser history with every filter tweak. Resets page to 1 by default so a
@@ -208,6 +229,9 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
     discountValue: Number(o.discount_value),
     ...(o.payment_method ? { paymentMethod: o.payment_method } : {}),
     waiter: o.waiter_name,
+    ...(o.kind ? { kind: o.kind } : {}),
+    ...(o.buyer_pan ? { buyerPan: o.buyer_pan } : {}),
+    ...(o.bill_code ? { billCode: o.bill_code } : {}),
   });
 
   const clearFilters = () => {
@@ -304,7 +328,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
               const mapped = toOrder(o);
               return (
                 <tr key={o.id} className="border-b border-border/70">
-                  <td className="py-3 pr-3">#{o.bill_number}</td>
+                  <td className="py-3 pr-3">{o.bill_code ?? `#${o.bill_number}`}</td>
                   <td className="py-3 pr-3">{label(o)}</td>
                   <td className="py-3 pr-3 text-muted-foreground">
                     {formatDateWithStoredBs(parseApiDate(o.placed_at) ?? 0, o.placed_at_bs)}
@@ -368,7 +392,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
                         size="icon"
                         className="size-10"
                         aria-label={`Print bill ${o.id}`}
-                        onClick={() => setPrint(mapped)}
+                        onClick={() => void openPrint(o, mapped)}
                       >
                         <Printer className="size-4" />
                       </Button>
@@ -449,6 +473,9 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
             tableLabel={print.type === "delivery" ? (print.customer?.name ?? "Delivery") : (tables.find((t) => t.id === print.tableId)?.label ?? "Walk-in")}
             settings={settings}
             totals={billTotals(print, settings.vatEnabled, settings.vatRate)}
+            isReprint={printReprint}
+            printCount={printCount}
+            slipNumbers={printSlipNumbers}
           />
         </PrintDialog>
       )}

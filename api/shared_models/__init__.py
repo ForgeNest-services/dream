@@ -16,6 +16,8 @@ from .restro_zone import RestroZone
 from .restro_table import RestroTable
 from .restro_order import RestroOrder
 from .restro_order_line import RestroOrderLine
+from .restro_order_slip import RestroOrderSlip
+from .restro_order_slip_serial import RestroOrderSlipSerial
 from .restro_inventory_item import RestroInventoryItem
 from .restro_stock_movement import RestroStockMovement
 from .restro_employee import RestroEmployee
@@ -48,7 +50,8 @@ from .restro_invoice_serial import RestroInvoiceSerial
 from .app import App
 from .subscription import AppSubscription, SubscriptionPayment
 from .subscription_plan import SubscriptionPlan, PlatformSetting
-from .ims_cbms_credential import IMSCbmsCredential
+from .org_tax_settings import OrgTaxSettings
+from .cbms_sync_log import CbmsSyncLog
 
 __all__ = [
     "Tenant",
@@ -69,6 +72,8 @@ __all__ = [
     "RestroTable",
     "RestroOrder",
     "RestroOrderLine",
+    "RestroOrderSlip",
+    "RestroOrderSlipSerial",
     "RestroInventoryItem",
     "RestroStockMovement",
     "RestroEmployee",
@@ -103,5 +108,6 @@ __all__ = [
     "SubscriptionPayment",
     "SubscriptionPlan",
     "PlatformSetting",
-    "IMSCbmsCredential",
+    "OrgTaxSettings",
+    "CbmsSyncLog",
 ]

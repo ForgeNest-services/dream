@@ -391,6 +391,10 @@ class OrderData(BaseModel):
     table_id: str | None
     customer_id: str | None
     bill_number: int
+    # IRD: Electronic Billing Procedure 2082, clause 6.2ग — printed/display
+    # bill number, e.g. "RMS-KTM-83/84-00005". Null only for a not-yet-
+    # backfilled historical row (see ensure_restro_bill_code_schema).
+    bill_code: str | None
     type: str
     status: str
     kitchen_status: str
@@ -402,14 +406,51 @@ class OrderData(BaseModel):
     settled_at_bs: str | None
     discount_type: str
     discount_value: Decimal
+    # IRD: simplified ("abbreviated") vs full ("tax") VAT breakdown bill —
+    # set at mark-paid time, null until then. Display-only, see
+    # OrderService.mark_paid.
+    kind: str | None
+    # ── VAT breakdown snapshot (IRD: set at mark-paid time, null until then) ──
+    subtotal_amount: Decimal | None
+    # Annexure-5's "Discount" — actual deducted amount, distinct from the
+    # discount_type/discount_value INPUT above.
+    discount_amount: Decimal | None
+    taxable_amount: Decimal | None
+    exempt_amount: Decimal | None
+    vat_amount: Decimal | None
+    total_amount: Decimal | None
     payment_method: str | None
+    # ── Seller/buyer snapshot (IRD) ────────────────────────────────────────
+    seller_name: str | None
+    seller_address: str | None
+    seller_pan: str | None
+    buyer_name: str | None
+    buyer_pan: str | None
     waiter_name: str
     waiter_cred_id: str | None
     delivery_status: str | None
+    # ── Reprint / credit note (IRD) ────────────────────────────────────────
+    print_count: int
+    is_reprint: bool
+    reprint_of: str | None
+    reprint_number: int | None
+    is_bill_printed: bool
+    printed_time: datetime | None
+    printed_by: str | None
+    is_credit_note: bool
+    original_order_id: str | None
+    note_reason: str | None
+    cbms_synced: bool
     customer: OrderCustomerRef | None = None
     created_at: datetime
     updated_at: datetime
     lines: list[OrderLineData] = []
+    # IRD: Electronic Billing Procedure 2082, clause 6.2घ — Order Slip
+    # sequential numbers this bill was built from. Populated only by call
+    # sites that actually fetch it (see router._order_payload); absent
+    # (None) elsewhere, not an empty list, so the frontend can tell
+    # "not fetched" apart from "genuinely zero slips".
+    slip_numbers: list[int] | None = None
 
 
 class CreateOrderRequest(BaseModel):
@@ -495,6 +536,10 @@ class MarkPaidRequest(BaseModel):
     customer_id: str | None = None
     # IRD: buyer PAN for B2B VAT bills (optional for walk-in consumers)
     buyer_pan: str | None = None
+    # IRD: simplified (संक्षिप्त कर बिजक) vs full VAT breakdown — display-only,
+    # see OrderService.mark_paid. Omit to default to itemized whenever the
+    # branch has VAT enabled.
+    show_vat_breakdown: bool | None = None
 
     @field_validator("payment_method")
     @classmethod
@@ -575,6 +620,7 @@ class CustomerOrderEntry(BaseModel):
 
     id: str
     bill_number: int
+    bill_code: str | None
     type: str
     status: str
     payment_method: str | None
@@ -888,3 +934,22 @@ class RMSCreditNoteRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError("Reason is required for credit notes")
         return v.strip()
+
+
+class AuditLogEntryData(BaseModel):
+    """IRD: Electronic Billing Procedure 2082, clause 6.3ग — the User
+    Activity Log, viewable/filterable from the front-end."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    app_code: str
+    entity_type: str
+    entity_id: str
+    action: str
+    performed_by: str
+    performer_type: str
+    before_state: dict | None
+    after_state: dict | None
+    reason: str | None
+    terminal_ip: str | None
+    created_at: datetime

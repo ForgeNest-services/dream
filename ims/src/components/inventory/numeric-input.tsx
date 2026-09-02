@@ -1,6 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { forwardRef, useEffect, useState } from "react";
+import { forwardRef, useEffect, useRef, useState } from "react";
 
 /** type="number" input that selects its full value on focus, so typing
  *  immediately overwrites the default "0" instead of appending to it. */
@@ -44,17 +44,24 @@ export function DecimalTextInput({
   // round-tripping through Number() on every render — only the parsed
   // number is reported upward via onChange.
   const [text, setText] = useState(() => (Number.isFinite(value) ? String(value) : ""));
+  // Tracks focus so the resync effect below can skip itself while the user
+  // is actively in this field — see that effect for why.
+  const focused = useRef(false);
 
   useEffect(() => {
     // Resync when the value changes from outside (e.g. the linked Exc./Inc.
-    // VAT field, or loading a different variant) — but not while the parsed
-    // text already matches (to a cent), so we don't fight the user's
-    // in-progress typing. Comparing at 2dp — not exact float equality —
-    // matters because a value that round-trips through this field's own
-    // onChange (typed here -> parsed -> converted -> converted back for
-    // display) can drift by a floating-point epsilon that's smaller than a
-    // cent; exact comparison would treat that epsilon as "changed from
-    // outside" and stomp the text mid-keystroke.
+    // VAT field, or loading a different variant) — but never while this
+    // field itself is focused. A linked Exc./Inc. VAT pair round-trips a
+    // typed value through a 2-decimal-place STORED intermediate (the other
+    // field), which is lossy by up to a full cent (e.g. typing 5 into
+    // Inc.VAT at 13% stores Exc.VAT as 4.42, which converts back to 4.99,
+    // not 5) — not just float noise, so the 2dp-comparison guard alone
+    // can't tell "the user's own edit came back rounded" from "a genuinely
+    // different value arrived from outside" and would stomp the digits the
+    // user is still typing. Deferring any resync until blur sidesteps this:
+    // the field shows exactly what was typed while focused, and only snaps
+    // to the true persisted (rounded) value once the user leaves it.
+    if (focused.current) return;
     const roundedText = Math.round(Number(text) * 100) / 100;
     const roundedValue = Math.round(value * 100) / 100;
     if (roundedText !== roundedValue) {
@@ -69,7 +76,18 @@ export function DecimalTextInput({
       inputMode="decimal"
       className={cn("num", className)}
       value={text}
-      onFocus={(e) => e.target.select()}
+      onFocus={(e) => {
+        focused.current = true;
+        e.target.select();
+      }}
+      onBlur={() => {
+        focused.current = false;
+        // Snap to the true rounded value now that editing has ended, in
+        // case the last keystroke's round-trip landed a cent off from what
+        // was displayed while focused (see the effect above).
+        const rounded = Math.round(value * 100) / 100;
+        setText(Number.isFinite(value) ? String(rounded) : "");
+      }}
       onChange={(e) => {
         const raw = e.target.value;
         if (raw !== "" && !/^\d*\.?\d*$/.test(raw)) return;

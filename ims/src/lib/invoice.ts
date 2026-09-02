@@ -1,4 +1,5 @@
 import type { CompanyProfile, Invoice, InvoiceLine } from "@/data/types";
+import { round2 } from "@/lib/format";
 
 export interface InvoiceTotals {
   gross: number;
@@ -31,16 +32,16 @@ export function computeTotals(
   lines: TotalsLine[],
   company: Pick<CompanyProfile, "vatRegistered" | "vatRate">,
 ): InvoiceTotals {
-  const gross = lines.reduce((s, l) => s + l.rate * l.qty, 0);
-  const discount = lines.reduce((s, l) => s + l.discount * l.qty, 0);
+  const gross = round2(lines.reduce((s, l) => s + l.rate * l.qty, 0));
+  const discount = round2(lines.reduce((s, l) => s + l.discount * l.qty, 0));
   if (!company.vatRegistered) {
-    const total = gross - discount;
+    const total = round2(gross - discount);
     return { gross, discount, taxable: total, exempt: 0, vat: 0, total };
   }
-  const taxable = lines.filter(isTaxable).reduce((s, l) => s + lineGross(l), 0);
-  const exempt = lines.filter((l) => !isTaxable(l)).reduce((s, l) => s + lineGross(l), 0);
-  const vat = (taxable * company.vatRate) / 100;
-  const total = taxable + vat + exempt;
+  const taxable = round2(lines.filter(isTaxable).reduce((s, l) => s + lineGross(l), 0));
+  const exempt = round2(lines.filter((l) => !isTaxable(l)).reduce((s, l) => s + lineGross(l), 0));
+  const vat = round2((taxable * company.vatRate) / 100);
+  const total = round2(taxable + vat + exempt);
   return { gross, discount, taxable, exempt, vat, total };
 }
 
@@ -57,13 +58,13 @@ export function invoiceDue(inv: Invoice, total: number) {
  *  only for lines that predate per-line VAT snapshotting (taxRate/vatAmount
  *  undefined — see IMSInvoiceLine's schema-backfill note in api/core/seed.py). */
 export function computeStoredTotals(lines: InvoiceLine[]): InvoiceTotals {
-  const gross = lines.reduce((s, l) => s + l.rate * l.qty, 0);
-  const discount = lines.reduce((s, l) => s + l.discount * l.qty, 0);
+  const gross = round2(lines.reduce((s, l) => s + l.rate * l.qty, 0));
+  const discount = round2(lines.reduce((s, l) => s + l.discount * l.qty, 0));
   const taxableLines = lines.filter(isTaxable);
   const exemptLines = lines.filter((l) => !isTaxable(l));
-  const taxable = taxableLines.reduce((s, l) => s + lineGross(l), 0);
-  const exempt = exemptLines.reduce((s, l) => s + lineGross(l), 0);
-  const vat = taxableLines.reduce((s, l) => s + (l.vatAmount ?? 0), 0);
-  const total = taxable + vat + exempt;
+  const taxable = round2(taxableLines.reduce((s, l) => s + lineGross(l), 0));
+  const exempt = round2(exemptLines.reduce((s, l) => s + lineGross(l), 0));
+  const vat = round2(taxableLines.reduce((s, l) => s + (l.vatAmount ?? 0), 0));
+  const total = round2(taxable + vat + exempt);
   return { gross, discount, taxable, exempt, vat, total };
 }

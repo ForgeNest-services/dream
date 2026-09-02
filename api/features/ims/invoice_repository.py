@@ -54,6 +54,27 @@ class IMSInvoiceRepository:
         )
 
     @staticmethod
+    def register_print(db: Session, invoice: IMSInvoice, printed_by: str | None) -> IMSInvoice:
+        """Electronic Billing Procedure 2082, clause 6.2(च): a reprint must
+        show "Copy of Original" and the print count — Annexure-3's sample
+        formats this as "Copy of Original (1)", "(2)", etc. First print sets
+        is_bill_printed (Annexure-5) with no reprint marking; every print
+        after that increments reprint_number and flips is_reprint."""
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        if invoice.is_bill_printed:
+            invoice.is_reprint = True
+            invoice.reprint_number = (invoice.reprint_number or 0) + 1
+        else:
+            invoice.is_bill_printed = True
+        invoice.printed_time = now
+        invoice.printed_by = printed_by
+        db.commit()
+        db.refresh(invoice)
+        return invoice
+
+    @staticmethod
     def list_for_tenant(
         db: Session,
         tenant_id: str,

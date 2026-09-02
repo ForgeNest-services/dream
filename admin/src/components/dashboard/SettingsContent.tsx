@@ -2,12 +2,23 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { MdOutlineDescription, MdOutlineReceiptLong, MdOutlineImage, MdOutlineClose } from 'react-icons/md';
+import {
+  MdOutlineDescription,
+  MdOutlineReceiptLong,
+  MdOutlineImage,
+  MdOutlineClose,
+  MdOutlineLock,
+  MdOutlineCheckCircle,
+  MdOutlineInfo,
+} from 'react-icons/md';
 import { useAuth } from '@/hooks/useAuth';
 import { useUpdateTaxInfo } from '@/hooks/useUpdateTaxInfo';
 import { FormInput } from '@/components/ui/FormInput';
 import { Button } from '@/components/ui/Button';
+import { Switch } from '@/components/ui/Switch';
 import { colors, spacing } from '@/lib/design-tokens';
+import { taxSettingsApi, type TaxSettingsResponse } from '@/services/tax-settings-api';
+import type { ApiError } from '@/types/auth';
 
 const MAX_LOGO_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
@@ -302,6 +313,262 @@ export function SettingsContent() {
           </Button>
         </div>
       </section>
+
+      <CbmsIntegrationCard />
     </div>
+  );
+}
+
+function CbmsIntegrationCard() {
+  const [data, setData] = useState<TaxSettingsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [consent, setConsent] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [togglingSync, setTogglingSync] = useState(false);
+
+  const load = () => {
+    taxSettingsApi
+      .get()
+      .then((res) => {
+        if (res.data) setData(res.data);
+      })
+      .catch(() => {
+        // Non-fatal — the rest of Settings still works without this card populated.
+      })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const configured = !!data?.settings.ird_username && data.settings.ird_password_set;
+
+  const handleSave = async () => {
+    if (!username.trim() || !password.trim()) {
+      toast.error('IRD username and password are required');
+      return;
+    }
+    if (!consent) {
+      toast.error('Accept the disclosure before saving');
+      return;
+    }
+    setSaving(true);
+    try {
+      await taxSettingsApi.saveCredentials({
+        ird_username: username.trim(),
+        ird_password: password.trim(),
+        consent: true,
+      });
+      toast.success('IRD credentials saved');
+      setUsername('');
+      setPassword('');
+      setConsent(false);
+      load();
+    } catch (err) {
+      const apiErr = err as ApiError;
+      toast.error(apiErr?.message || 'Failed to save IRD credentials');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleSync = async (next: boolean) => {
+    setTogglingSync(true);
+    try {
+      await taxSettingsApi.setSyncEnabled(next);
+      toast.success(next ? 'CBMS auto-sync enabled' : 'CBMS auto-sync disabled');
+      load();
+    } catch (err) {
+      const apiErr = err as ApiError;
+      if (apiErr.code === 'NOT_CERTIFIED_YET') {
+        toast.error('This app is not yet IRD-certified — auto-sync can’t be enabled.');
+      } else if (apiErr.code === 'CREDENTIALS_NOT_SAVED') {
+        toast.error('Save IRD credentials first.');
+      } else {
+        toast.error(apiErr?.message || 'Failed to update sync setting');
+      }
+    } finally {
+      setTogglingSync(false);
+    }
+  };
+
+  return (
+    <section
+      style={{
+        padding: spacing.xl,
+        backgroundColor: colors.neutral[0],
+        border: `1px solid ${colors.neutral[200]}`,
+        borderRadius: '16px',
+      }}
+    >
+      <h2
+        style={{
+          fontSize: '13px',
+          fontWeight: '600',
+          color: colors.neutral[500],
+          textTransform: 'uppercase',
+          letterSpacing: '0.8px',
+          marginBottom: spacing.sm,
+        }}
+      >
+        IRD CBMS Integration
+      </h2>
+      <p style={{ fontSize: '12px', color: colors.neutral[600], margin: 0, marginBottom: spacing.lg, maxWidth: '480px' }}>
+        Shared by every app you run — Inventory (IMS) and Restaurant POS (RMS) both submit bills
+        through this one login, entered here once.
+      </p>
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: spacing.sm,
+          padding: `${spacing.sm} ${spacing.md}`,
+          borderRadius: '12px',
+          backgroundColor: colors.neutral[50],
+          marginBottom: spacing.lg,
+        }}
+      >
+        {configured ? (
+          <MdOutlineCheckCircle size={16} color={colors.status.success} style={{ flexShrink: 0 }} />
+        ) : (
+          <MdOutlineInfo size={16} color={colors.neutral[500]} style={{ flexShrink: 0 }} />
+        )}
+        <p style={{ fontSize: '12px', color: colors.neutral[700], margin: 0, lineHeight: '1.5' }}>
+          {loading
+            ? 'Loading…'
+            : configured
+              ? `Configured · ${data?.settings.ird_username}`
+              : 'Not configured yet'}
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.md, marginBottom: spacing.lg }}>
+        <FormInput
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          type="text"
+          placeholder="IRD Taxpayer Portal username"
+          label="IRD username"
+          icon={<MdOutlineLock size={20} />}
+          disabled={saving}
+        />
+        <FormInput
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          type="password"
+          placeholder="IRD Taxpayer Portal password"
+          label="IRD password"
+          icon={<MdOutlineLock size={20} />}
+          disabled={saving}
+        />
+      </div>
+
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: spacing.sm,
+          padding: spacing.md,
+          borderRadius: '12px',
+          backgroundColor: colors.neutral[50],
+          marginBottom: spacing.lg,
+          cursor: 'pointer',
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={consent}
+          onChange={(e) => setConsent(e.target.checked)}
+          style={{ marginTop: '2px', flexShrink: 0 }}
+        />
+        <span style={{ fontSize: '12px', color: colors.neutral[600], lineHeight: '1.5' }}>
+          I understand this is our business&apos;s live IRD Taxpayer Portal login, not a scoped API
+          key — it will be used to submit real bills to CBMS on our behalf once auto-sync is
+          enabled below.
+        </span>
+      </label>
+
+      <div style={{ width: 'fit-content', marginBottom: spacing.xl }}>
+        <Button onClick={handleSave} isLoading={saving} size="md">
+          Save credentials
+        </Button>
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: spacing.md,
+          borderRadius: '12px',
+          border: `1px solid ${colors.neutral[200]}`,
+          marginBottom: spacing.lg,
+        }}
+      >
+        <div>
+          <p style={{ fontSize: '13px', fontWeight: '600', color: colors.neutral[800], margin: 0 }}>
+            Enable CBMS auto-sync
+          </p>
+          <p style={{ fontSize: '12px', color: colors.neutral[500], margin: 0, marginTop: '2px' }}>
+            {configured
+              ? 'Off by default. Each app also stays gated until it’s individually IRD-certified.'
+              : 'Save credentials above first.'}
+          </p>
+        </div>
+        <Switch
+          checked={!!data?.settings.cbms_sync_enabled}
+          onChange={handleToggleSync}
+          disabled={!configured || togglingSync}
+          aria-label="Enable CBMS auto-sync"
+        />
+      </div>
+
+      {data && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: spacing.sm,
+          }}
+        >
+          {[
+            {
+              label: 'Last synced',
+              value: data.sync_summary.last_synced_at
+                ? new Date(data.sync_summary.last_synced_at).toLocaleString()
+                : '—',
+            },
+            { label: 'Pending', value: String(data.sync_summary.pending) },
+            { label: 'Failed', value: String(data.sync_summary.failed) },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              style={{
+                padding: spacing.md,
+                borderRadius: '12px',
+                backgroundColor: colors.neutral[50],
+                textAlign: 'center',
+              }}
+            >
+              <p style={{ fontSize: '11px', color: colors.neutral[500], margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                {stat.label}
+              </p>
+              <p style={{ fontSize: '18px', fontWeight: '700', color: colors.neutral[900], margin: 0, marginTop: '4px' }}>
+                {stat.value}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p style={{ fontSize: '11px', color: colors.neutral[400], margin: 0, marginTop: spacing.lg }}>
+        Detailed per-bill sync status and resync actions are available from each app&apos;s own
+        Settings page.
+      </p>
+    </section>
   );
 }

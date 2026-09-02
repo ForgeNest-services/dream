@@ -17,35 +17,41 @@ from features.restro.menu_item_repository import MenuItemRepository
 from features.restro.menu_item_service import combo_note_from_components
 from features.restro.customer_repository import CustomerRepository
 from features.restro.khata_settlement_repository import KhataSettlementRepository
-from features.restro.branch_settings_repository import BranchSettingsRepository
+from features.restro.branch_settings_service import BranchSettingsService
 from features.branches.repository import BranchRepository
 from features.auth.repository import TenantRepository
 from features.hotel_pms.audit_repository import AuditRepository
-from shared_models import RestroOrder
-from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad
+from shared_models import RestroOrder, RestroOrderLine
+from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad, format_invoice_number
 from utils.logger import logger
 
 
 def order_vat_settings(db: Session, tenant_id: str, branch_id: str) -> tuple[bool, Decimal]:
     """Reads the branch's real VAT config (RestroBranchSettings), which is
     itself gated server-side on tenant.is_vat_registered — never a hardcoded
-    default. Falls back to VAT-off if the branch has no settings row yet
-    (auto-provisioning only happens through BranchSettingsService.get_or_create,
-    which order flows don't call)."""
-    settings = BranchSettingsRepository.get(db, tenant_id, branch_id)
-    if not settings:
+    default. Goes through BranchSettingsService.get_or_create (not the bare
+    repository) so a tenant that just switched PAN<->VAT gets that reflected
+    on their very next bill, not just after someone happens to open
+    Settings — same auto-sync every other settings read gets."""
+    result = BranchSettingsService.get_or_create(db, tenant_id, branch_id)
+    if not result["success"]:
         return False, Decimal("13")
+    settings = result["settings"]
     return bool(settings.vat_enabled), Decimal(settings.vat_rate)
 
 
 def compute_order_total(order, vat_enabled: bool = False, vat_rate: Decimal = Decimal("13")) -> Decimal:
     """Mirrors the frontend billTotals(): subtotal from non-voided lines,
-    discount (percent or flat), then VAT applied to the taxable amount.
-    Used server-side both for reports and for the khata outstanding-balance
-    calculation, so the number always matches what the customer was shown at
-    bill time. vat_enabled/vat_rate come from the order's branch settings —
-    callers iterating orders across branches must pass the right pair per
-    order (see khata_orders_total)."""
+    discount (percent or flat), then VAT backed OUT of what remains — line
+    prices (RestroMenuItem/Variant.price, snapshotted onto the order line at
+    add-line time) are stored VAT-INCLUSIVE, so the total the customer pays
+    is subtotal - discount, full stop; VAT is a breakdown of that number for
+    the printed bill, never added on top of it. Used server-side both for
+    reports and for the khata outstanding-balance calculation, so the number
+    always matches what the customer was shown at bill time. vat_enabled/
+    vat_rate come from the order's branch settings — callers iterating
+    orders across branches must pass the right pair per order (see
+    khata_orders_total)."""
     subtotal = sum(
         (Decimal(line.price) * line.qty for line in order.lines if not line.is_voided),
         Decimal("0"),
@@ -54,9 +60,8 @@ def compute_order_total(order, vat_enabled: bool = False, vat_rate: Decimal = De
         discount = subtotal * Decimal(order.discount_value) / Decimal("100")
     else:
         discount = Decimal(order.discount_value)
-    taxable = max(Decimal("0"), subtotal - discount)
-    vat = (taxable * vat_rate / Decimal("100")) if vat_enabled else Decimal("0")
-    return (taxable + vat).quantize(Decimal("0.01"))
+    total = max(Decimal("0"), subtotal - discount)
+    return total.quantize(Decimal("0.01"))
 
 
 class OrderService:
@@ -136,6 +141,25 @@ class OrderService:
         return {"success": True, "order": order}
 
     @staticmethod
+    def register_print(
+        db: Session, tenant_id: str, branch_id: str, order_id: str, printed_by: str | None = None
+    ) -> dict:
+        """Call once per actual print of a paid bill — bumps print_count and
+        tells the caller whether THIS print is the original (count==1, no
+        watermark) or a reprint (count>1, must show "Copy of Original (N)"
+        per Electronic Billing Procedure 2082, clause 6.2(च)). Only
+        meaningful for a paid bill — a draft being previewed isn't a real
+        bill yet, and a credit note is its own document, not a copy of one,
+        so neither needs/gets watermark tracking here."""
+        order = OrderRepository.get_by_id(db, tenant_id, order_id)
+        if not order or order.branch_id != branch_id:
+            return {"success": False, "error_code": "ORDER_NOT_FOUND"}
+        if order.status != "paid":
+            return {"success": True, "is_reprint": False, "print_count": 0}
+        order = OrderRepository.increment_print_count(db, order, printed_by)
+        return {"success": True, "is_reprint": order.print_count > 1, "print_count": order.print_count}
+
+    @staticmethod
     def get_draft_for_table(
         db: Session, tenant_id: str, branch_id: str, table_id: str
     ) -> dict:
@@ -161,7 +185,8 @@ class OrderService:
         table_id: str | None = None,
         customer_id: str | None = None,
     ) -> dict:
-        if not OrderService._assert_branch(db, tenant_id, branch_id):
+        branch = BranchRepository.get_by_id(db, tenant_id, branch_id)
+        if not branch:
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
         if type not in ORDER_TYPES:
             return {"success": False, "error_code": "INVALID_TYPE"}
@@ -205,6 +230,7 @@ class OrderService:
                 customer_id=customer_id,
                 waiter_name=waiter_name,
                 waiter_cred_id=waiter_cred_id,
+                branch_code=branch.code,
             )
             logger.info(
                 f"Order created: {order.id}",
@@ -321,6 +347,8 @@ class OrderService:
         line_id: str,
         qty: int | None = None,
         note: str | None = None,
+        performed_by: str | None = None,
+        terminal_ip: str | None = None,
     ) -> dict:
         order = OrderRepository.get_by_id(db, tenant_id, order_id)
         if not order or order.branch_id != branch_id:
@@ -332,7 +360,25 @@ class OrderService:
             return {"success": False, "error_code": "LINE_NOT_FOUND"}
         if qty is not None and qty < 1:
             return {"success": False, "error_code": "INVALID_QTY"}
+        before_qty = line.qty
         updated = OrderRepository.update_line(db, line, qty=qty, note=note)
+        # Only worth an audit entry once the line has been sent to the
+        # kitchen — editing an unsent draft line is normal order-building,
+        # not a correction to something already in motion.
+        if line.sent and qty is not None and qty != before_qty:
+            AuditRepository.write(
+                db,
+                tenant_id=tenant_id,
+                app_code="restro",
+                entity_type="order_line",
+                entity_id=line.id,
+                action="update_qty",
+                performed_by=performed_by or "unknown",
+                performer_type="staff",
+                after_state={"order_id": order_id, "before_qty": before_qty, "after_qty": qty},
+                terminal_ip=terminal_ip,
+            )
+            db.commit()
         return {"success": True, "line": updated}
 
     @staticmethod
@@ -343,6 +389,8 @@ class OrderService:
         order_id: str,
         line_id: str,
         reason: str | None,
+        performed_by: str | None = None,
+        terminal_ip: str | None = None,
     ) -> dict:
         order = OrderRepository.get_by_id(db, tenant_id, order_id)
         if not order or order.branch_id != branch_id:
@@ -353,6 +401,24 @@ class OrderService:
         if not line or line.is_voided:
             return {"success": False, "error_code": "LINE_NOT_FOUND"}
         voided = OrderRepository.mark_line_voided(db, line, reason)
+        AuditRepository.write(
+            db,
+            tenant_id=tenant_id,
+            app_code="restro",
+            entity_type="order_line",
+            entity_id=line.id,
+            action="void",
+            performed_by=performed_by or "unknown",
+            performer_type="staff",
+            after_state={
+                "order_id": order_id,
+                "name": line.name,
+                "qty": line.qty,
+                "reason": reason,
+            },
+            terminal_ip=terminal_ip,
+        )
+        db.commit()
         return {"success": True, "line": voided}
 
     @staticmethod
@@ -362,6 +428,8 @@ class OrderService:
         branch_id: str,
         order_id: str,
         line_id: str,
+        performed_by: str | None = None,
+        terminal_ip: str | None = None,
     ) -> dict:
         order = OrderRepository.get_by_id(db, tenant_id, order_id)
         if not order or order.branch_id != branch_id:
@@ -375,6 +443,9 @@ class OrderService:
         # so the audit trail survives.
         if line.sent:
             return {"success": False, "error_code": "CANNOT_DELETE_SENT_LINE"}
+        # Unsent lines are pre-kitchen draft-building — not worth an audit
+        # entry (same reasoning as update_line above; nothing has "happened"
+        # to this line yet from the kitchen/customer's perspective).
         OrderRepository.delete_line(db, line)
         return {"success": True}
 
@@ -384,7 +455,11 @@ class OrderService:
 
     @staticmethod
     def send_to_kitchen(
-        db: Session, tenant_id: str, branch_id: str, order_id: str
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        order_id: str,
+        created_by: str | None = None,
     ) -> dict:
         order = OrderRepository.get_by_id(db, tenant_id, order_id)
         if not order or order.branch_id != branch_id:
@@ -392,13 +467,21 @@ class OrderService:
         if order.status != "draft":
             return {"success": False, "error_code": "ORDER_NOT_EDITABLE"}
         marked = OrderRepository.mark_all_unsent_as_sent(db, order_id)
-        # Bump placed_at so the kitchen "time since order" clock resets for a
-        # follow-up round, and reset kitchen_status if it was already served.
+        slip = None
+        # IRD: Electronic Billing Procedure 2082, clause 6.2घ — each round of
+        # items actually sent to the kitchen gets its own sequential Order
+        # Slip number + log entry. Nothing to log if this call marked zero
+        # lines (e.g. a re-click with nothing new in the cart).
         if marked > 0:
+            slip = OrderRepository.create_slip(
+                db, tenant_id, branch_id, order, line_count=marked, created_by=created_by
+            )
+            # Bump placed_at so the kitchen "time since order" clock resets
+            # for a follow-up round, and reset kitchen_status if served.
             OrderRepository.bump_placed_at(db, order)
         if order.kitchen_status == "served":
             OrderRepository.set_status(db, order, kitchen_status="new")
-        return {"success": True, "order": order, "marked": marked}
+        return {"success": True, "order": order, "marked": marked, "slip": slip}
 
     @staticmethod
     def set_kitchen_status(
@@ -426,6 +509,8 @@ class OrderService:
         order_id: str,
         discount_type: str,
         discount_value: Decimal,
+        performed_by: str | None = None,
+        terminal_ip: str | None = None,
     ) -> dict:
         if discount_type not in DISCOUNT_TYPES:
             return {"success": False, "error_code": "INVALID_DISCOUNT_TYPE"}
@@ -436,7 +521,27 @@ class OrderService:
             return {"success": False, "error_code": "ORDER_NOT_FOUND"}
         if order.status != "draft":
             return {"success": False, "error_code": "ORDER_NOT_EDITABLE"}
+        before_type, before_value = order.discount_type, order.discount_value
         updated = OrderRepository.set_discount(db, order, discount_type, Decimal(discount_value))
+        # A discount directly reduces what the customer pays — always worth
+        # an audit entry, regardless of whether the order's been sent yet.
+        if before_type != discount_type or before_value != Decimal(discount_value):
+            AuditRepository.write(
+                db,
+                tenant_id=tenant_id,
+                app_code="restro",
+                entity_type="order",
+                entity_id=order.id,
+                action="set_discount",
+                performed_by=performed_by or "unknown",
+                performer_type="staff",
+                after_state={
+                    "before": {"type": before_type, "value": float(before_value)},
+                    "after": {"type": discount_type, "value": float(discount_value)},
+                },
+                terminal_ip=terminal_ip,
+            )
+            db.commit()
         return {"success": True, "order": updated}
 
     @staticmethod
@@ -448,6 +553,7 @@ class OrderService:
         payment_method: str,
         customer_id: str | None = None,
         buyer_pan: str | None = None,
+        show_vat_breakdown: bool | None = None,
         terminal_ip: str | None = None,
         performed_by: str | None = None,
     ) -> dict:
@@ -480,6 +586,20 @@ class OrderService:
         # ── IRD: PAN snapshot — seller and buyer ─────────────────────────────
         vat_enabled, vat_rate = order_vat_settings(db, tenant_id, branch_id)
 
+        # Simplified (संक्षिप्त कर बिजक) vs full VAT breakdown — display-only,
+        # mirrors IMSInvoice's show_breakdown: the totals below are computed
+        # identically either way, this only decides whether the printed bill
+        # itemizes Taxable/VAT or shows one total. Defaults to itemized
+        # whenever VAT actually applies (matches the POS toggle's own
+        # default), since callers that don't pass it (e.g. any future
+        # non-POS caller) should keep today's one-flag behavior.
+        show_breakdown = vat_enabled if show_vat_breakdown is None else show_vat_breakdown
+
+        # Line prices (RestroMenuItem/Variant.price) are stored VAT-INCLUSIVE
+        # — what the customer pays per unit. Discount is a cut off that
+        # inclusive subtotal, and VAT is backed OUT of what remains, never
+        # added on top: total = subtotal - discount, full stop. taxable/vat
+        # are just that same total's breakdown for the printed VAT line.
         subtotal = sum(
             (Decimal(line.price) * line.qty for line in order.lines if not line.is_voided),
             Decimal("0"),
@@ -489,9 +609,26 @@ class OrderService:
         else:
             discount = Decimal(order.discount_value)
 
-        taxable_and_vat = max(Decimal("0"), subtotal - discount)
-        vat = (taxable_and_vat * vat_rate / Decimal("100")) if vat_enabled else Decimal("0")
-        total = (taxable_and_vat + vat).quantize(Decimal("0.01"))
+        total = max(Decimal("0"), subtotal - discount).quantize(Decimal("0.01"))
+        if vat_enabled:
+            taxable = (total / (1 + vat_rate / Decimal("100"))).quantize(Decimal("0.01"))
+            vat = (total - taxable).quantize(Decimal("0.01"))
+        else:
+            taxable = Decimal("0")
+            vat = Decimal("0")
+
+        # IRD: Electronic Billing Procedure 2082, Annexure-6's own abbreviated
+        # ("संक्षिप्त कर बीजक") invoice template states outright: "दश हजार
+        # रुपैयाँभन्दा बढी कर लाग्ने मूल्यको वस्तु वा सेवाको बिक्रीमा यो बीजक
+        # जारी गरिने छैन" — this format cannot be issued for a sale whose
+        # TAXABLE value exceeds Rs 10,000. Only a real ceiling in a VAT
+        # context (a PAN-only bill has no VAT breakdown to itemize either
+        # way, so the tax/abbreviated distinction doesn't carry the same
+        # weight there). show_vat_breakdown is a UI preference; this
+        # overrides it, never trusting a client-supplied flag to bypass it.
+        if vat_enabled and not show_breakdown and taxable > Decimal("10000"):
+            return {"success": False, "error_code": "ABBREVIATED_INVOICE_LIMIT_EXCEEDED"}
+        order.kind = "tax" if show_breakdown else "abbreviated"
 
         tenant = TenantRepository.get_by_id(db, tenant_id)
         branch = BranchRepository.get_by_id(db, tenant_id, branch_id)
@@ -505,8 +642,12 @@ class OrderService:
         order.buyer_pan = buyer_pan
 
         order.subtotal_amount = subtotal
-        order.taxable_amount = taxable_and_vat if vat_enabled else Decimal("0")
-        order.exempt_amount = Decimal("0") if vat_enabled else taxable_and_vat
+        # Annexure-5's "Discount" — the actual rupee amount deducted,
+        # snapshotted here (not order.discount_value, which is just the
+        # raw %/flat INPUT and needs the subtotal to mean anything).
+        order.discount_amount = discount.quantize(Decimal("0.01"))
+        order.taxable_amount = taxable if vat_enabled else Decimal("0")
+        order.exempt_amount = Decimal("0") if vat_enabled else total
         order.vat_amount = vat
         order.total_amount = total
 
@@ -659,7 +800,14 @@ class OrderService:
         }
 
     @staticmethod
-    def cancel(db: Session, tenant_id: str, branch_id: str, order_id: str) -> dict:
+    def cancel(
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        order_id: str,
+        performed_by: str | None = None,
+        terminal_ip: str | None = None,
+    ) -> dict:
         order = OrderRepository.get_by_id(db, tenant_id, order_id)
         if not order or order.branch_id != branch_id:
             return {"success": False, "error_code": "ORDER_NOT_FOUND"}
@@ -668,6 +816,24 @@ class OrderService:
         updated = OrderRepository.set_status(db, order, status="cancelled")
         if order.type == "dine-in" and order.table_id:
             OrderService._set_group_status(db, tenant_id, order.table_id, "empty")
+        # Cancelling permanently burns this order's bill_number (never
+        # reused/reclaimed — see the UNIQUE(branch, fiscal_year, bill_number)
+        # constraint) — a real audit entry is what explains the resulting
+        # gap to anyone reviewing the sequence later, not just an app log
+        # line that isn't tamper-evident and isn't tenant-queryable.
+        AuditRepository.write(
+            db,
+            tenant_id=tenant_id,
+            app_code="restro",
+            entity_type="order",
+            entity_id=order.id,
+            action="cancel",
+            performed_by=performed_by or "unknown",
+            performer_type="staff",
+            after_state={"bill_number": order.bill_number, "fiscal_year": order.fiscal_year},
+            terminal_ip=terminal_ip,
+        )
+        db.commit()
         logger.info(f"Order cancelled: {order.id}", extra={"tenant_id": tenant_id})
         return {"success": True, "order": updated}
 
@@ -710,12 +876,17 @@ class OrderService:
         now = datetime.now(timezone.utc)
         fy = fiscal_year_from_ad(now) or ""
         bill_num = OrderRepository._next_bill_number(db, branch_id, fy)
+        branch = BranchRepository.get_by_id(db, tenant_id, branch_id)
+        # IRD: Electronic Billing Procedure 2082, clause 6.2ग — same
+        # outlet-code requirement as OrderRepository.create.
+        bill_code = format_invoice_number("RMS-CN", fy, bill_num, branch.code if branch else None)
 
         cn = RestroOrder(
             tenant_id=tenant_id,
             branch_id=branch_id,
             table_id=None,
             bill_number=bill_num,
+            bill_code=bill_code,
             fiscal_year=fy,
             customer_id=original.customer_id,
             type=original.type,
@@ -745,6 +916,29 @@ class OrderService:
             note_reason=reason,
         )
         db.add(cn)
+        db.flush()
+
+        # Mirror each original line onto the credit note — negate qty (not
+        # price), so the printed document reads as "returned: -2 x Steam
+        # Momo @ Rs 180" instead of showing a bare total with no items.
+        # Matches the same fix on IMS's issue_credit_note. No stock
+        # restoration here (unlike IMS): menu items have no stock/qty field
+        # of their own — RestroInventoryItem tracks raw ingredients, and
+        # there's no built recipe/consumption link from an order line back
+        # to ingredient quantities, so there's nothing to restore.
+        for line in original.lines:
+            if line.is_voided:
+                continue
+            db.add(RestroOrderLine(
+                order_id=cn.id,
+                menu_item_id=line.menu_item_id,
+                name=line.name,
+                variant_name=line.variant_name,
+                price=line.price,
+                qty=-line.qty,
+                note=line.note,
+                sent=True,
+            ))
         db.flush()
 
         AuditRepository.write(

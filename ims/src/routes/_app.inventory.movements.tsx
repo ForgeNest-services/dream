@@ -76,6 +76,7 @@ const TYPE_LABEL: Record<MovementType, string> = {
   "adjust-out": "Adjust −",
   sale: "Sale",
   transfer: "Transfer",
+  return: "Return",
 };
 
 function dtoToMovement(m: StockMovementDto): StockMovement {
@@ -249,6 +250,7 @@ function MovementsPage() {
                             m.type === "adjust-in" && "bg-accent/15 text-accent-foreground",
                             m.type === "adjust-out" && "bg-warning/15 text-warning",
                             m.type === "transfer" && "bg-muted text-muted-foreground",
+                            m.type === "return" && "bg-success/12 text-success",
                           )}
                         >
                           {TYPE_LABEL[m.type]}

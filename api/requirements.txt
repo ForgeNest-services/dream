@@ -19,3 +19,5 @@ boto3
 openpyxl
 reportlab
 httpx
+pytest
+pytest-mock

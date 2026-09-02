@@ -201,7 +201,14 @@ export function ReportsView() {
       ? (o.customer?.name ?? "Delivery")
       : (tables.find((t) => t.id === o.table_id)?.label ?? "Walk-in");
 
+  // A paid/cancelled-with-a-snapshot order's total_amount is set once at
+  // mark-paid time and must never drift even if VAT settings change later —
+  // prefer it. Only a draft (still being built, no snapshot yet) needs a
+  // live computation. Line prices are stored VAT-inclusive, so that live
+  // total is just subtotal minus discount, no VAT added on top (mirrors
+  // store.tsx's billTotals()).
   const billTotalFromDto = (o: (typeof orders)[number]) => {
+    if (o.total_amount !== null) return Number(o.total_amount);
     const subtotal = o.lines
       .filter((l) => !l.is_voided)
       .reduce((s, l) => s + Number(l.price) * l.qty, 0);
@@ -209,9 +216,7 @@ export function ReportsView() {
       o.discount_type === "percent"
         ? (subtotal * Number(o.discount_value)) / 100
         : Number(o.discount_value);
-    const taxable = Math.max(0, subtotal - discount);
-    const vat = settings.vatEnabled ? (taxable * settings.vatRate) / 100 : 0;
-    return taxable + vat;
+    return Math.max(0, subtotal - discount);
   };
 
   // ------ layout ------------------------------------------------------
@@ -560,7 +565,7 @@ function BillsTable({
       <tbody>
         {orders.map((o) => (
           <tr key={o.id} className="border-b border-border/70 align-top hover:bg-secondary/30">
-            <td className="py-3 pr-3 font-medium">#{o.bill_number}</td>
+            <td className="py-3 pr-3 font-medium">{o.bill_code ?? `#${o.bill_number}`}</td>
             <td className="py-3 pr-3">{orderLabel(o)}</td>
             <td className="py-3 pr-3 text-muted-foreground">
               {formatDateWithStoredBs(new Date(o.placed_at).getTime(), o.placed_at_bs)}

@@ -3,8 +3,16 @@ from decimal import Decimal
 from sqlalchemy import and_, or_, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from shared_models import RestroOrder, RestroOrderLine, RestroTable, RestroCustomer, RestroInvoiceSerial
-from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad
+from shared_models import (
+    RestroOrder,
+    RestroOrderLine,
+    RestroOrderSlip,
+    RestroOrderSlipSerial,
+    RestroTable,
+    RestroCustomer,
+    RestroInvoiceSerial,
+)
+from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad, format_invoice_number
 
 
 ORDER_TYPES = {"dine-in", "delivery"}
@@ -62,6 +70,7 @@ class OrderRepository:
         waiter_cred_id: str | None,
         table_id: str | None = None,
         customer_id: str | None = None,
+        branch_code: str | None = None,
     ) -> RestroOrder:
         # Snapshot placed_at + its BS equivalent together. Using an explicit
         # timestamp (instead of relying on the model default) so both columns
@@ -70,6 +79,11 @@ class OrderRepository:
         now = datetime.now(timezone.utc)
         fy = fiscal_year_from_ad(now) or ""
         bill_num = OrderRepository._next_bill_number(db, branch_id, fy)
+        # IRD: Electronic Billing Procedure 2082, clause 6.2ग — the printed
+        # bill number must carry this outlet's code. bill_number itself
+        # stays a plain int (search/sort depend on it); bill_code is the
+        # formatted string actually shown/printed.
+        bill_code = format_invoice_number("RMS", fy, bill_num, branch_code) if fy else None
 
         order = RestroOrder(
             tenant_id=tenant_id,
@@ -80,6 +94,7 @@ class OrderRepository:
             table_id=table_id,
             customer_id=customer_id,
             bill_number=bill_num,
+            bill_code=bill_code,
             fiscal_year=fy,
             placed_at=now,
             placed_at_bs=to_bs_iso(now) or "",
@@ -99,6 +114,26 @@ class OrderRepository:
             .filter(RestroOrder.id == order_id, RestroOrder.tenant_id == tenant_id)
             .first()
         )
+
+    @staticmethod
+    def increment_print_count(db: Session, order: RestroOrder, printed_by: str | None) -> RestroOrder:
+        """IRD: printing a paid bill more than once must be visibly watermarked
+        as a copy. Called once per actual print action — the caller (service
+        layer) decides what "print" means (e.g. clicking Print Bill), this
+        just atomically bumps the counter and returns the new count. Also
+        sets Annexure-5's is_bill_printed/printed_time/printed_by —
+        printed_by is deliberately independent of waiter_cred_id
+        (Entered_By): whoever took the order isn't necessarily who's
+        standing at the counter triggering the print."""
+        from datetime import datetime, timezone
+
+        order.print_count = (order.print_count or 0) + 1
+        order.is_bill_printed = True
+        order.printed_time = datetime.now(timezone.utc)
+        order.printed_by = printed_by
+        db.commit()
+        db.refresh(order)
+        return order
 
     @staticmethod
     def _apply_order_filters(
@@ -226,6 +261,33 @@ class OrderRepository:
             base.order_by(RestroOrder.placed_at.desc()).offset(offset).limit(limit).all()
         )
         return items, total
+
+    @staticmethod
+    def list_for_report(
+        db: Session,
+        tenant_id: str,
+        branch_id: str | None,
+        bs_from: str | None,
+        bs_to: str | None,
+        include_credit_notes: bool = True,
+    ) -> list[RestroOrder]:
+        """Paid, real bills (and their credit notes, by default) in a BS
+        date range — feeds the IRD sales register / Annexure 13 / monthly
+        VAT summary exports. Unlike list_paginated, branch_id is optional
+        (None = every branch) since a report can span the whole tenant."""
+        query = db.query(RestroOrder).filter(
+            RestroOrder.tenant_id == tenant_id,
+            RestroOrder.status == "paid",
+        )
+        if branch_id:
+            query = query.filter(RestroOrder.branch_id == branch_id)
+        if not include_credit_notes:
+            query = query.filter(RestroOrder.is_credit_note.is_(False))
+        if bs_from:
+            query = query.filter(RestroOrder.placed_at_bs >= bs_from)
+        if bs_to:
+            query = query.filter(RestroOrder.placed_at_bs <= bs_to)
+        return query.order_by(RestroOrder.placed_at_bs, RestroOrder.bill_number).all()
 
     @staticmethod
     def get_draft_for_tables(
@@ -467,3 +529,72 @@ class OrderRepository:
             line.sent = True
         db.commit()
         return len(rows)
+
+    # ------------------------------------------------------------------
+    # Order Slips (IRD: Electronic Billing Procedure 2082, clause 6.2घ)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _next_slip_number(db: Session, branch_id: str, fiscal_year: str) -> int:
+        """Same SELECT … FOR UPDATE gapless-counter pattern as
+        _next_bill_number, but a distinct sequence — Order Slip numbers are
+        their own series, not the bill's."""
+        row = (
+            db.execute(
+                select(RestroOrderSlipSerial)
+                .filter_by(branch_id=branch_id, fiscal_year=fiscal_year)
+                .with_for_update()
+            )
+            .scalars()
+            .first()
+        )
+        if row is None:
+            row = RestroOrderSlipSerial(
+                branch_id=branch_id,
+                fiscal_year=fiscal_year,
+                last_number=0,
+            )
+            db.add(row)
+            db.flush()
+        row.last_number += 1
+        db.flush()
+        return row.last_number
+
+    @staticmethod
+    def create_slip(
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        order: RestroOrder,
+        line_count: int,
+        created_by: str | None,
+    ) -> RestroOrderSlip:
+        """Records one send-to-kitchen round as a numbered Order Slip."""
+        now = datetime.now(timezone.utc)
+        fy = order.fiscal_year or fiscal_year_from_ad(now) or ""
+        slip_num = OrderRepository._next_slip_number(db, branch_id, fy)
+        slip = RestroOrderSlip(
+            tenant_id=tenant_id,
+            branch_id=branch_id,
+            order_id=order.id,
+            slip_number=slip_num,
+            fiscal_year=fy,
+            line_count=line_count,
+            created_by=created_by,
+            created_at=now,
+            created_at_bs=to_bs_iso(now) or "",
+        )
+        db.add(slip)
+        db.commit()
+        db.refresh(slip)
+        return slip
+
+    @staticmethod
+    def get_slip_numbers(db: Session, order_id: str) -> list[int]:
+        rows = (
+            db.query(RestroOrderSlip.slip_number)
+            .filter(RestroOrderSlip.order_id == order_id)
+            .order_by(RestroOrderSlip.slip_number)
+            .all()
+        )
+        return [r[0] for r in rows]

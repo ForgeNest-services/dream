@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { ArrowLeft, Loader2, Minus, Plus, Printer, Receipt, Search, Send, Trash2, UtensilsCrossed, Wallet, X } from "lucide-react";
 import placeholder from "@/assets/menu-placeholder.jpg";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +18,7 @@ import { UserPlus, X as XIcon } from "lucide-react";
 import { NPR, type MenuItem, type Order, type OrderCustomerRef, type RestaurantTable } from "@/lib/pos/data";
 import { useBillTotals, usePos, toMenuItem } from "@/lib/pos/store";
 import { menuItemsApi } from "@/lib/menu-items-api";
+import { ordersApi } from "@/lib/orders-api";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { BillReceipt, KotReceipt, PrintDialog } from "./ThermalPrint";
 import { CustomerPicker } from "./CustomerPicker";
@@ -61,15 +64,60 @@ export function OrderScreen(props: OrderScreenProps) {
   // side is faster to read and tap.
   const [mobileView, setMobileView] = useState<"menu" | "bill">("menu");
   const [printBillOpen, setPrintBillOpen] = useState(false);
+  // Set right before opening the print dialog (see openPrintBill) — whether
+  // THIS print is a reprint, so BillReceipt can watermark it. Server is the
+  // source of truth (print_count), not guessed client-side.
+  const [printBillReprint, setPrintBillReprint] = useState(false);
+  const [printBillCount, setPrintBillCount] = useState<number | undefined>(undefined);
+  // IRD: Order Slip numbers (clause 6.2घ) — the cached order in the store
+  // only carries these right after a send-to-kitchen call, so fetch fresh
+  // at print time (same reasoning as printBillReprint/printBillCount above).
+  const [printBillSlipNumbers, setPrintBillSlipNumbers] = useState<number[] | undefined>(undefined);
   const [method, setMethod] = useState<"cash" | "qr" | "khata">("cash");
   // For khata payments the caller must attach a customer. Cleared each time
   // the dialog re-opens. Delivery orders already have a customer attached
   // from creation — in that case we skip the picker entirely and reuse it.
   const [khataCustomerId, setKhataCustomerId] = useState<string | null>(null);
+  // IRD: buyer PAN for a B2B bill — optional, a walk-in guest just leaves
+  // this blank. Cleared each time the payment dialog re-opens.
+  const [buyerPan, setBuyerPan] = useState("");
+  // IRD: simplified (संक्षिप्त कर बिजक) vs full VAT breakdown bill — same
+  // "VAT bill" toggle IMS's POS already has. Only meaningful when VAT is
+  // actually enabled for this branch; defaults to itemized (matches
+  // settings.vatEnabled) so this mirrors ProductFormPage's taxable-default
+  // pattern rather than requiring a manual flip on every sale.
+  const [vatBillOn, setVatBillOn] = useState(false);
+  useEffect(() => {
+    setVatBillOn(settings.vatEnabled);
+  }, [settings.vatEnabled]);
 
   const order =
     props.mode === "dine-in" ? orderForTable(props.table.id) : orderById(props.orderId);
   const totals = useBillTotals(order, settings.vatEnabled, settings.vatRate);
+  // IRD: Electronic Billing Procedure 2082, Annexure-6 — a simplified bill
+  // can't be issued above Rs 10,000 taxable value. Server enforces this for
+  // real; this just locks the toggle so staff see why before hitting Pay.
+  const abbreviatedLimitExceeded = settings.vatEnabled && totals.taxable > 10000;
+  useEffect(() => {
+    if (abbreviatedLimitExceeded && !vatBillOn) setVatBillOn(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abbreviatedLimitExceeded]);
+  // IRD: a second (or later) print of a paid bill must be watermarked as a
+  // copy — register with the server before showing the print dialog so
+  // print_count (and the watermark decision) stays authoritative even
+  // across devices/terminals printing the same bill.
+  const openPrintBill = async () => {
+    if (order && activeBranchId) {
+      const [printRes, orderRes] = await Promise.all([
+        ordersApi.registerPrint(activeBranchId, order.id),
+        ordersApi.get(activeBranchId, order.id),
+      ]);
+      setPrintBillReprint(printRes.data?.is_reprint ?? false);
+      setPrintBillCount(printRes.data?.print_count);
+      setPrintBillSlipNumbers(orderRes.data?.slip_numbers);
+    }
+    setPrintBillOpen(true);
+  };
   const unsent = order?.lines.filter((l) => !l.sent).length ?? 0;
   const qty = order?.lines.reduce((s, l) => s + l.qty, 0) ?? 0;
   // Browsing (empty query) uses the cached `menu` from the store — instant,
@@ -144,6 +192,14 @@ export function OrderScreen(props: OrderScreenProps) {
       qty: 1,
       note: "",
     };
+    // The running bill panel is off-screen below the fold on mobile (menu
+    // and bill share one viewport via the menu/bill tab toggle, see
+    // mobileView state below), so tapping an item gives no visible
+    // confirmation there the way it does on desktop where both panels show
+    // at once. A toast is the only feedback a phone user gets.
+    toast.success(`${item.name}${variantName ? ` (${variantName})` : ""} added`, {
+      duration: 1200,
+    });
     if (props.mode === "dine-in") return addLine(props.table.id, line);
     return addLineToOrder(props.orderId, line);
   };
@@ -155,7 +211,7 @@ export function OrderScreen(props: OrderScreenProps) {
       unsent={unsent}
       onSend={() => order && sendToKitchen(order.id)}
       onPrintKot={() => setKotOpen(true)}
-      onPrintBill={() => setPrintBillOpen(true)}
+      onPrintBill={() => void openPrintBill()}
       onPay={() => setPayOpen(true)}
     />
   );
@@ -415,6 +471,8 @@ export function OrderScreen(props: OrderScreenProps) {
           if (!o) {
             setMethod("cash");
             setKhataCustomerId(null);
+            setBuyerPan("");
+            setVatBillOn(settings.vatEnabled);
           }
         }}
       >
@@ -474,11 +532,42 @@ export function OrderScreen(props: OrderScreenProps) {
               totalAmount={totals.total}
             />
           )}
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Buyer PAN (optional)</Label>
+            <Input
+              value={buyerPan}
+              onChange={(e) => setBuyerPan(e.target.value)}
+              placeholder="Leave blank for a walk-in guest"
+              className="h-11"
+            />
+          </div>
+
+          {settings.vatEnabled && (
+            <div className="flex items-center justify-between rounded-xl bg-secondary p-3">
+              <div>
+                <p className="text-sm font-medium">VAT bill</p>
+                <p className="text-xs text-muted-foreground">
+                  {abbreviatedLimitExceeded
+                    ? "Full tax invoice required — simplified bills are only permitted up to Rs 10,000 taxable value"
+                    : vatBillOn
+                      ? "Tax invoice with taxable amount + VAT breakdown"
+                      : "Plain bill — shelf price only, no VAT breakdown"}
+                </p>
+              </div>
+              <Switch
+                checked={vatBillOn}
+                onCheckedChange={setVatBillOn}
+                disabled={abbreviatedLimitExceeded}
+              />
+            </div>
+          )}
+
           <DialogFooter className="gap-2">
             <Button
               variant="outline"
               className="h-12 w-full"
-              onClick={() => setPrintBillOpen(true)}
+              onClick={() => void openPrintBill()}
             >
               <Printer className="size-4" />
               Print Bill
@@ -496,7 +585,13 @@ export function OrderScreen(props: OrderScreenProps) {
                   method === "khata"
                     ? khataCustomerId ?? order.customer?.id ?? undefined
                     : undefined;
-                markPaid(order.id, method, cid);
+                markPaid(
+                  order.id,
+                  method,
+                  cid,
+                  buyerPan || undefined,
+                  settings.vatEnabled ? vatBillOn : undefined,
+                );
                 setPayOpen(false);
                 setMethod("cash");
                 setKhataCustomerId(null);
@@ -533,7 +628,15 @@ export function OrderScreen(props: OrderScreenProps) {
             <KotReceipt order={order} tableLabel={headerLabel} settings={settings} />
           </PrintDialog>
           <PrintDialog open={printBillOpen} onOpenChange={setPrintBillOpen} title="Print Bill">
-            <BillReceipt order={order} tableLabel={headerLabel} settings={settings} totals={totals} />
+            <BillReceipt
+              order={order}
+              tableLabel={headerLabel}
+              settings={settings}
+              totals={totals}
+              isReprint={printBillReprint}
+              printCount={printBillCount}
+              slipNumbers={printBillSlipNumbers}
+            />
           </PrintDialog>
         </>
       )}
@@ -604,7 +707,7 @@ function BillPanel({
   onPay,
 }: {
   order: Order | undefined;
-  totals: { subtotal: number; discount: number; vat: number; total: number };
+  totals: { subtotal: number; discount: number; taxable: number; vat: number; total: number };
   unsent: number;
   onSend: () => void;
   onPrintKot: () => void;
@@ -717,10 +820,16 @@ function BillPanel({
               </div>
             )}
             {settings.vatEnabled && (
-              <div className="flex justify-between">
-                <dt className="text-muted-foreground">VAT ({settings.vatRate}%)</dt>
-                <dd>{NPR(totals.vat)}</dd>
-              </div>
+              <>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">Taxable amount</dt>
+                  <dd>{NPR(totals.taxable)}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">VAT ({settings.vatRate}%)</dt>
+                  <dd>{NPR(totals.vat)}</dd>
+                </div>
+              </>
             )}
             <div className="flex items-center justify-between border-t border-border pt-2">
               <dt className="font-display text-base font-semibold">Total</dt>

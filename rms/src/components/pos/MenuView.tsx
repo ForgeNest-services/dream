@@ -30,7 +30,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { NPR, type MenuItem, type MenuItemComponent, type Variant } from "@/lib/pos/data";
+import {
+  NPR,
+  priceWithVat,
+  priceWithoutVat,
+  type MenuItem,
+  type MenuItemComponent,
+  type Variant,
+} from "@/lib/pos/data";
+import { DecimalTextInput } from "@/components/ui/decimal-input";
 import { usePos } from "@/lib/pos/store";
 import { uploadsApi } from "@/lib/uploads-api";
 import { ApiError } from "@/lib/api-client";
@@ -325,7 +333,10 @@ function MenuItemDialog({
   onClose: () => void;
   onSave: (item: MenuItem) => Promise<void>;
 }) {
-  const { categories, branchId } = usePos();
+  const { categories, branchId, settings } = usePos();
+  const vatOn = settings.vatEnabled;
+  const priceIncl = (excl: number) => priceWithVat(excl, settings.vatRate, vatOn);
+  const priceExcl = (incl: number) => priceWithoutVat(incl, settings.vatRate, vatOn);
   const [item, setItem] = useState<MenuItem | null>(draft);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -463,17 +474,47 @@ function MenuItemDialog({
             <ComboComposer draft={item} onChange={patch} />
           ) : !item.hasVariants ? (
             <div className="space-y-2">
-              <Label>Price (NPR)</Label>
-              <Input
-                type="number"
-                className="h-12"
-                value={item.price ?? 0}
-                onChange={(e) => patch({ price: Number(e.target.value) })}
-              />
+              <Label>Price (NPR){vatOn ? ` — VAT ${settings.vatRate}%` : ""}</Label>
+              {vatOn ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                      Excl. VAT
+                    </span>
+                    <DecimalTextInput
+                      className="h-12 pl-[4.5rem]"
+                      value={priceExcl(item.price ?? 0)}
+                      onChange={(v) => patch({ price: priceIncl(v) })}
+                    />
+                  </div>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                      Incl. VAT
+                    </span>
+                    <DecimalTextInput
+                      className="h-12 pl-[4.5rem]"
+                      value={item.price ?? 0}
+                      onChange={(v) => patch({ price: v })}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <DecimalTextInput
+                  className="h-12"
+                  value={item.price ?? 0}
+                  onChange={(v) => patch({ price: v })}
+                />
+              )}
+              {vatOn && (
+                <p className="text-xs text-muted-foreground">
+                  Either box works — the other recalculates. Only the inclusive amount (what the
+                  customer pays) is stored.
+                </p>
+              )}
             </div>
           ) : (
             <div className="space-y-2">
-              <Label>Variants</Label>
+              <Label>Variants{vatOn ? ` — VAT ${settings.vatRate}%` : ""}</Label>
               {item.variants.map((v) => (
                 <div key={v.id} className="flex gap-2">
                   <Input
@@ -482,13 +523,39 @@ function MenuItemDialog({
                     value={v.name}
                     onChange={(e) => setVariant(v.id, { name: e.target.value })}
                   />
-                  <Input
-                    type="number"
-                    className="h-12 w-32"
-                    placeholder="NPR"
-                    value={v.price}
-                    onChange={(e) => setVariant(v.id, { price: Number(e.target.value) })}
-                  />
+                  {vatOn ? (
+                    <>
+                      <div className="relative">
+                        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                          Excl.
+                        </span>
+                        <DecimalTextInput
+                          className="h-12 w-28 pl-10"
+                          placeholder="NPR"
+                          value={priceExcl(v.price)}
+                          onChange={(val) => setVariant(v.id, { price: priceIncl(val) })}
+                        />
+                      </div>
+                      <div className="relative">
+                        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                          Incl.
+                        </span>
+                        <DecimalTextInput
+                          className="h-12 w-28 pl-10"
+                          placeholder="NPR"
+                          value={v.price}
+                          onChange={(val) => setVariant(v.id, { price: val })}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <DecimalTextInput
+                      className="h-12 w-32"
+                      placeholder="NPR"
+                      value={v.price}
+                      onChange={(val) => setVariant(v.id, { price: val })}
+                    />
+                  )}
                   <Button
                     variant="outline"
                     size="icon"
@@ -555,7 +622,10 @@ function ComboComposer({
   draft: MenuItem;
   onChange: (p: Partial<MenuItem>) => void;
 }) {
-  const { menu } = usePos();
+  const { menu, settings } = usePos();
+  const vatOn = settings.vatEnabled;
+  const priceIncl = (excl: number) => priceWithVat(excl, settings.vatRate, vatOn);
+  const priceExcl = (incl: number) => priceWithoutVat(incl, settings.vatRate, vatOn);
   const [pickerOpen, setPickerOpen] = useState(false);
 
   // Non-combo, non-self, active, in the same branch (menu is already
@@ -587,15 +657,40 @@ function ComboComposer({
   return (
     <div className="space-y-3">
       <div className="space-y-2">
-        <Label>Combo price (NPR)</Label>
-        <Input
-          type="number"
-          className="h-12"
-          value={draft.price ?? 0}
-          onChange={(e) => onChange({ price: Number(e.target.value) })}
-        />
+        <Label>Combo price (NPR){vatOn ? ` — VAT ${settings.vatRate}%` : ""}</Label>
+        {vatOn ? (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="relative">
+              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                Excl. VAT
+              </span>
+              <DecimalTextInput
+                className="h-12 pl-[4.5rem]"
+                value={priceExcl(draft.price ?? 0)}
+                onChange={(v) => onChange({ price: priceIncl(v) })}
+              />
+            </div>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-muted-foreground">
+                Incl. VAT
+              </span>
+              <DecimalTextInput
+                className="h-12 pl-[4.5rem]"
+                value={draft.price ?? 0}
+                onChange={(v) => onChange({ price: v })}
+              />
+            </div>
+          </div>
+        ) : (
+          <DecimalTextInput
+            className="h-12"
+            value={draft.price ?? 0}
+            onChange={(v) => onChange({ price: v })}
+          />
+        )}
         <p className="text-xs text-muted-foreground">
           What the customer pays for the whole combo — component items are not summed.
+          {vatOn ? " Only the inclusive amount is stored." : ""}
         </p>
       </div>
 

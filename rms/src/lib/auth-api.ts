@@ -15,4 +15,11 @@ export const authApi = {
       password,
     });
   },
+  // IRD: Electronic Billing Procedure 2082, clause 6.3ख — records the
+  // logout event server-side for the activity log. There's no session to
+  // actually invalidate (stateless JWT), so this is fire-and-forget from
+  // the caller's perspective.
+  logout() {
+    return apiClient.post<void>("/restro/auth/logout", {});
+  },
 };

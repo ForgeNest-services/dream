@@ -29,6 +29,7 @@ import { useProducts } from "@/hooks/useProducts";
 import type { Product } from "@/data/types";
 import type { ProductDto } from "@/lib/products-api";
 import { downloadCsv } from "@/lib/csv";
+import { priceWithVat } from "@/lib/format";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Barcode as BarcodeIcon,
@@ -187,8 +188,10 @@ function ProductsPage() {
   const exportCsv = () =>
     downloadCsv(
       "products",
-      rows.flatMap((p) =>
-        app.variantsOf(p.id).map((v) => ({
+      rows.flatMap((p) => {
+        const taxable = app.company.vatRegistered && p.taxable !== false;
+        const rate = taxable ? (p.taxRate ?? app.company.vatRate) : 0;
+        return app.variantsOf(p.id).map((v) => ({
           product: p.name,
           sku: p.sku,
           category: app.categoryPath(p.categoryId),
@@ -198,10 +201,10 @@ function ProductsPage() {
           barcode: v.barcode,
           unit: app.unitSymbol(v.unitId),
           cost: v.costPrice,
-          price: v.sellingPrice,
+          price: priceWithVat(v.sellingPrice, rate, taxable),
           stock: app.stockOf(v),
-        })),
-      ),
+        }));
+      }),
     );
 
   const canEdit = app.can("product.edit");
@@ -333,7 +336,15 @@ function ProductsPage() {
               <tbody>
                 {rows.map((p) => {
                   const vs = app.variantsOf(p.id);
-                  const prices = vs.map((v) => v.sellingPrice);
+                  // Selling price is stored exclusive of VAT — display the
+                  // customer-facing inclusive price everywhere in this list.
+                  const productTaxable = app.company.vatRegistered && p.taxable !== false;
+                  const productTaxRate = productTaxable
+                    ? (p.taxRate ?? app.company.vatRate)
+                    : 0;
+                  const displayPrice = (v: { sellingPrice: number }) =>
+                    priceWithVat(v.sellingPrice, productTaxRate, productTaxable);
+                  const prices = vs.map(displayPrice);
                   const min = prices.length ? Math.min(...prices) : 0;
                   const max = prices.length ? Math.max(...prices) : 0;
                   const open = expanded[p.id] ?? false;
@@ -468,7 +479,9 @@ function ProductsPage() {
                                   <th className="py-1 text-left font-medium">Barcode</th>
                                   <th className="py-1 text-left font-medium">Unit</th>
                                   <th className="py-1 text-right font-medium">Cost</th>
-                                  <th className="py-1 text-right font-medium">Selling</th>
+                                  <th className="py-1 text-right font-medium">
+                                    {productTaxable ? "Selling (inc. VAT)" : "Selling"}
+                                  </th>
                                   <th className="py-1 text-right font-medium">Stock</th>
                                   <th className="py-1 text-left font-medium">Expiry</th>
                                 </tr>
@@ -486,7 +499,7 @@ function ProductsPage() {
                                         <Money value={v.costPrice} />
                                       </td>
                                       <td className="py-1.5 text-right">
-                                        <Money value={v.sellingPrice} />
+                                        <Money value={displayPrice(v)} />
                                       </td>
                                       <td className="py-1.5 text-right">
                                         <Qty

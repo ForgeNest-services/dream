@@ -205,7 +205,8 @@ function OrderRow({ entry }: { entry: CustomerOrderEntryDto }) {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="inline-flex items-center gap-1 text-xs font-semibold">
-              <Receipt className="size-3.5 opacity-60" />#{entry.bill_number}
+              <Receipt className="size-3.5 opacity-60" />
+              {entry.bill_code ?? `#${entry.bill_number}`}
             </span>
             <span
               className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${STATUS_STYLE[entry.status]}`}

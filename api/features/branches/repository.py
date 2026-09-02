@@ -8,6 +8,7 @@ class BranchRepository:
         db: Session,
         tenant_id: str,
         name: str,
+        code: str,
         address: str | None = None,
         city: str | None = None,
         phone: str | None = None,
@@ -15,6 +16,7 @@ class BranchRepository:
         branch = Branch(
             tenant_id=tenant_id,
             name=name,
+            code=code,
             address=address,
             city=city,
             phone=phone,
@@ -23,6 +25,13 @@ class BranchRepository:
         db.commit()
         db.refresh(branch)
         return branch
+
+    @staticmethod
+    def code_exists(db: Session, tenant_id: str, code: str, exclude_branch_id: str | None = None) -> bool:
+        q = db.query(Branch).filter(Branch.tenant_id == tenant_id, Branch.code == code)
+        if exclude_branch_id:
+            q = q.filter(Branch.id != exclude_branch_id)
+        return db.query(q.exists()).scalar()
 
     @staticmethod
     def get_by_id(db: Session, tenant_id: str, branch_id: str) -> Branch | None:
@@ -49,6 +58,7 @@ class BranchRepository:
         db: Session,
         branch: Branch,
         name: str | None = None,
+        code: str | None = None,
         address: str | None = None,
         city: str | None = None,
         phone: str | None = None,
@@ -56,6 +66,8 @@ class BranchRepository:
     ) -> Branch:
         if name is not None:
             branch.name = name
+        if code is not None:
+            branch.code = code
         if address is not None:
             branch.address = address
         if city is not None:

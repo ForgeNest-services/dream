@@ -1,7 +1,10 @@
+import { IrdQrCode } from "@/components/shared/IrdQrCode";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/context/app-store";
 import { amountInWords, formatMoney } from "@/lib/format";
+import { buildIrdQrPayload } from "@/lib/ird-qr";
 import { computeStoredTotals, lineGross } from "@/lib/invoice";
+import { invoicesApi } from "@/lib/invoices-api";
 import { formatAd, formatBs } from "@/lib/nepali-date";
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { ArrowLeft, Printer } from "lucide-react";
@@ -33,6 +36,16 @@ function PrintInvoicePage() {
   const { invoiceId } = useParams({ from: "/print/$invoiceId" });
   const [size, setSize] = useState<"a4" | "thermal">("thermal");
   const [copy, setCopy] = useState<"original" | "copy">("original");
+  // IRD: registering this print with the server is what actually decides
+  // whether it's a reprint (Electronic Billing Procedure 2082, clause
+  // 6.2(च)) — not the cosmetic original/copy toggle above, which is purely
+  // a display preference for a first-time print. Registers once per page
+  // visit (not once per window.print() click) so opening the page, then
+  // clicking Print multiple times for the same physical printout, doesn't
+  // rack up phantom reprint counts.
+  const [serverReprint, setServerReprint] = useState<{ isReprint: boolean; reprintNumber: number | null } | null>(
+    null,
+  );
 
   // @page is a document-level at-rule — it can't be scoped by a CSS class,
   // so switching between A4 and 80mm needs a JS-injected <style> that's
@@ -51,6 +64,28 @@ function PrintInvoicePage() {
   }, [size]);
 
   const inv = app.invoices.find((i) => i.id === invoiceId);
+
+  useEffect(() => {
+    if (!inv || inv.kind === "quotation") return;
+    invoicesApi
+      .registerPrint(invoiceId)
+      .then((res) => {
+        if (res.data) {
+          setServerReprint({
+            isReprint: res.data.is_reprint,
+            reprintNumber: res.data.reprint_number,
+          });
+        }
+      })
+      .catch(() => {
+        // Non-fatal — worst case the watermark falls back to whatever was
+        // already stored on the invoice (see reprintLabel below).
+      });
+    // Only re-register if the user navigates to a genuinely different
+    // invoice, not on every re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceId, inv?.kind]);
+
   if (!inv) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-muted/30 p-6 text-center">
@@ -93,11 +128,16 @@ function PrintInvoicePage() {
   const buyerName = inv.buyerName ?? cust?.name;
   const buyerPan = inv.buyerPan ?? cust?.pan;
 
-  // IRD reprint watermark — driven by the stored is_reprint flag, not the
-  // client-side copy toggle. A reprint is a distinct legal document and must
-  // always display its reprint number.
-  const reprintLabel = inv.isReprint
-    ? `Copy of Original — Reprint #${inv.reprintNumber ?? 1}`
+  // IRD reprint watermark (Electronic Billing Procedure 2082, clause
+  // 6.2(च)) — driven by the server's registerPrint response (the real,
+  // authoritative reprint decision), falling back to the invoice's
+  // already-stored flags for the brief moment before that call resolves.
+  // Never driven by the cosmetic original/copy toggle — a reprint is a
+  // distinct legal event, not a display preference.
+  const isReprint = serverReprint?.isReprint ?? inv.isReprint ?? false;
+  const reprintNumber = serverReprint?.reprintNumber ?? inv.reprintNumber ?? 1;
+  const reprintLabel = isReprint
+    ? `Copy of Original (${reprintNumber})`
     : copy === "original"
       ? "Original Copy"
       : "Copy of Original";
@@ -273,16 +313,40 @@ function PrintInvoicePage() {
           <span className="font-medium">In words:</span> {amountInWords(t.total, app.currency)}
         </p>
 
-        {c.qrImageUrl && inv.paymentMethod === "qr" ? (
-          <div className="mt-3 text-center">
-            <img
-              src={c.qrImageUrl}
-              alt="Payment QR code"
-              className="mx-auto h-24 w-24 object-contain"
-            />
-            <p className="text-[10px]">Scan to pay</p>
-          </div>
-        ) : null}
+        <div className={`mt-3 flex items-start gap-4 ${isThermal ? "flex-col items-center" : "justify-between"}`}>
+          {!isQuote && (
+            <div className="text-center">
+              <IrdQrCode
+                data={buildIrdQrPayload({
+                  sellerPan,
+                  isVatRegistered: c.vatRegistered,
+                  billNumber: inv.number,
+                  billDateBs: formatBs(date, "long"),
+                  buyerPan,
+                  taxableAmount: hasVat ? t.taxable : t.total,
+                  taxAmount: t.vat,
+                  totalAmount: t.total,
+                  // No confirmed IRD verification-URL format exists yet
+                  // (not in the procedure text, not in CBMS's response) —
+                  // omitted rather than guessed. Wire this up once IRD
+                  // publishes/confirms the scheme during certification.
+                })}
+                size={132}
+              />
+              <p className="mt-1 text-[9px] text-black/60">Scan to verify bill details</p>
+            </div>
+          )}
+          {c.qrImageUrl && inv.paymentMethod === "qr" ? (
+            <div className="text-center">
+              <img
+                src={c.qrImageUrl}
+                alt="Payment QR code"
+                className="mx-auto h-24 w-24 object-contain"
+              />
+              <p className="text-[10px]">Scan to pay</p>
+            </div>
+          ) : null}
+        </div>
 
         <div className="mt-8 flex justify-between text-xs">
           <p className="border-t border-black/70 pt-1">Received by</p>

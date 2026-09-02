@@ -142,15 +142,47 @@ export const invoicesApi = {
       {},
     );
   },
-  async getCbmsCredentials() {
-    return apiClient.get<{ configured: boolean; ird_username?: string }>(
-      `/ims/cbms-credentials`,
+  // Call right before actually printing/showing an issued invoice — server
+  // bumps the reprint counter and tells us whether to render the
+  // "Copy of Original (N)" watermark on this print.
+  registerPrint(invoiceId: string) {
+    return apiClient.post<{ is_reprint: boolean; reprint_number: number | null }>(
+      `/ims/invoices/${invoiceId}/register-print`,
+      {},
     );
   },
-  async saveCbmsCredentials(username: string, password: string) {
-    return apiClient.put<{ saved: boolean }>(`/ims/cbms-credentials`, {
-      ird_username: username,
-      ird_password: password,
+  // Settle more of an already-issued invoice later (saved unpaid/partial
+  // at checkout). Never edits line items/totals — only adds a payment.
+  recordPayment(invoiceId: string, amount: number, method: string) {
+    return apiClient.post<InvoiceDto>(`/ims/invoices/${invoiceId}/record-payment`, {
+      amount,
+      method,
     });
+  },
+};
+
+export interface CbmsSyncLogEntry {
+  id: string;
+  document_type: "invoice" | "credit_note";
+  document_id: string;
+  document_number: string | null;
+  status: "pending" | "synced" | "failed";
+  cbms_response_code: string | null;
+  attempt_count: number;
+  last_attempted_at: string | null;
+  synced_at: string | null;
+}
+
+export const cbmsSyncLogApi = {
+  list(params: { status?: string; page?: number; per_page?: number } = {}) {
+    const qs = new URLSearchParams();
+    if (params.status) qs.set("status", params.status);
+    if (params.page) qs.set("page", String(params.page));
+    if (params.per_page) qs.set("per_page", String(params.per_page));
+    const s = qs.toString();
+    return apiClient.get<CbmsSyncLogEntry[]>(`/ims/cbms-sync-log${s ? `?${s}` : ""}`);
+  },
+  resync(logId: string) {
+    return apiClient.post<{ status: string }>(`/ims/cbms-sync-log/${logId}/resync`, {});
   },
 };

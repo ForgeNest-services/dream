@@ -49,6 +49,25 @@ def _compute_totals(lines: list[dict], vat_registered: bool, vat_rate: Decimal) 
     vat_amount = taxable_net * effective_rate / 100 if vat_registered else Decimal(0)
     total_amount = taxable_net + vat_amount + exempt_net
 
+    # Round to cents now, before this feeds any paid/due comparison or gets
+    # stored — raw Decimal division (line_vat, vat_amount above) can carry
+    # more than 2 decimal places, so an unrounded total_amount could sit a
+    # fraction of a cent above what actually gets stored in the
+    # numeric(12,2) column. That mismatch made a fully-paid invoice
+    # (paid_amount == total_amount once both are stored/rounded) compare as
+    # `capped_paid >= totals["total"]` == False at write time, since the
+    # comparison ran against the unrounded total — landing status="partial"
+    # with a displayed due of Rs 0.00 (bug found via a 2026-09-01 audit
+    # session). Quantizing here, not just on the ORM columns, keeps the
+    # comparison and the stored value in agreement.
+    cents = Decimal("0.01")
+    gross = gross.quantize(cents)
+    discount_total = discount_total.quantize(cents)
+    taxable_net = taxable_net.quantize(cents)
+    exempt_net = exempt_net.quantize(cents)
+    vat_amount = vat_amount.quantize(cents)
+    total_amount = total_amount.quantize(cents)
+
     return {
         "gross": gross,
         "discount": discount_total,
@@ -106,6 +125,83 @@ class IMSInvoiceService:
         if not invoice:
             return {"success": False, "error_code": "DOCUMENT_NOT_FOUND"}
         return {"success": True, "invoice": invoice}
+
+    @staticmethod
+    def register_print(db: Session, tenant_id: str, invoice_id: str, printed_by: str | None) -> dict:
+        """Call once per actual print of an issued invoice — bumps the
+        reprint counter and tells the caller whether THIS print is the
+        original (no watermark) or a reprint ("Copy of Original (N)"). Not
+        meaningful for a quotation, which isn't a real bill yet."""
+        invoice = IMSInvoiceRepository.get_by_id(db, tenant_id, invoice_id)
+        if not invoice:
+            return {"success": False, "error_code": "DOCUMENT_NOT_FOUND"}
+        if invoice.kind == "quotation":
+            return {"success": True, "invoice": invoice, "is_reprint": False}
+        invoice = IMSInvoiceRepository.register_print(db, invoice, printed_by)
+        return {"success": True, "invoice": invoice, "is_reprint": invoice.is_reprint}
+
+    @staticmethod
+    def record_payment(
+        db: Session,
+        tenant_id: str,
+        invoice_id: str,
+        amount: Decimal,
+        method: str,
+        performed_by: str | None = None,
+    ) -> dict:
+        """Settle more of an already-issued invoice later — e.g. it was
+        saved unpaid/partial at checkout and the customer pays afterward.
+        Never touches line items or the original totals (IRD: Electronic
+        Billing Procedure 2082, clause 6.3घ — issued transaction data can't
+        be edited); this only adds a new payment on top, same as a second
+        installment. Mirrors create()'s payment-received ledger entry."""
+        invoice = IMSInvoiceRepository.get_by_id(db, tenant_id, invoice_id)
+        if not invoice:
+            return {"success": False, "error_code": "DOCUMENT_NOT_FOUND"}
+        if invoice.kind == "quotation":
+            return {"success": False, "error_code": "QUOTATION_NOT_PAYABLE"}
+        if invoice.is_credit_note:
+            return {"success": False, "error_code": "CREDIT_NOTE_NOT_PAYABLE"}
+        if amount <= 0:
+            return {"success": False, "error_code": "INVALID_AMOUNT"}
+        due = invoice.total_amount - invoice.paid_amount
+        if due <= 0:
+            return {"success": False, "error_code": "ALREADY_PAID"}
+
+        capped = min(amount, due)
+        before_paid = invoice.paid_amount
+        invoice.paid_amount = before_paid + capped
+        invoice.status = "paid" if invoice.paid_amount >= invoice.total_amount else "partial"
+
+        txn.create_ledger_entry(
+            db,
+            tenant_id=tenant_id,
+            party_id=invoice.customer_id,
+            date=datetime.utcnow(),
+            description=f"Payment received ({method})",
+            reference=invoice.number,
+            debit=Decimal(0),
+            credit=capped,
+        )
+        AuditRepository.write(
+            db,
+            tenant_id=tenant_id,
+            app_code="ims",
+            entity_type="invoice",
+            entity_id=invoice.id,
+            action="record_payment",
+            performed_by=performed_by or "unknown",
+            performer_type="staff",
+            after_state={
+                "amount": float(capped),
+                "method": method,
+                "before_paid": float(before_paid),
+                "after_paid": float(invoice.paid_amount),
+            },
+        )
+        db.commit()
+        db.refresh(invoice)
+        return {"success": True, "invoice": invoice, "amount_applied": capped}
 
     @staticmethod
     def list_for_tenant(
@@ -174,6 +270,20 @@ class IMSInvoiceService:
         # keep the original one-flag behavior.
         show_breakdown = vat_registered if show_vat_breakdown is None else show_vat_breakdown
 
+        # IRD: Electronic Billing Procedure 2082, Annexure-6's own abbreviated
+        # ("संक्षिप्त कर बीजक") invoice template states outright: "दश हजार
+        # रुपैयाँभन्दा बढी कर लाग्ने मूल्यको वस्तु वा सेवाको बिक्रीमा यो बीजक
+        # जारी गरिने छैन" — this format cannot be issued for a sale whose
+        # TAXABLE value exceeds Rs 10,000. show_vat_breakdown is a UI
+        # preference; this is a hard legal ceiling on it, enforced
+        # server-side (never trust a client-supplied show_vat_breakdown to
+        # bypass it) using the same totals math the invoice is about to be
+        # saved with, not a separate approximation.
+        if not is_quotation and not show_breakdown:
+            _precheck_totals = _compute_totals(lines, vat_registered, vat_rate)
+            if _precheck_totals["taxable"] > Decimal("10000"):
+                return {"success": False, "error_code": "ABBREVIATED_INVOICE_LIMIT_EXCEEDED"}
+
         # Stock is only actually deducted for a real sale (a quotation is a
         # price offer, no stock movement — see the loop below), so only real
         # sales need this check; quoting an out-of-stock item is fine.
@@ -188,6 +298,10 @@ class IMSInvoiceService:
         fy_str = fiscal_year_from_ad(date) or ""
 
         try:
+            # ── Seller snapshot (IRD: captured at issue time) ────────────────
+            tenant = TenantRepository.get_by_id(db, tenant_id)
+            branch = BranchRepository.get_by_id(db, tenant_id, branch_id)
+
             if is_quotation:
                 # Quotations use a simple sequential QT number — no IRD serial.
                 from sqlalchemy import func as _func
@@ -204,11 +318,9 @@ class IMSInvoiceService:
             else:
                 series = "INV"
                 serial = IMSInvoiceRepository.next_serial(db, branch_id, fy_str, series)
-                number = format_invoice_number(series, fy_str, serial)
-
-            # ── Seller snapshot (IRD: captured at issue time) ────────────────
-            tenant = TenantRepository.get_by_id(db, tenant_id)
-            branch = BranchRepository.get_by_id(db, tenant_id, branch_id)
+                # IRD: Electronic Billing Procedure 2082, clause 6.2ग — the
+                # bill number must carry this outlet's code.
+                number = format_invoice_number(series, fy_str, serial, branch.code if branch else None)
             seller_name = tenant.name if tenant else None
             seller_address = branch.address if branch else None
             seller_pan = tenant.pan if tenant else None
@@ -219,6 +331,52 @@ class IMSInvoiceService:
             fy = IMSFiscalYearRepository.get_or_create_by_start_year(
                 db, tenant_id, fiscal_year_start_for_bs_date(date_bs)
             )
+
+            # IRD: Electronic Billing Procedure 2082, clause 6.3घ — issued
+            # transaction data can't be modified after entry, enforced at
+            # the DB level (see core/seed.py's ensure_app_role/
+            # _IMMUTABLE_TABLES). That means the invoice row must be
+            # INSERTed once with its real, final values — never created
+            # with zero placeholders and UPDATEd afterward once totals are
+            # known (the old pattern; the restricted DB role now genuinely
+            # rejects that second write). So totals/status/lines are all
+            # resolved BEFORE the single IMSInvoiceRepository.create() call
+            # below, not after it.
+            totals = _compute_totals(lines, vat_registered, vat_rate)
+
+            # Validate every line's variant exists before writing anything —
+            # a failing line must never leave a partial invoice behind.
+            resolved_lines = []
+            for line, line_vat in zip(lines, totals["line_vats"]):
+                variant = IMSProductRepository.get_variant(db, tenant_id, line["variant_id"])
+                if not variant:
+                    db.rollback()
+                    return {"success": False, "error_code": "VARIANT_NOT_FOUND"}
+                product = IMSProductRepository.get_by_id(db, tenant_id, variant.product_id)
+                taxable = line.get("taxable", True) is not False
+                resolved_lines.append({
+                    "line": line,
+                    "variant": variant,
+                    "description": f"{product.name if product else 'Item'} — {variant.name}",
+                    "taxable": taxable,
+                    "line_vat": line_vat,
+                })
+
+            if not resolved_lines:
+                db.rollback()
+                return {"success": False, "error_code": "NO_ITEMS"}
+
+            if is_quotation:
+                # No payment, no ledger entry — a quotation hasn't been sold.
+                final_status = "unpaid"
+                capped_paid = Decimal(0)
+            else:
+                capped_paid = min(paid_amount, totals["total"]) if paid_amount > 0 else Decimal(0)
+                final_status = (
+                    "paid" if capped_paid >= totals["total"] and totals["total"] > 0
+                    else "partial" if capped_paid > 0
+                    else "unpaid"
+                )
 
             invoice = IMSInvoiceRepository.create(
                 db,
@@ -236,45 +394,36 @@ class IMSInvoiceService:
                 buyer_name=customer.name,
                 buyer_pan=customer.pan,
                 buyer_address=customer.address,
-                gross_amount=Decimal(0),
-                discount_amount=Decimal(0),
-                taxable_amount=Decimal(0),
-                exempt_amount=Decimal(0),
-                vat_amount=Decimal(0),
-                total_amount=Decimal(0),
+                gross_amount=totals["gross"],
+                discount_amount=totals["discount"],
+                taxable_amount=totals["taxable"],
+                exempt_amount=totals["exempt"],
+                vat_amount=totals["vat"],
+                total_amount=totals["total"],
                 payment_method=payment_method,
-                paid_amount=Decimal(0),
-                status="unpaid",
+                paid_amount=capped_paid,
+                status=final_status,
                 note=note,
                 user_id=user_id,
             )
 
-            totals = _compute_totals(lines, vat_registered, vat_rate)
-
-            lines_written = 0
-            for line, line_vat in zip(lines, totals["line_vats"]):
-                variant = IMSProductRepository.get_variant(db, tenant_id, line["variant_id"])
-                if not variant:
-                    db.rollback()
-                    return {"success": False, "error_code": "VARIANT_NOT_FOUND"}
-                product = IMSProductRepository.get_by_id(db, tenant_id, variant.product_id)
-
-                taxable = line.get("taxable", True) is not False
+            for resolved in resolved_lines:
+                line = resolved["line"]
+                variant = resolved["variant"]
                 IMSInvoiceRepository.add_line(
                     db,
                     invoice_id=invoice.id,
                     product_id=variant.product_id,
                     variant_id=variant.id,
-                    description=f"{product.name if product else 'Item'} — {variant.name}",
+                    description=resolved["description"],
                     qty=line["qty"],
                     unit_id=variant.unit_id,
                     rate=line["rate"],
                     discount=line.get("discount") or Decimal(0),
-                    taxable=taxable,
-                    tax_rate=totals["effective_rate"] if taxable else Decimal(0),
-                    vat_amount=line_vat,
+                    taxable=resolved["taxable"],
+                    tax_rate=totals["effective_rate"] if resolved["taxable"] else Decimal(0),
+                    vat_amount=resolved["line_vat"],
                 )
-                lines_written += 1
 
                 # A quotation is a price offer only — no stock movement, no
                 # ledger post. Those happen for real when it's converted
@@ -299,29 +448,7 @@ class IMSInvoiceService:
                         user_id=user_id,
                     )
 
-            if lines_written == 0:
-                db.rollback()
-                return {"success": False, "error_code": "NO_ITEMS"}
-
-            invoice.gross_amount = totals["gross"]
-            invoice.discount_amount = totals["discount"]
-            invoice.taxable_amount = totals["taxable"]
-            invoice.exempt_amount = totals["exempt"]
-            invoice.vat_amount = totals["vat"]
-            invoice.total_amount = totals["total"]
-
-            if is_quotation:
-                # No payment, no ledger entry — a quotation hasn't been sold.
-                invoice.status = "unpaid"
-            else:
-                capped_paid = min(paid_amount, totals["total"]) if paid_amount > 0 else Decimal(0)
-                invoice.paid_amount = capped_paid
-                invoice.status = (
-                    "paid" if capped_paid >= totals["total"] and totals["total"] > 0
-                    else "partial" if capped_paid > 0
-                    else "unpaid"
-                )
-
+            if not is_quotation:
                 reference = number
                 txn.create_ledger_entry(
                     db,
@@ -409,6 +536,18 @@ class IMSInvoiceService:
         # "abbreviated" for display/printing.
         show_breakdown = vat_registered if show_vat_breakdown is None else show_vat_breakdown
 
+        # IRD: same Rs 10,000 taxable-value ceiling as create() — see that
+        # function's matching comment for the exact Annexure-6 citation.
+        if not show_breakdown:
+            _precheck_lines = [
+                {"variant_id": line.variant_id, "qty": line.qty, "rate": line.rate,
+                 "discount": line.discount, "taxable": line.taxable}
+                for line in invoice.lines
+            ]
+            _precheck_totals = _compute_totals(_precheck_lines, vat_registered, vat_rate)
+            if _precheck_totals["taxable"] > Decimal("10000"):
+                return {"success": False, "error_code": "ABBREVIATED_INVOICE_LIMIT_EXCEEDED"}
+
         # Same hard-block rule as create() — stock is only ever checked here
         # (not reserved at quote time), so re-validated fresh at conversion
         # since stock may have moved since the quote was made.
@@ -422,14 +561,17 @@ class IMSInvoiceService:
         fy_str = fiscal_year_from_ad(invoice.date) or ""
 
         try:
-            series = "INV"
-            serial = IMSInvoiceRepository.next_serial(db, invoice.branch_id, fy_str, series)
-            number = format_invoice_number(series, fy_str, serial)
-            kind = "tax" if show_breakdown else "abbreviated"
-
             # Snapshot seller at conversion time (the actual sale moment).
             tenant = TenantRepository.get_by_id(db, tenant_id)
             branch = BranchRepository.get_by_id(db, tenant_id, invoice.branch_id)
+
+            series = "INV"
+            serial = IMSInvoiceRepository.next_serial(db, invoice.branch_id, fy_str, series)
+            # IRD: Electronic Billing Procedure 2082, clause 6.2ग — the bill
+            # number must carry this outlet's code.
+            number = format_invoice_number(series, fy_str, serial, branch.code if branch else None)
+            kind = "tax" if show_breakdown else "abbreviated"
+
             invoice.seller_name = tenant.name if tenant else invoice.seller_name
             invoice.seller_address = branch.address if branch else invoice.seller_address
             invoice.seller_pan = tenant.pan if tenant else invoice.seller_pan
@@ -557,8 +699,11 @@ class IMSInvoiceService:
         fy_str = fiscal_year_from_ad(original.date) or ""
 
         try:
+            branch = BranchRepository.get_by_id(db, tenant_id, original.branch_id)
             serial = IMSInvoiceRepository.next_serial(db, original.branch_id, fy_str, "CN")
-            cn_number = format_invoice_number("CN", fy_str, serial)
+            # IRD: Electronic Billing Procedure 2082, clause 6.2ग — the bill
+            # number must carry this outlet's code.
+            cn_number = format_invoice_number("CN", fy_str, serial, branch.code if branch else None)
 
             cn = IMSInvoiceRepository.create(
                 db,
@@ -591,6 +736,52 @@ class IMSInvoiceService:
                 original_invoice_id=original.id,
                 note_reason=reason,
             )
+
+            # Mirror each original line onto the credit note — negate qty
+            # (not rate), so the printed document reads as "returned: -2 x
+            # Widget @ Rs 50" rather than showing a bare total with no
+            # items. rate/discount/tax_rate stay as the customer was
+            # actually charged; only the quantity flips sign so line_gross
+            # (rate - discount) * qty comes out negative and sums back to
+            # the negated header totals above.
+            #
+            # Every credit note also restores the sold quantity back to
+            # stock (explicit product decision — a billing-only correction
+            # where goods never left is expected to go through a separate
+            # manual stock adjustment, not silently skip the restore here).
+            for line in original.lines:
+                IMSInvoiceRepository.add_line(
+                    db,
+                    invoice_id=cn.id,
+                    product_id=line.product_id,
+                    variant_id=line.variant_id,
+                    description=line.description,
+                    qty=-line.qty,
+                    unit_id=line.unit_id,
+                    rate=line.rate,
+                    discount=line.discount,
+                    taxable=line.taxable,
+                    tax_rate=line.tax_rate,
+                    vat_amount=-line.vat_amount,
+                )
+
+                stock_row = txn.get_or_create_stock_row(db, line.variant_id, original.branch_id)
+                balance = stock_row.qty + line.qty
+                txn.set_stock_qty(db, stock_row, balance)
+                txn.create_movement(
+                    db,
+                    tenant_id=tenant_id,
+                    date=original.date,
+                    date_bs=original.date_bs,
+                    branch_id=original.branch_id,
+                    product_id=line.product_id,
+                    variant_id=line.variant_id,
+                    type="return",
+                    qty=line.qty,
+                    balance_after=balance,
+                    reference=cn_number,
+                    user_id=user_id,
+                )
 
             # Reverse the ledger entries.
             txn.create_ledger_entry(

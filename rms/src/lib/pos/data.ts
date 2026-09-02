@@ -118,6 +118,11 @@ export type Order = {
   // Sequential per-branch number for receipts and searches. Populated by
   // the server on create — always > 0.
   billNumber: number;
+  // IRD: Electronic Billing Procedure 2082, clause 6.2ग — the actual
+  // printed/displayed bill number, e.g. "RMS-KTM-83/84-00005". Use this on
+  // receipts/KOT, not the plain billNumber above (which stays internal —
+  // search/sort still key off it). Undefined only for a pre-migration row.
+  billCode?: string;
   tableId: string;
   type: "dine-in" | "delivery";
   // Present when customer_id is set on the order — always for delivery,
@@ -143,6 +148,15 @@ export type Order = {
   discountValue: number;
   paymentMethod?: "cash" | "qr" | "khata";
   waiter: string;
+  // IRD: simplified ("abbreviated") vs full ("tax") VAT breakdown bill —
+  // set at mark-paid time, undefined for a still-draft order. Display-only.
+  kind?: "tax" | "abbreviated";
+  buyerPan?: string;
+  // IRD: Electronic Billing Procedure 2082, clause 6.2घ — Order Slip
+  // sequential numbers this bill was built from (one per "send to
+  // kitchen" round). Only populated when the order was fetched
+  // individually or just sent to kitchen — undefined elsewhere.
+  slipNumbers?: number[];
 };
 
 export type InventoryItem = {
@@ -197,5 +211,33 @@ export type Settings = {
   qrImage?: string | undefined;
 };
 
+// Up to 2 decimals, only shown when actually non-zero (Rs. 100 stays whole,
+// Rs. 88.5 keeps its cents) — rounding every displayed amount to a whole
+// rupee independently made a VAT breakdown's parts visibly fail to add up
+// (e.g. Taxable Rs 89 + VAT Rs 12 shown next to a Total of Rs 100, when the
+// real values are 88.50 + 11.50).
 export const NPR = (n: number) =>
-  `Rs. ${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+  `Rs. ${n.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+/** Round to 2 decimal places, correcting float noise (e.g. 450.00000000006
+ *  becomes 450, not a runaway decimal tail). Every VAT conversion below
+ *  returns through this so displayed/stored values are always clean. */
+export function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+/** Menu item prices are stored VAT-INCLUSIVE (what the customer actually
+ *  pays) — the opposite convention from IMS's sellingPrice, chosen because
+ *  that's what a menu board price means. VAT-exclusive -> inclusive. */
+export function priceWithVat(exclusive: number, rate: number, taxable = true): number {
+  if (!taxable) return round2(exclusive);
+  return round2(exclusive + (exclusive * rate) / 100);
+}
+
+/** VAT-inclusive -> VAT-exclusive (inverse of priceWithVat). Used both by
+ *  the menu item form's Excl. VAT field and by bill rendering, which shows
+ *  the excl. unit price per line and adds VAT back at the bottom. */
+export function priceWithoutVat(inclusive: number, rate: number, taxable = true): number {
+  if (!taxable) return round2(inclusive);
+  return round2(inclusive / (1 + rate / 100));
+}

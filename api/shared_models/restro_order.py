@@ -66,8 +66,17 @@ class RestroOrder(Base):
     table_id = Column(String(36), ForeignKey("public.restro_tables.id"), nullable=True, index=True)
     # Human-friendly sequential bill number, unique per branch. Starts at 1.
     # See OrderRepository.create — computed under the same DB session so a
-    # concurrent conflict on the UNIQUE index triggers a retry.
+    # concurrent conflict on the UNIQUE index triggers a retry. Kept as a
+    # plain Integer (not the formatted string below) — search-by-number and
+    # sort order both depend on it staying a real orderable int.
     bill_number = Column(Integer, nullable=False)
+    # Printed/displayed bill number — "RMS-<branch code>-83/84-00005" — IRD:
+    # Electronic Billing Procedure 2082, clause 6.2ग requires the outlet's
+    # code appear in the bill number once a tenant has 2+ branches. Built
+    # from bill_number + fiscal_year + the branch's code at creation time
+    # and stored (never recomputed later — a branch's code could change,
+    # and an already-issued bill's printed number must not).
+    bill_code = Column(String(50), nullable=True)
     # Nepali fiscal year of this bill — e.g. "2081-82". Populated at create
     # time; required for per-year serial reset (IRD requirement).
     fiscal_year = Column(String(10), nullable=True)
@@ -79,6 +88,12 @@ class RestroOrder(Base):
     type = Column(String(20), nullable=False)  # "dine-in" | "delivery"
     status = Column(String(20), nullable=False, default="draft")  # draft|paid|cancelled
     kitchen_status = Column(String(20), nullable=False, default="new")  # new|cooking|ready|served
+    # IRD: simplified (संक्षिप्त कर बिजक) vs full VAT breakdown bill — set at
+    # mark-paid time, mirrors IMSInvoice.kind minus "quotation" (RMS has no
+    # quotation concept). Display-only: the actual VAT math is identical
+    # either way (see order_service.py's mark_paid), this only controls
+    # whether the taxable/VAT lines are itemized on the printed bill.
+    kind = Column(String(20), nullable=True)  # "tax" | "abbreviated"
 
     placed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     paid_at = Column(DateTime, nullable=True)
@@ -93,6 +108,12 @@ class RestroOrder(Base):
 
     discount_type = Column(String(10), nullable=False, default="percent")  # percent|flat
     discount_value = Column(Numeric(10, 2), nullable=False, default=0)
+    # Annexure-5's "Discount" field wants the actual rupee amount deducted,
+    # snapshotted at mark-paid time — not the type/value INPUT above, which
+    # is just "10%" or "Rs 50" and requires recomputing against the
+    # subtotal to get a real figure. Populated once, alongside
+    # subtotal/taxable/vat/total below, never live-recomputed after.
+    discount_amount = Column(Numeric(12, 2), nullable=True)
 
     # ── VAT breakdown (IRD: snapshotted at mark-paid time) ───────────────────
     subtotal_amount = Column(Numeric(12, 2), nullable=True)  # before discount
@@ -121,10 +142,30 @@ class RestroOrder(Base):
     # Delivery workflow status (only meaningful for type='delivery').
     delivery_status = Column(String(20), nullable=True)  # pending|out|delivered
 
-    # ── Reprint (IRD: new row per reprint, watermarked "Copy of Original") ────
+    # ── Reprint (IRD: printing a paid bill more than once must be visibly
+    # marked) — unlike IMS/PMS invoices, bill_number is a plain sequential
+    # Integer (not a formatted string), so a reprint can't carry a suffixed
+    # "42/Copy-1"-style number without either breaking the UNIQUE(branch,
+    # fiscal_year, bill_number) constraint or switching that column to a
+    # string platform-wide. Simpler and sufficient: track how many times
+    # THIS bill has been printed, on the original row itself, no new row per
+    # print. print_count == 1 after the first print (original, no
+    # watermark); every print beyond that is a reprint (watermark "COPY OF
+    # ORIGINAL"). is_reprint/reprint_of/reprint_number below are legacy
+    # columns from an earlier row-per-reprint design that was never wired up
+    # — kept (nullable/default-false) so they're harmless if something still
+    # references them, but print_count is the real mechanism now.
+    print_count = Column(Integer, nullable=False, default=0)
     is_reprint = Column(Boolean, nullable=False, default=False)
     reprint_of = Column(String(36), ForeignKey("public.restro_orders.id"), nullable=True)
     reprint_number = Column(Integer, nullable=True)
+    # Annexure-5's Is_Bill_Printed/Printed_Time/Printed_By — Printed_By is
+    # deliberately separate from waiter_cred_id (Entered_By): whoever
+    # opened/took the order isn't necessarily who triggered the print
+    # (e.g. a manager reprinting a bill later at the counter).
+    is_bill_printed = Column(Boolean, nullable=False, default=False)
+    printed_time = Column(DateTime(timezone=True), nullable=True)
+    printed_by = Column(String(36), nullable=True)
 
     # ── Credit notes (IRD: reversal of a paid bill) ───────────────────────────
     is_credit_note = Column(Boolean, nullable=False, default=False)

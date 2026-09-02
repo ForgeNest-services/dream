@@ -91,6 +91,7 @@ function PosPage() {
 
   const branchId = app.branchId === "all" ? (app.branches[0]?.id ?? "") : app.branchId;
   const customers = app.parties.filter((p) => p.kind === "customer");
+  const isQuotation = mode === "quotation";
 
   const results = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -116,6 +117,28 @@ function PosPage() {
   // printed bill. The customer pays the same total either way; a
   // "VAT bill" toggled off just doesn't itemize how that total was made up.
   const totals = computeTotals(lines, app.company);
+
+  // IRD: Electronic Billing Procedure 2082, Annexure-6 — an abbreviated
+  // invoice can't be issued above Rs 10,000 taxable value. Server enforces
+  // this for real (never trust the client) — this is just so a cashier
+  // sees the toggle lock itself rather than build the whole cart and only
+  // find out at checkout.
+  const abbreviatedLimitExceeded = !isQuotation && app.company.vatRegistered && totals.taxable > 10000;
+  useEffect(() => {
+    if (abbreviatedLimitExceeded && !vatBillOn) setVatBillOn(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abbreviatedLimitExceeded]);
+  // Cash is the default payment method — keep the Cash received field
+  // synced to the running total as the cart changes, so the common "paid
+  // in full, cash" case needs zero clicks (was previously only filled by
+  // clicking the Cash method button, which does nothing when it's already
+  // selected — the default state). Only auto-fills while method is
+  // "cash"; switching to qr/split, or the user editing Cash by hand,
+  // naturally stops this from re-firing until the total itself changes.
+  useEffect(() => {
+    if (method === "cash") setCash(totals.total);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totals.total, method]);
   // Customer-facing "Sub total" — sum of shelf prices (inclusive), before
   // discount. totals.gross is the exclusive rate sum, which is the right
   // input for VAT math but the wrong number to show as a headline figure.
@@ -131,9 +154,21 @@ function PosPage() {
     const v = app.variants.find((x) => x.id === variantId);
     if (!v) return;
     const p = app.products.find((x) => x.id === v.productId);
+    const maxStock = v.stock[branchId] ?? 0;
+    if (!isQuotation && maxStock <= 0) {
+      toast.error(`${p?.name ?? "Item"} — ${v.name} is out of stock`);
+      return;
+    }
+    setQ("");
     setLines((prev) => {
       const existing = prev.find((l) => l.variantId === variantId);
       if (existing) {
+        // Quotations don't touch stock, so quoting past what's on the shelf
+        // is fine — only a real sale is capped at what's actually available.
+        if (!isQuotation && existing.qty >= maxStock) {
+          toast.error(`Only ${maxStock} ${v.name} in stock`);
+          return prev;
+        }
         return prev.map((l) => (l.variantId === variantId ? { ...l, qty: l.qty + 1 } : l));
       }
       return [
@@ -148,19 +183,26 @@ function PosPage() {
           rate: v.sellingPrice,
           discount: 0,
           taxable: p?.taxable,
-          maxStock: v.stock[branchId] ?? 0,
+          maxStock,
         },
       ];
     });
-    setQ("");
   };
 
   const patch = (id: string, p: Partial<CartLine>) =>
-    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...p } : l)));
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.id !== id) return l;
+        const next = { ...l, ...p };
+        // Same sale-only cap as addVariant — a quotation can still ask for
+        // more than what's on the shelf.
+        if (isQuotation || next.qty <= next.maxStock) return next;
+        toast.error(`Only ${next.maxStock} in stock`);
+        return { ...next, qty: next.maxStock };
+      }),
+    );
 
   const [checkingOut, setCheckingOut] = useState(false);
-
-  const isQuotation = mode === "quotation";
 
   const checkout = async (print: boolean) => {
     if (lines.length === 0) {
@@ -170,6 +212,18 @@ function PosPage() {
     if (!customerId) {
       toast.error("Choose a customer");
       return;
+    }
+    // Belt-and-braces — cart quantities are already clamped as they're
+    // entered, but stock can move (another terminal, a restock/adjust) in
+    // between adding to the cart and pressing pay. Backend re-checks this
+    // for real (see IMSInvoiceService._check_stock_availability); this just
+    // gives an immediate toast instead of a round-trip failure.
+    if (!isQuotation) {
+      const over = lines.find((l) => l.qty > l.maxStock);
+      if (over) {
+        toast.error(`Only ${over.maxStock} ${over.description} in stock`);
+        return;
+      }
     }
     setCheckingOut(true);
     try {
@@ -251,18 +305,22 @@ function PosPage() {
               <div className="absolute left-3 right-3 top-[54px] z-20 overflow-hidden rounded-lg border bg-popover shadow-md">
                 {results.map((v) => {
                   const p = app.products.find((x) => x.id === v.productId);
+                  const stock = v.stock[branchId] ?? 0;
+                  const outOfStock = !isQuotation && stock <= 0;
                   return (
                     <button
                       key={v.id}
                       type="button"
                       onClick={() => addVariant(v.id)}
-                      className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-accent/60"
+                      disabled={outOfStock}
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-accent/60 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <MediaThumb mediaId={p?.mediaId} className="h-9 w-9" alt={p?.name ?? "Product"} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm">{p?.name}</span>
                         <span className="block truncate text-xs text-muted-foreground">
                           {v.name} · {v.barcode || v.modelNo}
+                          {outOfStock ? " · Out of stock" : ""}
                         </span>
                       </span>
                       <Money
@@ -325,6 +383,7 @@ function PosPage() {
                           variant="outline"
                           size="icon"
                           className="h-7 w-7"
+                          disabled={!isQuotation && l.qty >= l.maxStock}
                           onClick={() => patch(l.id, { qty: l.qty + 1 })}
                         >
                           <Plus className="h-3 w-3" />
@@ -418,12 +477,18 @@ function PosPage() {
                 <div>
                   <p className="text-sm">VAT bill</p>
                   <p className="text-xs text-muted-foreground">
-                    {vatBillOn
-                      ? "Tax invoice with taxable amount + VAT breakdown"
-                      : "Plain bill — shelf price only, no VAT breakdown"}
+                    {abbreviatedLimitExceeded
+                      ? "Full tax invoice required — abbreviated invoices are only permitted up to Rs 10,000 taxable value"
+                      : vatBillOn
+                        ? "Tax invoice with taxable amount + VAT breakdown"
+                        : "Plain bill — shelf price only, no VAT breakdown"}
                   </p>
                 </div>
-                <Switch checked={vatBillOn} onCheckedChange={setVatBillOn} />
+                <Switch
+                  checked={vatBillOn}
+                  onCheckedChange={setVatBillOn}
+                  disabled={abbreviatedLimitExceeded}
+                />
               </div>
             )}
             <dl className="space-y-1.5 text-sm">
