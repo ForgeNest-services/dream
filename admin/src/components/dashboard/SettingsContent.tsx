@@ -314,7 +314,12 @@ export function SettingsContent() {
         </div>
       </section>
 
-      <CbmsIntegrationCard />
+      {/* CBMS only applies to a VAT-registered business (दफा ६.४क) — hide
+          for PAN-only rather than show a locked/disabled card. `tenant` is
+          null while auth is still resolving, so this keeps the card visible
+          until we actually know the registration status, avoiding a flash
+          for a VAT tenant on load. */}
+      {(tenant === null || tenant?.is_vat_registered) && <CbmsIntegrationCard />}
     </div>
   );
 }
@@ -496,6 +501,27 @@ function CbmsIntegrationCard() {
         <Button onClick={handleSave} isLoading={saving} size="md">
           Save credentials
         </Button>
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: spacing.sm,
+          padding: `${spacing.sm} ${spacing.md}`,
+          borderRadius: '12px',
+          backgroundColor: colors.neutral[50],
+          marginBottom: spacing.md,
+        }}
+      >
+        <MdOutlineInfo size={16} color={colors.neutral[500]} style={{ flexShrink: 0, marginTop: '1px' }} />
+        <p style={{ fontSize: '12px', color: colors.neutral[600], margin: 0, lineHeight: '1.5' }}>
+          This is voluntary. IRD hasn&apos;t published fixed revenue or transaction
+          thresholds in this procedure — only that some taxpayers are individually
+          designated for mandatory real-time submission. Turn this on if IRD has notified
+          you it&apos;s required for your business, or if you want to comply early;
+          otherwise your bills stay fully compliant without it.
+        </p>
       </div>
 
       <div

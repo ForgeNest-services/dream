@@ -39,7 +39,12 @@ def save_tax_credentials(
         db, user.tenant_id, body.ird_username, body.ird_password
     )
     if not result["success"]:
-        return error_response(result["error_code"], "Failed to save tax settings", 400)
+        code = result["error_code"]
+        if code == "NOT_VAT_REGISTERED":
+            return error_response(
+                code, "CBMS sync only applies to VAT-registered businesses.", 400
+            )
+        return error_response(code, "Failed to save tax settings", 400)
     return success_response(data={"saved": True})
 
 
@@ -55,6 +60,10 @@ def set_sync_enabled(
         code = result["error_code"]
         if code == "CREDENTIALS_NOT_SAVED":
             return error_response(code, "Save IRD credentials before enabling sync", 400)
+        if code == "NOT_VAT_REGISTERED":
+            return error_response(
+                code, "CBMS sync only applies to VAT-registered businesses.", 400
+            )
         return error_response(code, "Failed to update sync setting", 400)
     return success_response(data={"cbms_sync_enabled": result["settings"].cbms_sync_enabled})
 

@@ -49,7 +49,9 @@ export function SettingsView() {
         <TabsTrigger value="restaurant">Restaurant</TabsTrigger>
         <TabsTrigger value="tax">Tax</TabsTrigger>
         <TabsTrigger value="payments">Payments</TabsTrigger>
-        <TabsTrigger value="ird">IRD / CBMS</TabsTrigger>
+        {(tenantLoading || tenant?.is_vat_registered) && (
+          <TabsTrigger value="ird">IRD / CBMS</TabsTrigger>
+        )}
         {(actualRole === "owner" || actualRole === "manager") && (
           <TabsTrigger value="audit">Activity Log</TabsTrigger>
         )}
@@ -265,16 +267,25 @@ export function SettingsView() {
       </TabsContent>
 
       {/* ── IRD / CBMS ── */}
-      <TabsContent value="ird" className="mt-4 space-y-4">
-        <CbmsRealtimeCard
-          tenant={tenant}
-          tenantLoading={tenantLoading}
-          settings={settings}
-          updateSettings={updateSettings}
-          isOwner={actualRole === "owner"}
-        />
-        <CbmsCredentialsCard isOwner={actualRole === "owner"} />
-      </TabsContent>
+      {/* CBMS real-time sync only applies to VAT-registered businesses (दफा
+          ६.४क) — a PAN-only tenant has nothing to sync, so the whole tab
+          (trigger above + content here) is hidden rather than shown
+          disabled, matching the same gate on the admin credentials card.
+          Kept visible while tenant is still loading (see the trigger's own
+          condition above) so it doesn't flash in/out for a VAT tenant on
+          every page load. */}
+      {(tenantLoading || tenant?.is_vat_registered) && (
+        <TabsContent value="ird" className="mt-4 space-y-4">
+          <CbmsRealtimeCard
+            tenant={tenant}
+            tenantLoading={tenantLoading}
+            settings={settings}
+            updateSettings={updateSettings}
+            isOwner={actualRole === "owner"}
+          />
+          <CbmsCredentialsCard isOwner={actualRole === "owner"} />
+        </TabsContent>
+      )}
 
       {/* ── Activity Log ── */}
       {(actualRole === "owner" || actualRole === "manager") && (
