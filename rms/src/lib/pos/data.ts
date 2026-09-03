@@ -210,6 +210,7 @@ export type Settings = {
   vatRate: number;
   qrImage?: string | undefined;
   cbmsRealtimeEnabled: boolean;
+  defaultHsCode?: string | undefined;
 };
 
 // Up to 2 decimals, only shown when actually non-zero (Rs. 100 stays whole,

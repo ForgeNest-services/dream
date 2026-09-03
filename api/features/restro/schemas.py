@@ -714,6 +714,7 @@ class BranchSettingsData(BaseModel):
     vat_rate: Decimal
     qr_image_url: str | None
     cbms_realtime_enabled: bool
+    default_hs_code: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -724,6 +725,7 @@ class UpdateBranchSettingsRequest(BaseModel):
     qr_image_url: str | None = None
     clear_qr: bool = False
     cbms_realtime_enabled: bool | None = None
+    default_hs_code: str | None = None
 
 
 class RestroTenantInfo(BaseModel):

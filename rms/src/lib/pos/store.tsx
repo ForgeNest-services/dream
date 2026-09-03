@@ -676,6 +676,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
             vatRate: Number(dto.vat_rate),
             cbmsRealtimeEnabled: dto.cbms_realtime_enabled,
             ...(dto.qr_image_url ? { qrImage: dto.qr_image_url } : {}),
+            defaultHsCode: dto.default_hs_code ?? undefined,
           },
         }));
       })
@@ -703,6 +704,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
           vatRate: Number(dto.vat_rate),
           qrImage: dto.qr_image_url ?? undefined,
           cbmsRealtimeEnabled: dto.cbms_realtime_enabled,
+          defaultHsCode: dto.default_hs_code ?? undefined,
         },
       };
     });
@@ -869,6 +871,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
       if ("vatEnabled" in patch) persistablePatch.vat_enabled = patch.vatEnabled;
       if ("vatRate" in patch) persistablePatch.vat_rate = patch.vatRate;
       if ("cbmsRealtimeEnabled" in patch) persistablePatch.cbms_realtime_enabled = patch.cbmsRealtimeEnabled;
+      if ("defaultHsCode" in patch) persistablePatch.default_hs_code = patch.defaultHsCode ?? null;
       if (Object.keys(persistablePatch).length === 0) return;
       try {
         const response = await branchSettingsApi.update(branchId, persistablePatch);

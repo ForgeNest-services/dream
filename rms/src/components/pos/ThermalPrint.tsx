@@ -233,12 +233,17 @@ export function BillReceipt({
       {/* IRD §6.2 / Annex-5 Entered_By — staff member who opened the bill */}
       <p>By   : {order.enteredByName}</p>
       <Divider />
-      {order.lines.map((l) => (
+      {order.lines.map((l, idx) => (
         <div key={l.id} className="mb-1">
           <p>
-            {l.name}
+            {idx + 1}. {l.name}
             {l.variantName ? ` (${l.variantName})` : ""}
           </p>
+          {/* IRD Annex-6: HS code per line — uses the branch default since
+              RMS doesn't store per-item HS codes. Omitted when not set. */}
+          {settings.defaultHsCode && (
+            <p className="text-[10px] opacity-70">   HS: {settings.defaultHsCode}</p>
+          )}
           {row(`  ${l.qty} x ${l.price}`, NPR(l.qty * l.price))}
         </div>
       ))}
@@ -259,6 +264,13 @@ export function BillReceipt({
         <span>TOTAL</span>
         <span>{NPR(totals.total)}</span>
       </div>
+      {/* IRD §8(ख): VAT refund for QR/electronic payments — 60% of VAT,
+          capped Rs. 5,000. Only shown when applicable (non-null, non-zero). */}
+      {order.vatRefundAmount != null && order.vatRefundAmount > 0 && (
+        <p className="mt-0.5 text-[10px] text-green-700">
+          VAT refund eligible: {NPR(order.vatRefundAmount)} (claim via IRD portal)
+        </p>
+      )}
       {paymentLabel && (
         <>
           <Divider />

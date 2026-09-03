@@ -165,6 +165,7 @@ def update_branch_settings(
         qr_image_url=data.qr_image_url,
         clear_qr=data.clear_qr,
         cbms_realtime_enabled=data.cbms_realtime_enabled,
+        default_hs_code=data.default_hs_code,
     )
     if not result["success"]:
         return _branch_settings_error(result["error_code"])
@@ -2922,6 +2923,116 @@ def export_restro_monthly_vat_summary(
     ]
     tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
     return _restro_export_response(format, "Monthly VAT Summary", columns, rows, _restro_business_header_lines(tenant))
+
+
+@router.get("/reports/standard-view/export")
+def export_restro_standard_view(
+    format: str,
+    branch_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Annex-5 Standard View — all 20 mandatory fields required by IRD's
+    Electronic Billing Procedure 2082. Bills only (no credit notes)."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can export reports")
+    if branch_id:
+        _assert_branch_scope(staff, branch_id)
+    from features.auth.repository import TenantRepository
+
+    orders = OrderRepository.list_for_report(
+        db, staff["tenant_id"], branch_id, bs_from, bs_to, include_credit_notes=False
+    )
+    columns = [
+        "SN", "Bill No.", "Bill Code", "Date (BS)", "Fiscal Year",
+        "Buyer Name", "Buyer PAN", "Seller PAN",
+        "Total Sales", "Taxable (VAT)", "VAT",
+        "Excisable Amt", "Excise",
+        "Taxable (HST)", "HST",
+        "Amt for ESF", "ESF",
+        "Export Sales", "Tax Exempt",
+        "Is Realtime", "VAT Refund", "Entered By",
+    ]
+    rows = [
+        [
+            idx,
+            o.bill_number,
+            o.bill_code or "",
+            o.placed_at_bs or "",
+            o.fiscal_year or "",
+            o.buyer_name or "Walk-in",
+            o.buyer_pan or "",
+            o.seller_pan or "",
+            o.total_amount or Decimal("0"),
+            o.taxable_amount or Decimal("0"),
+            o.vat_amount or Decimal("0"),
+            Decimal("0"), Decimal("0"),
+            Decimal("0"), Decimal("0"),
+            Decimal("0"), Decimal("0"),
+            Decimal("0"),
+            o.exempt_amount or Decimal("0"),
+            "Yes" if o.is_realtime else "No",
+            o.vat_refund_amount or Decimal("0"),
+            o.entered_by_name or "",
+        ]
+        for idx, o in enumerate(orders, start=1)
+    ]
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _restro_export_response(format, "Standard View (Annex-5)", columns, rows, _restro_business_header_lines(tenant))
+
+
+@router.get("/reports/credit-notes/export")
+def export_restro_credit_notes(
+    format: str,
+    branch_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Credit Notes register — all paid credit notes in the period with their
+    reference bill numbers. Required for IRD /api/billreturn reconciliation."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can export reports")
+    if branch_id:
+        _assert_branch_scope(staff, branch_id)
+    from features.auth.repository import TenantRepository
+
+    all_orders = OrderRepository.list_for_report(
+        db, staff["tenant_id"], branch_id, bs_from, bs_to, include_credit_notes=True
+    )
+    credit_notes = [o for o in all_orders if o.is_credit_note]
+    # Build a quick lookup so each credit note can show the original bill code.
+    bill_lookup: dict[str, str] = {
+        o.id: (o.bill_code or str(o.bill_number))
+        for o in all_orders
+        if not o.is_credit_note
+    }
+    columns = [
+        "SN", "Credit Note No.", "Credit Note Code", "Date (BS)", "Fiscal Year",
+        "Ref Bill", "Reason",
+        "Total", "Taxable (VAT)", "VAT", "Tax Exempt",
+    ]
+    rows = [
+        [
+            idx,
+            o.bill_number,
+            o.bill_code or "",
+            o.placed_at_bs or "",
+            o.fiscal_year or "",
+            bill_lookup.get(o.original_order_id or "", o.original_order_id or ""),
+            o.note_reason or "",
+            round(abs(float(o.total_amount or 0)), 2),
+            round(abs(float(o.taxable_amount or 0)), 2),
+            round(abs(float(o.vat_amount or 0)), 2),
+            round(abs(float(o.exempt_amount or 0)), 2),
+        ]
+        for idx, o in enumerate(credit_notes, start=1)
+    ]
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _restro_export_response(format, "Credit Notes Register", columns, rows, _restro_business_header_lines(tenant))
 
 
 # ---------------------------------------------------------------------------

@@ -44,6 +44,8 @@ class BranchSettingsRepository:
         qr_image_url: str | None = None,
         clear_qr: bool = False,
         cbms_realtime_enabled: bool | None = None,
+        default_hs_code: str | None = None,
+        clear_hs_code: bool = False,
     ) -> RestroBranchSettings:
         if vat_enabled is not None:
             settings.vat_enabled = vat_enabled
@@ -51,6 +53,10 @@ class BranchSettingsRepository:
             settings.vat_rate = vat_rate
         if cbms_realtime_enabled is not None:
             settings.cbms_realtime_enabled = cbms_realtime_enabled
+        if clear_hs_code:
+            settings.default_hs_code = None
+        elif default_hs_code is not None:
+            settings.default_hs_code = default_hs_code.strip() or None
         # clear_qr wins over qr_image_url so a caller can null it in the
         # same PATCH that also touches vat fields.
         if clear_qr:

@@ -54,7 +54,8 @@ def build_cbms_payload(order, org: OrgTaxSettings) -> dict:
         "esf": 0.00,
         "export_sales": 0.00,
         "tax_exempted_sales": round(tax_exempted_sales, 2),
-        "isrealtime": True,
+        "isrealtime": bool(order.is_realtime),
+        "vatRefundAmount": round(float(order.vat_refund_amount or 0), 2),
         "datetimeClient": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
     }
 
@@ -92,6 +93,6 @@ def build_credit_note_payload(credit_note, original_order, org: OrgTaxSettings) 
         "esf": 0.00,
         "export_sales": 0.00,
         "tax_exempted_sales": round(tax_exempted_sales, 2),
-        "isrealtime": True,
+        "isrealtime": bool(credit_note.is_realtime),
         "datetimeClient": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
     }

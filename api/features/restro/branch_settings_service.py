@@ -88,6 +88,8 @@ class BranchSettingsService:
         qr_image_url: str | None = None,
         clear_qr: bool = False,
         cbms_realtime_enabled: bool | None = None,
+        default_hs_code: str | None = None,
+        clear_hs_code: bool = False,
     ) -> dict:
         result = BranchSettingsService.get_or_create(db, tenant_id, branch_id)
         if not result["success"]:
@@ -123,6 +125,8 @@ class BranchSettingsService:
             qr_image_url=qr_image_url,
             clear_qr=clear_qr,
             cbms_realtime_enabled=cbms_realtime_enabled,
+            default_hs_code=default_hs_code,
+            clear_hs_code=clear_hs_code,
         )
         if qr_changed:
             BranchSettingsService._delete_old_qr(old_qr_url)
