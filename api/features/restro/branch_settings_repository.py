@@ -43,11 +43,14 @@ class BranchSettingsRepository:
         vat_rate: Decimal | None = None,
         qr_image_url: str | None = None,
         clear_qr: bool = False,
+        cbms_realtime_enabled: bool | None = None,
     ) -> RestroBranchSettings:
         if vat_enabled is not None:
             settings.vat_enabled = vat_enabled
         if vat_rate is not None:
             settings.vat_rate = vat_rate
+        if cbms_realtime_enabled is not None:
+            settings.cbms_realtime_enabled = cbms_realtime_enabled
         # clear_qr wins over qr_image_url so a caller can null it in the
         # same PATCH that also touches vat fields.
         if clear_qr:

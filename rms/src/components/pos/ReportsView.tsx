@@ -22,9 +22,11 @@ import { usePos } from "@/lib/pos/store";
 import { toBsIso, bsIsoToPretty, formatDateWithStoredBs } from "@/lib/pos/nepali-date";
 import {
   reportsApi,
+  irdExportsApi,
   asNum,
   type SummaryDto,
   type TopItemDto,
+  type IrdExportFormat,
 } from "@/lib/reports-api";
 import { exportReportPdf, exportReportXlsx } from "@/lib/reports-export";
 import { useOrdersList } from "@/hooks/useOrdersList";
@@ -90,7 +92,7 @@ function bsDaysDiff(a: string, b: string): number {
 }
 
 export function ReportsView() {
-  const { branchId, branch, tables, settings } = usePos();
+  const { branchId, branch, tables, settings, tenant, actualRole } = usePos();
   const search = useSearch({ from: REPORTS_ROUTE });
   const navigate = useNavigate();
 
@@ -460,6 +462,10 @@ export function ReportsView() {
           filters for a more focused view.
         </p>
       )}
+
+      {tenant?.is_vat_registered && (actualRole === "owner" || actualRole === "manager") && (
+        <IrdExportsCard branchId={branchId ?? ""} bsFrom={fromBs} bsTo={toBs} />
+      )}
     </div>
   );
 }
@@ -663,6 +669,112 @@ function CategoryTable({
         )}
       </tbody>
     </table>
+  );
+}
+
+function IrdExportsCard({
+  branchId,
+  bsFrom,
+  bsTo,
+}: {
+  branchId: string;
+  bsFrom: string;
+  bsTo: string;
+}) {
+  const [downloading, setDownloading] = useState<string | null>(null);
+
+  const download = async (
+    label: string,
+    key: string,
+    fn: (fmt: IrdExportFormat) => Promise<void>,
+    fmt: IrdExportFormat,
+  ) => {
+    if (!branchId || !bsFrom || !bsTo) {
+      toast.error("Select a date range first");
+      return;
+    }
+    setDownloading(`${key}-${fmt}`);
+    try {
+      await fn(fmt);
+    } catch {
+      toast.error(`Failed to download ${label}`);
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  const registers: {
+    key: string;
+    label: string;
+    description: string;
+    fn: (fmt: IrdExportFormat) => Promise<void>;
+  }[] = [
+    {
+      key: "sales-register",
+      label: "Sales Register",
+      description: "Per-bill VAT breakdown — Bill No., Buyer, PAN, Taxable, VAT, Total",
+      fn: (fmt) => irdExportsApi.salesRegister(branchId, bsFrom, bsTo, fmt),
+    },
+    {
+      key: "annexure-13",
+      label: "Annexure 13",
+      description: "अनुसूची १३ — output VAT summary totals for the selected period",
+      fn: (fmt) => irdExportsApi.annexure13(branchId, bsFrom, bsTo, fmt),
+    },
+    {
+      key: "monthly-vat",
+      label: "Monthly VAT Summary",
+      description: "मासिक — one row per BS month: taxable amount and output VAT",
+      fn: (fmt) => irdExportsApi.monthlyVatSummary(branchId, bsFrom, bsTo, fmt),
+    },
+  ];
+
+  return (
+    <div className="pos-card p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-display text-lg">IRD VAT Registers</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Downloads use the selected date range above. For VAT-registered businesses only.
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 space-y-3">
+        {registers.map((r) => (
+          <div
+            key={r.key}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 px-4 py-3"
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{r.label}</p>
+              <p className="text-xs text-muted-foreground">{r.description}</p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5"
+                disabled={!!downloading}
+                onClick={() => download(r.label, r.key, r.fn, "xlsx")}
+              >
+                <FileSpreadsheet className="size-3.5" />
+                {downloading === `${r.key}-xlsx` ? "…" : "XLSX"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5"
+                disabled={!!downloading}
+                onClick={() => download(r.label, r.key, r.fn, "pdf")}
+              >
+                <Download className="size-3.5" />
+                {downloading === `${r.key}-pdf` ? "…" : "PDF"}
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

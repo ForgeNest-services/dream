@@ -555,6 +555,7 @@ class OrderService:
         customer_id: str | None = None,
         buyer_pan: str | None = None,
         show_vat_breakdown: bool | None = None,
+        transaction_id: str | None = None,
         terminal_ip: str | None = None,
         performed_by: str | None = None,
     ) -> dict:
@@ -651,6 +652,23 @@ class OrderService:
         order.exempt_amount = Decimal("0") if vat_enabled else total
         order.vat_amount = vat
         order.total_amount = total
+
+        # ── IRD Annex-5: transaction_id, vat_refund_amount, is_realtime ──────
+        # transaction_id: e-payment reference supplied by the frontend.
+        order.transaction_id = transaction_id if payment_method == "qr" else None
+        # vat_refund_amount: §8(ख) — 60% of VAT, capped at Rs. 5,000, only
+        # for QR/electronic payments on VAT-registered tenants.
+        if vat_enabled and payment_method == "qr" and vat > Decimal("0"):
+            order.vat_refund_amount = min(
+                (vat * Decimal("0.60")).quantize(Decimal("0.01")),
+                Decimal("5000.00"),
+            )
+        else:
+            order.vat_refund_amount = None
+        # is_realtime: True only when the bill is pushed to CBMS at issuance.
+        # Actual CBMS push is deferred — always False for now. The branch
+        # setting cbms_realtime_enabled controls it once the push is wired.
+        order.is_realtime = False
 
         # Auto-finish the kitchen ticket. Paying = the customer got the food,
         # so the kitchen has no more work to do on it. Prevents a paid order

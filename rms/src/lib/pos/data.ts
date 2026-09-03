@@ -209,6 +209,7 @@ export type Settings = {
   vatEnabled: boolean;
   vatRate: number;
   qrImage?: string | undefined;
+  cbmsRealtimeEnabled: boolean;
 };
 
 // Up to 2 decimals, only shown when actually non-zero (Rs. 100 stays whole,

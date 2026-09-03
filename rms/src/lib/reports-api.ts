@@ -1,5 +1,7 @@
 import { apiClient } from "./api-client";
 
+export type IrdExportFormat = "xlsx" | "pdf";
+
 // Money is serialized as strings on the wire to preserve Decimal precision.
 // Parse to Number for display (NPR helpers), keep the raw string if you ever
 // need exact math.
@@ -100,3 +102,40 @@ export const reportsApi = {
 // f64 comfortably (Nepal restaurant scale is <1e10).
 export const asNum = (v: string | number | undefined): number =>
   typeof v === "number" ? v : Number(v ?? 0);
+
+// ---------------------------------------------------------------------------
+// IRD VAT register exports — only for VAT-registered tenants, owner/manager.
+// Backend returns a file download (Content-Disposition attachment).
+// ---------------------------------------------------------------------------
+
+function irdExportPath(
+  register: "sales-register" | "annexure-13" | "monthly-vat-summary",
+  format: IrdExportFormat,
+  branchId: string,
+  bsFrom: string,
+  bsTo: string,
+): string {
+  const q = new URLSearchParams({ format, branch_id: branchId, bs_from: bsFrom, bs_to: bsTo });
+  return `/restro/reports/${register}/export?${q}`;
+}
+
+export const irdExportsApi = {
+  salesRegister(branchId: string, bsFrom: string, bsTo: string, format: IrdExportFormat) {
+    return apiClient.download(
+      irdExportPath("sales-register", format, branchId, bsFrom, bsTo),
+      `sales-register.${format}`,
+    );
+  },
+  annexure13(branchId: string, bsFrom: string, bsTo: string, format: IrdExportFormat) {
+    return apiClient.download(
+      irdExportPath("annexure-13", format, branchId, bsFrom, bsTo),
+      `annexure-13.${format}`,
+    );
+  },
+  monthlyVatSummary(branchId: string, bsFrom: string, bsTo: string, format: IrdExportFormat) {
+    return apiClient.download(
+      irdExportPath("monthly-vat-summary", format, branchId, bsFrom, bsTo),
+      `monthly-vat-summary.${format}`,
+    );
+  },
+};

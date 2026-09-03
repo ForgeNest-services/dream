@@ -178,6 +178,20 @@ class RestroOrder(Base):
     # ── CBMS (IRD Central Billing Monitoring System) ──────────────────────────
     cbms_synced = Column(Boolean, nullable=False, default=False)
     cbms_synced_at = Column(DateTime(timezone=True), nullable=True)
+    # IRD Annex-5: Is_realtime — was this bill pushed to CBMS at issuance time
+    # (real-time), as opposed to a retroactive batch submission? Only ever True
+    # for VAT-registered tenants with cbms_realtime_enabled on. Deferred until
+    # the actual CBMS API push is implemented; stored now so the schema is
+    # complete from day one.
+    is_realtime = Column(Boolean, nullable=False, default=False)
+    # IRD §8(ख): VAT refund applicable when the customer pays via electronic
+    # means (QR/FonePay/eSewa). 60% of vat_amount, capped at Rs. 5,000.
+    # NULL for cash, khata, or PAN-only (non-VAT) tenants.
+    vat_refund_amount = Column(Numeric(12, 2), nullable=True)
+    # Electronic payment transaction reference (QR scan ID / FonePay /
+    # eSewa txn ID). Supplied by the frontend at mark-paid time; NULL for
+    # cash or khata payments.
+    transaction_id = Column(String(100), nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(

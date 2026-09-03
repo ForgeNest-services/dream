@@ -265,7 +265,14 @@ export function SettingsView() {
       </TabsContent>
 
       {/* ── IRD / CBMS ── */}
-      <TabsContent value="ird" className="mt-4">
+      <TabsContent value="ird" className="mt-4 space-y-4">
+        <CbmsRealtimeCard
+          tenant={tenant}
+          tenantLoading={tenantLoading}
+          settings={settings}
+          updateSettings={updateSettings}
+          isOwner={actualRole === "owner"}
+        />
         <CbmsCredentialsCard isOwner={actualRole === "owner"} />
       </TabsContent>
 
@@ -396,6 +403,82 @@ function VatSettingsCard({
           />
         </div>
       )}
+    </div>
+  );
+}
+
+function CbmsRealtimeCard({
+  tenant,
+  tenantLoading,
+  settings,
+  updateSettings,
+  isOwner,
+}: {
+  tenant: TenantInfoDto | null;
+  tenantLoading: boolean;
+  settings: Settings;
+  updateSettings: (patch: Partial<Settings>) => Promise<void>;
+  isOwner: boolean;
+}) {
+  const [savedFlash, setSavedFlash] = useState(false);
+  const canEnable = tenant?.is_vat_registered === true;
+
+  const flashSaved = () => {
+    setSavedFlash(true);
+    window.setTimeout(() => setSavedFlash(false), 1200);
+  };
+
+  return (
+    <div className="pos-card p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-display text-xl">Real-time CBMS</h2>
+        {savedFlash && (
+          <span className="flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success">
+            <Check className="size-3" />
+            Saved
+          </span>
+        )}
+      </div>
+      <div className="mt-3 rounded-xl border border-border bg-secondary/50 p-3 text-xs">
+        <p className="flex items-center gap-1.5 font-medium text-foreground">
+          <Info className="size-3.5" />
+          IRD requirement
+        </p>
+        <p className="mt-1 text-muted-foreground">
+          {tenantLoading
+            ? "Loading…"
+            : canEnable
+              ? "When enabled, each VAT bill is pushed to CBMS immediately at payment time. IRD Annex-5 records this as Is_realtime = Yes."
+              : "Real-time CBMS sync is only available for VAT-registered businesses. Enable VAT registration in the admin app first."}
+        </p>
+      </div>
+      <div
+        className={`mt-4 flex items-center justify-between rounded-xl p-4 ${
+          canEnable && isOwner ? "bg-secondary" : "bg-secondary/50 opacity-70"
+        }`}
+      >
+        <div>
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            {(!canEnable || !isOwner) && <Lock className="size-3.5 text-muted-foreground" />}
+            Push bills to CBMS in real time
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {canEnable && isOwner
+              ? "Bills are submitted to IRD's Central Billing Monitoring System as they are paid."
+              : !isOwner
+                ? "Only the owner can change this setting."
+                : "Only available for VAT-registered businesses."}
+          </p>
+        </div>
+        <Switch
+          checked={canEnable && settings.cbmsRealtimeEnabled}
+          disabled={!canEnable || !isOwner}
+          onCheckedChange={async (v) => {
+            await updateSettings({ cbmsRealtimeEnabled: v });
+            flashSaved();
+          }}
+        />
+      </div>
     </div>
   );
 }

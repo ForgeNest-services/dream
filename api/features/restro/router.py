@@ -164,6 +164,7 @@ def update_branch_settings(
         vat_rate=data.vat_rate,
         qr_image_url=data.qr_image_url,
         clear_qr=data.clear_qr,
+        cbms_realtime_enabled=data.cbms_realtime_enabled,
     )
     if not result["success"]:
         return _branch_settings_error(result["error_code"])
@@ -1724,9 +1725,16 @@ def set_order_customer(
     return success_response(data=_order_payload(order), message="Customer updated")
 
 
-def _enqueue_cbms_sync(document_type: str, document_id: str, tenant_id: str) -> None:
-    """1min/5min/15min backoff — see jobs/cbms_jobs.py; only the RETRY
-    classification (transient IRD errors) actually gets requeued."""
+def _enqueue_cbms_sync(document_type: str, document_id: str, tenant_id: str, db: Session) -> None:
+    """Enqueues a CBMS sync job only when the tenant actually needs one:
+    VAT-registered + cbms_sync_enabled + credentials present. PAN-only
+    businesses and tenants that haven't set up CBMS credentials skip the
+    queue entirely — no wasted RQ jobs, no misleading 'pending' log rows."""
+    tenant = db.get(Tenant, tenant_id)
+    if not tenant or not tenant.is_vat_registered:
+        return
+    if not CBMSCredentialRepository.get(db, tenant_id):
+        return
     job_queue.enqueue(
         sync_document_job,
         "restro",
@@ -1757,13 +1765,14 @@ def mark_order_paid(
         customer_id=data.customer_id,
         buyer_pan=data.buyer_pan,
         show_vat_breakdown=data.show_vat_breakdown,
+        transaction_id=data.transaction_id,
         terminal_ip=client_ip,
         performed_by=staff.get("cred_id"),
     )
     if not result["success"]:
         return _order_error(result["error_code"])
     order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
-    _enqueue_cbms_sync("invoice", order.id, staff["tenant_id"])
+    _enqueue_cbms_sync("invoice", order.id, staff["tenant_id"], db)
     return success_response(data=_order_payload(order), message="Marked as paid")
 
 
@@ -1814,7 +1823,7 @@ def issue_order_credit_note(
     )
     if not result["success"]:
         return _order_error(result["error_code"])
-    _enqueue_cbms_sync("credit_note", result["order"].id, staff["tenant_id"])
+    _enqueue_cbms_sync("credit_note", result["order"].id, staff["tenant_id"], db)
     return success_response(
         data=_order_payload(result["order"]),
         message="Credit note issued",

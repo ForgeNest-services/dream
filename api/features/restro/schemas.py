@@ -459,6 +459,10 @@ class OrderData(BaseModel):
     original_order_id: str | None
     note_reason: str | None
     cbms_synced: bool
+    # IRD Annex-5 — only populated for VAT-registered tenants.
+    is_realtime: bool
+    vat_refund_amount: Decimal | None
+    transaction_id: str | None
     customer: OrderCustomerRef | None = None
     created_at: datetime
     updated_at: datetime
@@ -558,6 +562,9 @@ class MarkPaidRequest(BaseModel):
     # see OrderService.mark_paid. Omit to default to itemized whenever the
     # branch has VAT enabled.
     show_vat_breakdown: bool | None = None
+    # IRD Annex-5: Transaction_Id — QR/FonePay/eSewa payment reference.
+    # NULL for cash or khata.
+    transaction_id: str | None = None
 
     @field_validator("payment_method")
     @classmethod
@@ -706,6 +713,7 @@ class BranchSettingsData(BaseModel):
     vat_enabled: bool
     vat_rate: Decimal
     qr_image_url: str | None
+    cbms_realtime_enabled: bool
     created_at: datetime
     updated_at: datetime
 
@@ -715,6 +723,7 @@ class UpdateBranchSettingsRequest(BaseModel):
     vat_rate: Decimal | None = None
     qr_image_url: str | None = None
     clear_qr: bool = False
+    cbms_realtime_enabled: bool | None = None
 
 
 class RestroTenantInfo(BaseModel):
