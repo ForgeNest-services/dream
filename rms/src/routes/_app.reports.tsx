@@ -6,14 +6,14 @@ import { ReportsView } from "@/components/pos/ReportsView";
 // tab "orders", status/type "all". Filters get sanitized in validateSearch —
 // a malformed link falls back to defaults instead of throwing.
 export type ReportsSearch = {
-  tab: "orders" | "category" | "items";
+  tab: "orders" | "category" | "items" | "activity";
   bs_from: string;
   bs_to: string;
   status: "all" | "draft" | "paid";
   type: "all" | "dine-in" | "delivery";
 };
 
-const TABS: ReportsSearch["tab"][] = ["orders", "category", "items"];
+const TABS: ReportsSearch["tab"][] = ["orders", "category", "items", "activity"];
 const STATUSES: ReportsSearch["status"][] = ["all", "draft", "paid"];
 const TYPES: ReportsSearch["type"][] = ["all", "dine-in", "delivery"];
 

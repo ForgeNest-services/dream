@@ -121,10 +121,10 @@ export function PosHeader() {
                 className="h-11 gap-2 rounded-xl bg-navy-soft/60 px-3 text-navy-foreground hover:bg-navy-soft hover:text-navy-foreground"
               >
                 <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
-                  {session.username.slice(0, 2).toUpperCase()}
+                  {(session.name || session.username).slice(0, 2).toUpperCase()}
                 </span>
                 <span className="hidden text-left sm:block">
-                  <span className="block text-sm font-semibold leading-none">{session.username}</span>
+                  <span className="block text-sm font-semibold leading-none">{session.name || session.username}</span>
                   <span className="block text-[11px] uppercase tracking-wider text-amber">
                     {ROLE_LABELS[effectiveRole ?? actualRole ?? "waiter"]}
                   </span>

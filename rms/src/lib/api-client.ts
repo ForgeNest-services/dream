@@ -66,4 +66,30 @@ export const apiClient = {
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
   upload: <T>(path: string, formData: FormData) =>
     request<T>(path, { method: "POST", body: formData }),
+
+  /** Fetch a file-download endpoint (Content-Disposition response) and trigger
+   *  a browser save-dialog. Auth header is attached automatically. Falls back
+   *  to `fallbackFilename` when the server doesn't return Content-Disposition. */
+  download: async (path: string, fallbackFilename: string): Promise<void> => {
+    const headers: Record<string, string> = {};
+    const token = authStorage.getToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const response = await fetch(`${API_URL}${path}`, { headers });
+    if (!response.ok) throw new ApiError("DOWNLOAD_FAILED", response.statusText, response.status);
+
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const match = disposition.match(/filename="([^"]+)"/);
+    const filename = match?.[1] ?? fallbackFilename;
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
 };

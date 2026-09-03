@@ -87,6 +87,9 @@ class BranchSettingsService:
         vat_rate: Decimal | None = None,
         qr_image_url: str | None = None,
         clear_qr: bool = False,
+        cbms_realtime_enabled: bool | None = None,
+        default_hs_code: str | None = None,
+        clear_hs_code: bool = False,
     ) -> dict:
         result = BranchSettingsService.get_or_create(db, tenant_id, branch_id)
         if not result["success"]:
@@ -99,10 +102,14 @@ class BranchSettingsService:
         # Server-side enforcement, not just a disabled frontend toggle: VAT
         # can never be turned on for a tenant that isn't actually
         # VAT-registered, regardless of what the request asks for.
-        if vat_enabled:
+        if vat_enabled or cbms_realtime_enabled:
             tenant = TenantRepository.get_by_id(db, tenant_id)
             if not tenant or not tenant.is_vat_registered:
-                return {"success": False, "error_code": "NOT_VAT_REGISTERED"}
+                if vat_enabled:
+                    return {"success": False, "error_code": "NOT_VAT_REGISTERED"}
+                # cbms_realtime_enabled=True for a PAN-only tenant silently
+                # coerces to False — CBMS real-time mode requires VAT bills.
+                cbms_realtime_enabled = False
 
         # Capture the pre-update QR URL so we can delete it from MinIO after
         # a successful DB update. We defer the storage call — DB integrity
@@ -117,6 +124,9 @@ class BranchSettingsService:
             vat_rate=vat_rate,
             qr_image_url=qr_image_url,
             clear_qr=clear_qr,
+            cbms_realtime_enabled=cbms_realtime_enabled,
+            default_hs_code=default_hs_code,
+            clear_hs_code=clear_hs_code,
         )
         if qr_changed:
             BranchSettingsService._delete_old_qr(old_qr_url)

@@ -142,7 +142,8 @@ class OrderService:
 
     @staticmethod
     def register_print(
-        db: Session, tenant_id: str, branch_id: str, order_id: str, printed_by: str | None = None
+        db: Session, tenant_id: str, branch_id: str, order_id: str,
+        printed_by: str | None = None, printed_by_name: str | None = None
     ) -> dict:
         """Call once per actual print of a paid bill — bumps print_count and
         tells the caller whether THIS print is the original (count==1, no
@@ -156,7 +157,7 @@ class OrderService:
             return {"success": False, "error_code": "ORDER_NOT_FOUND"}
         if order.status != "paid":
             return {"success": True, "is_reprint": False, "print_count": 0}
-        order = OrderRepository.increment_print_count(db, order, printed_by)
+        order = OrderRepository.increment_print_count(db, order, printed_by, printed_by_name)
         return {"success": True, "is_reprint": order.print_count > 1, "print_count": order.print_count}
 
     @staticmethod
@@ -180,8 +181,8 @@ class OrderService:
         tenant_id: str,
         branch_id: str,
         type: str,
-        waiter_name: str,
-        waiter_cred_id: str | None,
+        entered_by_name: str,
+        entered_by_cred_id: str | None,
         table_id: str | None = None,
         customer_id: str | None = None,
     ) -> dict:
@@ -228,8 +229,8 @@ class OrderService:
                 type=type,
                 table_id=primary_table_id,
                 customer_id=customer_id,
-                waiter_name=waiter_name,
-                waiter_cred_id=waiter_cred_id,
+                entered_by_name=entered_by_name,
+                entered_by_cred_id=entered_by_cred_id,
                 branch_code=branch.code,
             )
             logger.info(
@@ -554,6 +555,7 @@ class OrderService:
         customer_id: str | None = None,
         buyer_pan: str | None = None,
         show_vat_breakdown: bool | None = None,
+        transaction_id: str | None = None,
         terminal_ip: str | None = None,
         performed_by: str | None = None,
     ) -> dict:
@@ -651,6 +653,23 @@ class OrderService:
         order.vat_amount = vat
         order.total_amount = total
 
+        # ── IRD Annex-5: transaction_id, vat_refund_amount, is_realtime ──────
+        # transaction_id: e-payment reference supplied by the frontend.
+        order.transaction_id = transaction_id if payment_method == "qr" else None
+        # vat_refund_amount: §8(ख) — 60% of VAT, capped at Rs. 5,000, only
+        # for QR/electronic payments on VAT-registered tenants.
+        if vat_enabled and payment_method == "qr" and vat > Decimal("0"):
+            order.vat_refund_amount = min(
+                (vat * Decimal("0.60")).quantize(Decimal("0.01")),
+                Decimal("5000.00"),
+            )
+        else:
+            order.vat_refund_amount = None
+        # is_realtime: True only when the bill is pushed to CBMS at issuance.
+        # Actual CBMS push is deferred — always False for now. The branch
+        # setting cbms_realtime_enabled controls it once the push is wired.
+        order.is_realtime = False
+
         # Auto-finish the kitchen ticket. Paying = the customer got the food,
         # so the kitchen has no more work to do on it. Prevents a paid order
         # from lingering on the Kitchen Display board in "new"/"cooking"
@@ -685,6 +704,7 @@ class OrderService:
             performer_type="staff",
             after_state={
                 "bill_number": order.bill_number,
+                "bill_code": order.bill_code,
                 "payment_method": payment_method,
                 "total": float(total),
             },
@@ -830,7 +850,7 @@ class OrderService:
             action="cancel",
             performed_by=performed_by or "unknown",
             performer_type="staff",
-            after_state={"bill_number": order.bill_number, "fiscal_year": order.fiscal_year},
+            after_state={"bill_number": order.bill_number, "bill_code": order.bill_code, "fiscal_year": order.fiscal_year},
             terminal_ip=terminal_ip,
         )
         db.commit()
@@ -909,8 +929,8 @@ class OrderService:
             seller_pan=original.seller_pan,
             buyer_name=original.buyer_name,
             buyer_pan=original.buyer_pan,
-            waiter_name="system",
-            waiter_cred_id=performed_by,
+            entered_by_name="system",
+            entered_by_cred_id=performed_by,
             is_credit_note=True,
             original_order_id=original.id,
             note_reason=reason,
@@ -950,7 +970,7 @@ class OrderService:
             action="credit_note",
             performed_by=performed_by or "unknown",
             performer_type="staff",
-            after_state={"credit_note_id": cn.id, "bill_number": bill_num, "reason": reason},
+            after_state={"credit_note_id": cn.id, "bill_number": bill_num, "bill_code": cn.bill_code, "reason": reason},
             terminal_ip=terminal_ip,
         )
         db.commit()

@@ -13,11 +13,7 @@ import { buildIrdQrPayload } from "@/lib/ird-qr";
 import type { TenantInfoDto } from "@/lib/tenant-api";
 import { usePos } from "@/lib/pos/store";
 import { IrdQrCode } from "./IrdQrCode";
-import {
-  formatBikramSambat,
-  NEPALI_MONTHS,
-  parseApiDate,
-} from "@/lib/pos/nepali-date";
+import { formatBikramSambat, NEPALI_MONTHS } from "@/lib/pos/nepali-date";
 
 function Divider() {
   return <div className="my-1 border-t border-dashed border-black" />;
@@ -33,8 +29,6 @@ function bsFromOrder(order: Order): string {
   return `${month} ${Number(d)}, ${Number(y)} BS`;
 }
 
-// `order.placedAt` was parsed via parseApiDate (UTC), so this formats in
-// NPT via toLocaleTimeString({ timeZone }).
 function nptTime(ts: number): string {
   return new Date(ts).toLocaleTimeString("en-GB", {
     timeZone: "Asia/Kathmandu",
@@ -175,10 +169,7 @@ export function BillReceipt({
   slipNumbers?: number[];
 }) {
   const { tenant } = usePos();
-  // Prefer the paid_at for closed bills, placed_at for drafts — matches what
-  // the customer expects to see on the receipt (when THIS bill was closed).
-  const displayTs =
-    order.status === "paid" && order.paidAtBs ? order.placedAt : order.placedAt;
+  const displayTs = order.placedAt;
   const row = (label: string, value: string) => (
     <div className="flex justify-between gap-2">
       <span>{label}</span>
@@ -193,6 +184,7 @@ export function BillReceipt({
       ? "KHATA (on tab)"
       : order.paymentMethod.toUpperCase()
     : null;
+  const { session } = usePos();
   return (
     <div className="thermal-receipt mx-auto p-2">
       {isReprint && (
@@ -200,6 +192,12 @@ export function BillReceipt({
           <p className="text-center text-[13px] font-bold tracking-widest">
             Copy of Original ({printCount ?? "?"})
           </p>
+          {/* IRD §6.2(च): reprint must show who triggered this print */}
+          {session && (
+            <p className="text-center text-[10px]">
+              Printed by: {session.name || session.username}
+            </p>
+          )}
           <Divider />
         </>
       )}
@@ -223,13 +221,20 @@ export function BillReceipt({
       <p>Date : {bsFromOrder(order)}</p>
       <p>Also : {nptDate(displayTs)}</p>
       <p>Time : {nptTime(displayTs)}</p>
+      {/* IRD §6.2 / Annex-5 Entered_By — staff member who opened the bill */}
+      <p>By   : {order.enteredByName}</p>
       <Divider />
-      {order.lines.map((l) => (
+      {order.lines.map((l, idx) => (
         <div key={l.id} className="mb-1">
           <p>
-            {l.name}
+            {idx + 1}. {l.name}
             {l.variantName ? ` (${l.variantName})` : ""}
           </p>
+          {/* IRD Annex-6: HS code per line — uses the branch default since
+              RMS doesn't store per-item HS codes. Omitted when not set. */}
+          {settings.defaultHsCode && (
+            <p className="text-[10px] opacity-70">   HS: {settings.defaultHsCode}</p>
+          )}
           {row(`  ${l.qty} x ${l.price}`, NPR(l.qty * l.price))}
         </div>
       ))}
@@ -250,6 +255,13 @@ export function BillReceipt({
         <span>TOTAL</span>
         <span>{NPR(totals.total)}</span>
       </div>
+      {/* IRD §8(ख): VAT refund for QR/electronic payments — 60% of VAT,
+          capped Rs. 5,000. Only shown when applicable (non-null, non-zero). */}
+      {order.vatRefundAmount != null && order.vatRefundAmount > 0 && (
+        <p className="mt-0.5 text-[10px] text-green-700">
+          VAT refund eligible: {NPR(order.vatRefundAmount)} (claim via IRD portal)
+        </p>
+      )}
       {paymentLabel && (
         <>
           <Divider />
@@ -302,9 +314,6 @@ export function BillReceipt({
     </div>
   );
 }
-// parseApiDate re-exported here in case any consumer needs it, avoiding a
-// circular import — actually it's already used above via order.placedAt (already parsed).
-void parseApiDate;
 
 export function PrintDialog({
   open,

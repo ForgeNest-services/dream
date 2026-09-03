@@ -23,6 +23,9 @@ export interface AppCredential {
   tenant_id: string;
   branch_id: string | null;
   role: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
   username: string;
   created_by: string;
   created_at: string;
@@ -31,12 +34,18 @@ export interface AppCredential {
 
 export interface CreateCredentialPayload {
   role: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
   username: string;
   password: string;
   branch_id?: string | null;
 }
 
 export interface UpdateCredentialPayload {
+  name?: string;
+  email?: string | null;
+  phone?: string | null;
   username?: string;
   password?: string;
 }

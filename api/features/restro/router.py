@@ -164,6 +164,8 @@ def update_branch_settings(
         vat_rate=data.vat_rate,
         qr_image_url=data.qr_image_url,
         clear_qr=data.clear_qr,
+        cbms_realtime_enabled=data.cbms_realtime_enabled,
+        default_hs_code=data.default_hs_code,
     )
     if not result["success"]:
         return _branch_settings_error(result["error_code"])
@@ -351,6 +353,7 @@ def staff_login(data: StaffLoginRequest, request: Request, db: Session = Depends
         data=StaffLoginResponse(
             token=result["token"],
             role=result["role"],
+            name=result["name"],
             tenant_id=result["tenant_id"],
             branch_id=result["branch_id"],
             expires_at=result["expires_at"],
@@ -403,6 +406,9 @@ def create_credential(
         tenant_id=user.tenant_id,
         created_by=user.id,
         role=data.role,
+        name=data.name,
+        email=data.email,
+        phone=data.phone,
         username=data.username,
         password=data.password,
         branch_id=data.branch_id,
@@ -412,12 +418,6 @@ def create_credential(
         code = result["error_code"]
         if code == "BRANCH_NOT_FOUND":
             return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
-        if code == "ROLE_ALREADY_HAS_CREDENTIAL":
-            return error_response(
-                "ROLE_ALREADY_HAS_CREDENTIAL",
-                f"A credential for role '{data.role}' already exists for this branch.",
-                409,
-            )
         if code == "USERNAME_TAKEN":
             return error_response(
                 "USERNAME_TAKEN",
@@ -445,6 +445,9 @@ def update_credential(
         db,
         tenant_id=user.tenant_id,
         cred_id=cred_id,
+        name=data.name,
+        email=data.email,
+        phone=data.phone,
         username=data.username,
         password=data.password,
     )
@@ -518,6 +521,9 @@ def staff_create_credential(
         tenant_id=staff["tenant_id"],
         created_by=_owner_user_id(db, staff["tenant_id"]),
         role=data.role,
+        name=data.name,
+        email=data.email,
+        phone=data.phone,
         username=data.username,
         password=data.password,
         branch_id=data.branch_id,
@@ -527,12 +533,6 @@ def staff_create_credential(
         code = result["error_code"]
         if code == "BRANCH_NOT_FOUND":
             return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
-        if code == "ROLE_ALREADY_HAS_CREDENTIAL":
-            return error_response(
-                "ROLE_ALREADY_HAS_CREDENTIAL",
-                f"A credential for role '{data.role}' already exists for this branch.",
-                409,
-            )
         if code == "USERNAME_TAKEN":
             return error_response(
                 "USERNAME_TAKEN",
@@ -559,6 +559,9 @@ def staff_update_credential(
         db,
         tenant_id=staff["tenant_id"],
         cred_id=cred_id,
+        name=data.name,
+        email=data.email,
+        phone=data.phone,
         username=data.username,
         password=data.password,
     )
@@ -1495,15 +1498,16 @@ def create_order(
     db: Session = Depends(get_db),
 ):
     _assert_branch_scope(staff, branch_id)
-    # Snapshot the waiter's login username so the receipt can name them even
-    # if the credential is later renamed or deleted. The JWT doesn't carry
-    # username (only cred_id + role) — look it up here.
+    # Snapshot the staff member's display name (not login username) so the
+    # receipt's "Entered by" survives credential renames or deletions.
+    # JWT carries `name` from login time; fall back to a DB lookup for tokens
+    # issued before this field was added.
     cred_id = staff.get("cred_id")
-    waiter_name = staff.get("role") or "staff"
-    if cred_id:
+    entered_by_name = staff.get("name") or staff.get("role") or "staff"
+    if not staff.get("name") and cred_id:
         cred = RestroCredentialRepository.get_by_id(db, staff["tenant_id"], cred_id)
         if cred:
-            waiter_name = cred.username
+            entered_by_name = cred.name
     result = OrderService.create(
         db,
         tenant_id=staff["tenant_id"],
@@ -1511,8 +1515,8 @@ def create_order(
         type=data.type,
         table_id=data.table_id,
         customer_id=data.customer_id,
-        waiter_name=waiter_name,
-        waiter_cred_id=cred_id,
+        entered_by_name=entered_by_name,
+        entered_by_cred_id=cred_id,
     )
     if not result["success"]:
         return _order_error(result["error_code"])
@@ -1722,9 +1726,16 @@ def set_order_customer(
     return success_response(data=_order_payload(order), message="Customer updated")
 
 
-def _enqueue_cbms_sync(document_type: str, document_id: str, tenant_id: str) -> None:
-    """1min/5min/15min backoff — see jobs/cbms_jobs.py; only the RETRY
-    classification (transient IRD errors) actually gets requeued."""
+def _enqueue_cbms_sync(document_type: str, document_id: str, tenant_id: str, db: Session) -> None:
+    """Enqueues a CBMS sync job only when the tenant actually needs one:
+    VAT-registered + cbms_sync_enabled + credentials present. PAN-only
+    businesses and tenants that haven't set up CBMS credentials skip the
+    queue entirely — no wasted RQ jobs, no misleading 'pending' log rows."""
+    tenant = db.get(Tenant, tenant_id)
+    if not tenant or not tenant.is_vat_registered:
+        return
+    if not CBMSCredentialRepository.get(db, tenant_id):
+        return
     job_queue.enqueue(
         sync_document_job,
         "restro",
@@ -1755,13 +1766,14 @@ def mark_order_paid(
         customer_id=data.customer_id,
         buyer_pan=data.buyer_pan,
         show_vat_breakdown=data.show_vat_breakdown,
+        transaction_id=data.transaction_id,
         terminal_ip=client_ip,
         performed_by=staff.get("cred_id"),
     )
     if not result["success"]:
         return _order_error(result["error_code"])
     order = OrderService.get(db, staff["tenant_id"], branch_id, order_id)["order"]
-    _enqueue_cbms_sync("invoice", order.id, staff["tenant_id"])
+    _enqueue_cbms_sync("invoice", order.id, staff["tenant_id"], db)
     return success_response(data=_order_payload(order), message="Marked as paid")
 
 
@@ -1812,7 +1824,7 @@ def issue_order_credit_note(
     )
     if not result["success"]:
         return _order_error(result["error_code"])
-    _enqueue_cbms_sync("credit_note", result["order"].id, staff["tenant_id"])
+    _enqueue_cbms_sync("credit_note", result["order"].id, staff["tenant_id"], db)
     return success_response(
         data=_order_payload(result["order"]),
         message="Credit note issued",
@@ -1831,8 +1843,15 @@ def register_order_print(
     OrderService.register_print. Returns whether this print should carry the
     "Copy of Original (N)" watermark."""
     _assert_branch_scope(staff, branch_id)
+    cred_id = staff.get("cred_id")
+    printed_by_name = staff.get("name") or None
+    if not printed_by_name and cred_id:
+        cred = RestroCredentialRepository.get_by_id(db, staff["tenant_id"], cred_id)
+        if cred:
+            printed_by_name = cred.name
     result = OrderService.register_print(
-        db, staff["tenant_id"], branch_id, order_id, staff.get("cred_id")
+        db, staff["tenant_id"], branch_id, order_id,
+        printed_by=cred_id, printed_by_name=printed_by_name
     )
     if not result["success"]:
         return _order_error(result["error_code"])
@@ -2002,14 +2021,15 @@ def _inventory_error(code: str):
 
 
 def _actor_from_staff(db: Session, staff: dict) -> tuple[str, str | None]:
-    """Snapshot the acting user's username (like `waiter_name` on orders) so
-    the movement log survives credential renames or deletions."""
+    """Snapshot the acting user's display name so audit/movement logs survive
+    credential renames or deletions. JWT carries `name` since the multi-user
+    credential update; fall back to a DB lookup for older tokens."""
     cred_id = staff.get("cred_id")
-    name = staff.get("role") or "staff"
-    if cred_id:
+    name = staff.get("name") or staff.get("role") or "staff"
+    if not staff.get("name") and cred_id:
         cred = RestroCredentialRepository.get_by_id(db, staff["tenant_id"], cred_id)
         if cred:
-            name = cred.username
+            name = cred.name
     return name, cred_id
 
 
@@ -2786,7 +2806,14 @@ def _restro_business_header_lines(tenant) -> list[str]:
     return lines
 
 
-def _restro_export_response(fmt: str, title: str, columns: list[str], rows: list[list], business_lines: list[str] | None = None):
+def _restro_export_response(
+    fmt: str,
+    title: str,
+    columns: list[str],
+    rows: list[list],
+    business_lines: list[str] | None = None,
+    wide: bool = False,
+):
     from utils.reports_export import build_xlsx, build_pdf
     from fastapi import Response as _Response
 
@@ -2797,7 +2824,7 @@ def _restro_export_response(fmt: str, title: str, columns: list[str], rows: list
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ext = "xlsx"
     else:
-        content = build_pdf(title, columns, rows, business_lines)
+        content = build_pdf(title, columns, rows, business_lines, wide=wide)
         media_type = "application/pdf"
         ext = "pdf"
     safe_title = title.lower().replace(" ", "-").encode("ascii", "ignore").decode("ascii") or "export"
@@ -2903,6 +2930,122 @@ def export_restro_monthly_vat_summary(
     ]
     tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
     return _restro_export_response(format, "Monthly VAT Summary", columns, rows, _restro_business_header_lines(tenant))
+
+
+@router.get("/reports/standard-view/export")
+def export_restro_standard_view(
+    format: str,
+    branch_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Annex-5 Standard View — all 20 mandatory fields required by IRD's
+    Electronic Billing Procedure 2082. Bills only (no credit notes)."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can export reports")
+    if branch_id:
+        _assert_branch_scope(staff, branch_id)
+    from features.auth.repository import TenantRepository
+
+    orders = OrderRepository.list_for_report(
+        db, staff["tenant_id"], branch_id, bs_from, bs_to, include_credit_notes=False
+    )
+    columns = [
+        "SN", "Bill No.", "Bill Code", "Date (BS)", "Fiscal Year",
+        "Buyer Name", "Buyer PAN", "Seller PAN",
+        "Total Sales", "Taxable (VAT)", "VAT",
+        "Excisable Amt", "Excise",
+        "Taxable (HST)", "HST",
+        "Amt for ESF", "ESF",
+        "Export Sales", "Tax Exempt",
+        "Is Realtime", "VAT Refund", "Entered By",
+    ]
+    rows = [
+        [
+            idx,
+            o.bill_number,
+            o.bill_code or "",
+            o.placed_at_bs or "",
+            o.fiscal_year or "",
+            o.buyer_name or "Walk-in",
+            o.buyer_pan or "",
+            o.seller_pan or "",
+            o.total_amount or Decimal("0"),
+            o.taxable_amount or Decimal("0"),
+            o.vat_amount or Decimal("0"),
+            # RMS has no excise/HST/ESF/export-sales concept — these Annex-5
+            # columns are structurally N/A for a restaurant bill, not zero.
+            "N/A", "N/A",
+            "N/A", "N/A",
+            "N/A", "N/A",
+            "N/A",
+            o.exempt_amount or Decimal("0"),
+            "Yes" if o.is_realtime else "No",
+            o.vat_refund_amount or Decimal("0"),
+            o.entered_by_name or "",
+        ]
+        for idx, o in enumerate(orders, start=1)
+    ]
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _restro_export_response(
+        format, "Standard View (Annex-5)", columns, rows, _restro_business_header_lines(tenant), wide=True
+    )
+
+
+@router.get("/reports/credit-notes/export")
+def export_restro_credit_notes(
+    format: str,
+    branch_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_restro_staff()),
+    db: Session = Depends(get_db),
+):
+    """Credit Notes register — all paid credit notes in the period with their
+    reference bill numbers. Required for IRD /api/billreturn reconciliation."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can export reports")
+    if branch_id:
+        _assert_branch_scope(staff, branch_id)
+    from features.auth.repository import TenantRepository
+
+    all_orders = OrderRepository.list_for_report(
+        db, staff["tenant_id"], branch_id, bs_from, bs_to, include_credit_notes=True
+    )
+    credit_notes = [o for o in all_orders if o.is_credit_note]
+    # Build a quick lookup so each credit note can show the original bill code.
+    bill_lookup: dict[str, str] = {
+        o.id: (o.bill_code or str(o.bill_number))
+        for o in all_orders
+        if not o.is_credit_note
+    }
+    columns = [
+        "SN", "Credit Note No.", "Credit Note Code", "Date (BS)", "Fiscal Year",
+        "Ref Bill", "Reason",
+        "Total", "Taxable (VAT)", "VAT", "Tax Exempt",
+    ]
+    rows = [
+        [
+            idx,
+            o.bill_number,
+            o.bill_code or "",
+            o.placed_at_bs or "",
+            o.fiscal_year or "",
+            bill_lookup.get(o.original_order_id or "", o.original_order_id or ""),
+            o.note_reason or "",
+            round(abs(float(o.total_amount or 0)), 2),
+            round(abs(float(o.taxable_amount or 0)), 2),
+            round(abs(float(o.vat_amount or 0)), 2),
+            round(abs(float(o.exempt_amount or 0)), 2),
+        ]
+        for idx, o in enumerate(credit_notes, start=1)
+    ]
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _restro_export_response(
+        format, "Credit Notes Register", columns, rows, _restro_business_header_lines(tenant), wide=True
+    )
 
 
 # ---------------------------------------------------------------------------

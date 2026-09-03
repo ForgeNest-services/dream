@@ -6,7 +6,7 @@ STAFF_TOKEN_TTL_HOURS = 8
 
 
 def issue_staff_token(
-    tenant_id: str, role: str, cred_id: str, branch_id: str | None
+    tenant_id: str, role: str, cred_id: str, branch_id: str | None, name: str = ""
 ) -> tuple[str, datetime]:
     expires_delta = timedelta(hours=STAFF_TOKEN_TTL_HOURS)
     expires_at = datetime.now(timezone.utc) + expires_delta
@@ -16,6 +16,7 @@ def issue_staff_token(
             "role": role,
             "cred_id": cred_id,
             "branch_id": branch_id,
+            "name": name,
             "module": APP_MODULE,
         },
         expires_delta=expires_delta,

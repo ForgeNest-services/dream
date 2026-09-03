@@ -66,8 +66,8 @@ class OrderRepository:
         tenant_id: str,
         branch_id: str,
         type: str,
-        waiter_name: str,
-        waiter_cred_id: str | None,
+        entered_by_name: str,
+        entered_by_cred_id: str | None,
         table_id: str | None = None,
         customer_id: str | None = None,
         branch_code: str | None = None,
@@ -98,8 +98,8 @@ class OrderRepository:
             fiscal_year=fy,
             placed_at=now,
             placed_at_bs=to_bs_iso(now) or "",
-            waiter_name=waiter_name,
-            waiter_cred_id=waiter_cred_id,
+            entered_by_name=entered_by_name,
+            entered_by_cred_id=entered_by_cred_id,
             delivery_status="pending" if type == "delivery" else None,
         )
         db.add(order)
@@ -116,7 +116,7 @@ class OrderRepository:
         )
 
     @staticmethod
-    def increment_print_count(db: Session, order: RestroOrder, printed_by: str | None) -> RestroOrder:
+    def increment_print_count(db: Session, order: RestroOrder, printed_by: str | None, printed_by_name: str | None = None) -> RestroOrder:
         """IRD: printing a paid bill more than once must be visibly watermarked
         as a copy. Called once per actual print action — the caller (service
         layer) decides what "print" means (e.g. clicking Print Bill), this
@@ -131,6 +131,7 @@ class OrderRepository:
         order.is_bill_printed = True
         order.printed_time = datetime.now(timezone.utc)
         order.printed_by = printed_by
+        order.printed_by_name = printed_by_name
         db.commit()
         db.refresh(order)
         return order
@@ -182,7 +183,7 @@ class OrderRepository:
             term_raw = search.strip()
             term = f"%{term_raw.lower()}%"
             conditions = [
-                func.lower(RestroOrder.waiter_name).like(term),
+                func.lower(RestroOrder.entered_by_name).like(term),
                 func.lower(RestroCustomer.name).like(term),
                 func.lower(RestroCustomer.phone).like(term),
                 func.lower(RestroTable.label).like(term),

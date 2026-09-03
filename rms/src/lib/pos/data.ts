@@ -147,7 +147,7 @@ export type Order = {
   discountType: "percent" | "flat";
   discountValue: number;
   paymentMethod?: "cash" | "qr" | "khata";
-  waiter: string;
+  enteredByName: string;
   // IRD: simplified ("abbreviated") vs full ("tax") VAT breakdown bill —
   // set at mark-paid time, undefined for a still-draft order. Display-only.
   kind?: "tax" | "abbreviated";
@@ -157,6 +157,12 @@ export type Order = {
   // kitchen" round). Only populated when the order was fetched
   // individually or just sent to kitchen — undefined elsewhere.
   slipNumbers?: number[];
+  // IRD: Annexure-5 Standard View fields — Is_realtime, VAT_Refund_Amount,
+  // Transaction_Id. vatRefundAmount/transactionId only set for an
+  // electronic-payment (qr) bill that actually qualifies.
+  isRealtime?: boolean;
+  vatRefundAmount?: number;
+  transactionId?: string;
 };
 
 export type InventoryItem = {
@@ -209,6 +215,8 @@ export type Settings = {
   vatEnabled: boolean;
   vatRate: number;
   qrImage?: string | undefined;
+  cbmsRealtimeEnabled: boolean;
+  defaultHsCode?: string | undefined;
 };
 
 // Up to 2 decimals, only shown when actually non-zero (Rs. 100 stays whole,

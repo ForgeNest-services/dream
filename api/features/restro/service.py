@@ -18,9 +18,12 @@ class RestroCredentialService:
         tenant_id: str,
         created_by: str,
         role: str,
+        name: str,
         username: str,
         password: str,
         branch_id: str | None,
+        email: str | None = None,
+        phone: str | None = None,
     ) -> dict:
         if role in BRANCH_SCOPED_ROLES:
             if not branch_id:
@@ -30,18 +33,15 @@ class RestroCredentialService:
         else:
             branch_id = None
 
-        existing = RestroCredentialRepository.get_by_tenant_branch_and_role(
-            db, tenant_id, branch_id, role
-        )
-        if existing:
-            return {"success": False, "error_code": "ROLE_ALREADY_HAS_CREDENTIAL"}
-
         try:
             cred = RestroCredentialRepository.create(
                 db,
                 tenant_id=tenant_id,
                 branch_id=branch_id,
                 role=role,
+                name=name,
+                email=email,
+                phone=phone,
                 username=username,
                 password_hash=hash_password(password),
                 created_by=created_by,
@@ -77,6 +77,9 @@ class RestroCredentialService:
         db: Session,
         tenant_id: str,
         cred_id: str,
+        name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
         username: str | None = None,
         password: str | None = None,
     ) -> dict:
@@ -87,7 +90,8 @@ class RestroCredentialService:
         try:
             password_hash = hash_password(password) if password else None
             updated = RestroCredentialRepository.update(
-                db, cred, username=username, password_hash=password_hash
+                db, cred, name=name, email=email, phone=phone,
+                username=username, password_hash=password_hash
             )
             logger.info(
                 f"Restro credential updated: {updated.id}",
@@ -168,6 +172,7 @@ class RestroAuthService:
             role=cred.role,
             cred_id=cred.id,
             branch_id=cred.branch_id,
+            name=cred.name,
         )
         AuditRepository.write(
             db,
@@ -187,6 +192,7 @@ class RestroAuthService:
             "success": True,
             "token": token,
             "role": cred.role,
+            "name": cred.name,
             "tenant_id": cred.tenant_id,
             "branch_id": cred.branch_id,
             "expires_at": expires_at,

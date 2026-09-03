@@ -76,18 +76,24 @@ export interface OrderDto {
   seller_pan: string | null;
   buyer_name: string | null;
   buyer_pan: string | null;
-  waiter_name: string;
-  waiter_cred_id: string | null;
+  entered_by_name: string;
+  entered_by_cred_id: string | null;
   delivery_status: DeliveryStatus | null;
   // ── Reprint / credit note (IRD) ──────────────────────────────────────
   print_count: number;
   is_reprint: boolean;
   reprint_of: string | null;
   reprint_number: number | null;
+  printed_by_name: string | null;
   is_credit_note: boolean;
   original_order_id: string | null;
   note_reason: string | null;
   cbms_synced: boolean;
+  is_realtime: boolean;
+  // IRD §8(ख): 60% VAT refund on electronic-payment bills, capped Rs 5,000.
+  // Null unless applicable (qr payment, VAT-registered, computed at mark-paid).
+  vat_refund_amount: string | null;
+  transaction_id: string | null;
   // Embedded (slim) customer object — populated whenever customer_id is set.
   // Delivery orders always have this; dine-in orders have it when the
   // waiter attached a customer at pay time (khata).
@@ -278,6 +284,16 @@ export const ordersApi = {
     return apiClient.post<OrderDto>(
       `/restro/branches/${branchId}/orders/${orderId}/cancel`,
       {},
+    );
+  },
+  // IRD: Electronic Billing Procedure 2082, clause 6.2ज — the post-issuance
+  // "sales return" path, distinct from cancel() (pre-issuance reverse
+  // entry). Only valid on a paid, non-credit-note order; creates a new
+  // linked negative-amount order rather than editing the original.
+  creditNote(branchId: string, orderId: string, reason: string) {
+    return apiClient.post<OrderDto>(
+      `/restro/branches/${branchId}/orders/${orderId}/credit-note`,
+      { reason },
     );
   },
   setDeliveryStatus(

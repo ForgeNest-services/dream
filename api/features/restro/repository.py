@@ -8,15 +8,21 @@ class RestroCredentialRepository:
         db: Session,
         tenant_id: str,
         role: str,
+        name: str,
         username: str,
         password_hash: str,
         created_by: str,
         branch_id: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
     ) -> RestroCredential:
         cred = RestroCredential(
             tenant_id=tenant_id,
             branch_id=branch_id,
             role=role,
+            name=name,
+            email=email,
+            phone=phone,
             username=username,
             password_hash=password_hash,
             created_by=created_by,
@@ -72,9 +78,18 @@ class RestroCredentialRepository:
     def update(
         db: Session,
         cred: RestroCredential,
+        name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
         username: str | None = None,
         password_hash: str | None = None,
     ) -> RestroCredential:
+        if name is not None:
+            cred.name = name
+        if email is not None:
+            cred.email = email
+        if phone is not None:
+            cred.phone = phone
         if username is not None:
             cred.username = username
         if password_hash is not None:

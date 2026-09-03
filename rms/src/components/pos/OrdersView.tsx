@@ -1,14 +1,34 @@
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Printer, Search, X } from "lucide-react";
+import { toast } from "sonner";
+import { Ban, ChevronLeft, ChevronRight, FileMinus, Printer, Search, X } from "lucide-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { NPR, type Order, type RestaurantTable } from "@/lib/pos/data";
 import { billTotals, usePos } from "@/lib/pos/store";
 import { formatDateWithStoredBs, parseApiDate, toBsIso } from "@/lib/pos/nepali-date";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useOrdersList } from "@/hooks/useOrdersList";
 import { ordersApi, type OrderDto } from "@/lib/orders-api";
+import { ApiError } from "@/lib/api-client";
 import type { OrdersSearch } from "@/routes/_app.orders";
 import { OrderScreen } from "./OrderScreen";
 import { ReserveDialog, TableGrid } from "./TableGrid";
@@ -91,7 +111,7 @@ export function OrdersView({ showControls = false }: { showControls?: boolean })
 const PER_PAGE_OPTIONS = [10, 25, 50, 100] as const;
 
 function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
-  const { tables, settings, branchId, customers } = usePos();
+  const { tables, settings, branchId, customers, actualRole } = usePos();
   const search = useSearch({ from: ORDERS_ROUTE });
   const navigate = useNavigate();
 
@@ -126,6 +146,49 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
       setPrintSlipNumbers(orderRes.data?.slip_numbers);
     }
     setPrint(mapped);
+  };
+
+  // IRD: Electronic Billing Procedure 2082, clause 6.2ज — reverse entry.
+  // Only valid on a still-draft order; burns its bill_number permanently
+  // (never reused) rather than deleting the row, so the sequence gap is
+  // traceable in the Standard View / audit log.
+  const confirmVoid = async () => {
+    if (!voidTarget || !branchId) return;
+    setVoidBusy(true);
+    try {
+      await ordersApi.cancel(branchId, voidTarget.id);
+      toast.success("Order voided");
+      setVoidTarget(null);
+      refetch();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to void order");
+    } finally {
+      setVoidBusy(false);
+    }
+  };
+
+  // IRD: Electronic Billing Procedure 2082, clause 6.2ज — sales return.
+  // Only valid on a paid order; issues a new linked negative-amount order,
+  // never edits the original (the DB immutability trigger would reject
+  // that anyway once status='paid').
+  const submitCreditNote = async () => {
+    if (!creditNoteTarget || !branchId) return;
+    if (!creditNoteReason.trim()) {
+      toast.error("A reason is required");
+      return;
+    }
+    setCreditNoteBusy(true);
+    try {
+      await ordersApi.creditNote(branchId, creditNoteTarget.id, creditNoteReason.trim());
+      toast.success("Credit note issued");
+      setCreditNoteTarget(null);
+      setCreditNoteReason("");
+      refetch();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to issue credit note");
+    } finally {
+      setCreditNoteBusy(false);
+    }
   };
 
   // Helper: patch specific URL search params. `replace: true` avoids flooding
@@ -170,7 +233,13 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
   const effectiveStatusForDues =
     search.status === "dues" ? ("paid" as const) : effectiveStatus;
 
-  const { orders, meta, isLoading } = useOrdersList(branchId || null, {
+  const [voidTarget, setVoidTarget] = useState<OrderDto | null>(null);
+  const [voidBusy, setVoidBusy] = useState(false);
+  const [creditNoteTarget, setCreditNoteTarget] = useState<OrderDto | null>(null);
+  const [creditNoteReason, setCreditNoteReason] = useState("");
+  const [creditNoteBusy, setCreditNoteBusy] = useState(false);
+
+  const { orders, meta, isLoading, refetch } = useOrdersList(branchId || null, {
     q: search.q.trim() || undefined,
     status: effectiveStatusForDues,
     payment_method: effectivePaymentMethod,
@@ -228,7 +297,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
     discountType: o.discount_type,
     discountValue: Number(o.discount_value),
     ...(o.payment_method ? { paymentMethod: o.payment_method } : {}),
-    waiter: o.waiter_name,
+    enteredByName: o.entered_by_name,
     ...(o.kind ? { kind: o.kind } : {}),
     ...(o.buyer_pan ? { buyerPan: o.buyer_pan } : {}),
     ...(o.bill_code ? { billCode: o.bill_code } : {}),
@@ -345,8 +414,9 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
                         isKhata &&
                         o.customer_id &&
                         (customers.find((c) => c.id === o.customer_id)?.outstandingBalance ?? 0) === 0;
-                      const label =
-                        o.status === "draft"
+                      const label = o.is_credit_note
+                        ? "Credit Note"
+                        : o.status === "draft"
                           ? "Active"
                           : o.status === "paid"
                             ? isKhata
@@ -355,8 +425,9 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
                                 : "Khata"
                               : "Settled"
                             : "Cancelled";
-                      const cls =
-                        isKhata && !customerCleared
+                      const cls = o.is_credit_note
+                        ? "bg-destructive/15 text-destructive"
+                        : isKhata && !customerCleared
                           ? "bg-warning text-navy"
                           : o.status !== "draft"
                             ? "bg-success/15 text-success"
@@ -387,6 +458,30 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
                           Open
                         </Button>
                       )}
+                      {o.status === "draft" && (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="size-10 text-destructive hover:text-destructive"
+                          aria-label={`Void bill ${o.id}`}
+                          onClick={() => setVoidTarget(o)}
+                        >
+                          <Ban className="size-4" />
+                        </Button>
+                      )}
+                      {o.status === "paid" &&
+                        !o.is_credit_note &&
+                        (actualRole === "owner" || actualRole === "manager") && (
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="size-10"
+                            aria-label={`Issue credit note for bill ${o.id}`}
+                            onClick={() => setCreditNoteTarget(o)}
+                          >
+                            <FileMinus className="size-4" />
+                          </Button>
+                        )}
                       <Button
                         variant="outline"
                         size="icon"
@@ -479,6 +574,86 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
           />
         </PrintDialog>
       )}
+
+      <AlertDialog open={!!voidTarget} onOpenChange={(o) => !o && setVoidTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Void this bill?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {voidTarget?.bill_code ?? `#${voidTarget?.bill_number}`} will be marked
+              cancelled and its table freed. This bill number can never be reused — a gap
+              in the sequence is expected and shows up in the activity log. This only
+              works because the bill hasn't been paid yet.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={voidBusy}>Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={voidBusy}
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmVoid();
+              }}
+            >
+              {voidBusy ? "Voiding…" : "Void bill"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog
+        open={!!creditNoteTarget}
+        onOpenChange={(o) => {
+          if (!o) {
+            setCreditNoteTarget(null);
+            setCreditNoteReason("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Issue credit note</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Reverses{" "}
+              {creditNoteTarget?.bill_code ?? `#${creditNoteTarget?.bill_number}`} — this
+              creates a new, separately numbered credit note linked to the original bill.
+              The original bill itself is never edited or deleted.
+            </p>
+            <div className="space-y-1">
+              <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Reason
+              </label>
+              <Textarea
+                value={creditNoteReason}
+                onChange={(e) => setCreditNoteReason(e.target.value)}
+                placeholder="e.g. Customer returned the order after payment"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={creditNoteBusy}
+              onClick={() => {
+                setCreditNoteTarget(null);
+                setCreditNoteReason("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={creditNoteBusy || !creditNoteReason.trim()}
+              onClick={() => void submitCreditNote()}
+            >
+              {creditNoteBusy ? "Issuing…" : "Issue credit note"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

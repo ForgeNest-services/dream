@@ -8,6 +8,7 @@ const KEY_BRANCH = "zestro_branch_v1";
 export type StoredSession = {
   token: string;
   role: Role;
+  name: string;
   tenantId: string;
   branchId: string | null;
   username: string;
@@ -39,6 +40,7 @@ export const authStorage = {
         return {
           token: parsed.token,
           role: parsed.role as Role,
+          name: typeof parsed.name === "string" ? parsed.name : parsed.username,
           tenantId: parsed.tenantId,
           branchId: parsed.branchId ?? null,
           username: parsed.username,

@@ -44,6 +44,13 @@ class TaxSettingsService:
         tenant = TenantRepository.get_by_id(db, tenant_id)
         if not tenant:
             return {"success": False, "error_code": "TENANT_NOT_FOUND"}
+        # CBMS real-time sync only ever applies to a VAT bill (dफा ६.४क) —
+        # a PAN-only business has nothing to submit, so don't let it hold
+        # live IRD portal credentials in the system at all. Matches the
+        # same gate already enforced on vat_enabled/cbms_realtime_enabled
+        # in branch_settings_service.py.
+        if not tenant.is_vat_registered:
+            return {"success": False, "error_code": "NOT_VAT_REGISTERED"}
         row = TaxSettingsRepository.get_or_create(db, tenant_id)
         encrypted = encrypt_secret(ird_password)
         row = TaxSettingsRepository.save_credentials(db, row, tenant.pan, ird_username, encrypted)
@@ -65,6 +72,10 @@ class TaxSettingsService:
         row = TaxSettingsRepository.get(db, tenant_id)
         if not row or not row.ird_username or not row.ird_password:
             return {"success": False, "error_code": "CREDENTIALS_NOT_SAVED"}
+        if enabled:
+            tenant = TenantRepository.get_by_id(db, tenant_id)
+            if not tenant or not tenant.is_vat_registered:
+                return {"success": False, "error_code": "NOT_VAT_REGISTERED"}
         row = TaxSettingsRepository.set_sync_enabled(db, row, enabled)
         return {"success": True, "settings": row}
 

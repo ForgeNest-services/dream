@@ -135,7 +135,7 @@ export function exportReportPdf(ctx: ExportContext): void {
   doc.setFontSize(10);
   doc.text(ctx.branchName, 40, 68);
   doc.text(
-    `Range: ${ctx.bsFrom}${ctx.bsFrom === ctx.bsTo ? "" : ` → ${ctx.bsTo}`} (BS)`,
+    `Range: ${ctx.bsFrom}${ctx.bsFrom === ctx.bsTo ? "" : ` to ${ctx.bsTo}`} (BS)`,
     40,
     82,
   );

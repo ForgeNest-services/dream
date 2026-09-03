@@ -773,8 +773,8 @@ def ensure_restro_immutability_trigger() -> None:
                         OR NEW.seller_pan IS DISTINCT FROM OLD.seller_pan
                         OR NEW.buyer_name IS DISTINCT FROM OLD.buyer_name
                         OR NEW.buyer_pan IS DISTINCT FROM OLD.buyer_pan
-                        OR NEW.waiter_name IS DISTINCT FROM OLD.waiter_name
-                        OR NEW.waiter_cred_id IS DISTINCT FROM OLD.waiter_cred_id
+                        OR NEW.entered_by_name IS DISTINCT FROM OLD.entered_by_name
+                        OR NEW.entered_by_cred_id IS DISTINCT FROM OLD.entered_by_cred_id
                         OR NEW.delivery_status IS DISTINCT FROM OLD.delivery_status
                         OR NEW.is_credit_note IS DISTINCT FROM OLD.is_credit_note
                         OR NEW.original_order_id IS DISTINCT FROM OLD.original_order_id

@@ -27,6 +27,15 @@ class RestroBranchSettings(Base):
     # Old file is deleted from storage whenever this is replaced or cleared
     # (see BranchSettingsService.update_qr / clear_qr).
     qr_image_url = Column(String(1000), nullable=True)
+    # IRD: when True, every VAT bill is pushed to CBMS in real-time at
+    # mark-paid time. Only meaningful for VAT-registered tenants (enforced in
+    # BranchSettingsService.update). Defaults off — the owner explicitly opts
+    # in once they have CBMS credentials configured.
+    cbms_realtime_enabled = Column(Boolean, nullable=False, default=False)
+    # IRD Annex-6: all bill formats (full tax, abbreviated, PAN-only) require
+    # an HS code column per line. Restaurants use a branch-level default
+    # (e.g. "2106.90" for prepared foods) rather than per-item codes.
+    default_hs_code = Column(String(20), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
         DateTime,

@@ -119,7 +119,7 @@ function toOrder(o: OrderDto): Order {
     placedAtBs: o.placed_at_bs,
     discountType: o.discount_type,
     discountValue: Number(o.discount_value),
-    waiter: o.waiter_name,
+    enteredByName: o.entered_by_name,
   };
   if (o.paid_at_bs) order.paidAtBs = o.paid_at_bs;
   const settledDate = parseApiDate(o.settled_at);
@@ -140,6 +140,9 @@ function toOrder(o: OrderDto): Order {
   if (o.buyer_pan) order.buyerPan = o.buyer_pan;
   if (o.slip_numbers) order.slipNumbers = o.slip_numbers;
   if (o.bill_code) order.billCode = o.bill_code;
+  order.isRealtime = o.is_realtime;
+  if (o.vat_refund_amount) order.vatRefundAmount = Number(o.vat_refund_amount);
+  if (o.transaction_id) order.transactionId = o.transaction_id;
   return order;
 }
 
@@ -394,6 +397,7 @@ const defaultSettings = (branch: Branch | null): Settings => ({
   branchPhone: branch?.phone ?? "",
   vatEnabled: true,
   vatRate: 13,
+  cbmsRealtimeEnabled: false,
 });
 
 export function PosProvider({ children }: { children: ReactNode }) {
@@ -595,6 +599,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
       const stored: StoredSession = {
         token: data.token,
         role: data.role as Role,
+        name: data.name ?? username,
         tenantId: data.tenant_id,
         branchId: data.branch_id,
         username,
@@ -672,7 +677,9 @@ export function PosProvider({ children }: { children: ReactNode }) {
             branchPhone: prev[branchId]?.branchPhone ?? defaultSettings(branch).branchPhone,
             vatEnabled: dto.vat_enabled,
             vatRate: Number(dto.vat_rate),
+            cbmsRealtimeEnabled: dto.cbms_realtime_enabled,
             ...(dto.qr_image_url ? { qrImage: dto.qr_image_url } : {}),
+            defaultHsCode: dto.default_hs_code ?? undefined,
           },
         }));
       })
@@ -699,6 +706,8 @@ export function PosProvider({ children }: { children: ReactNode }) {
           vatEnabled: dto.vat_enabled,
           vatRate: Number(dto.vat_rate),
           qrImage: dto.qr_image_url ?? undefined,
+          cbmsRealtimeEnabled: dto.cbms_realtime_enabled,
+          defaultHsCode: dto.default_hs_code ?? undefined,
         },
       };
     });
@@ -864,6 +873,8 @@ export function PosProvider({ children }: { children: ReactNode }) {
       const persistablePatch: Record<string, unknown> = {};
       if ("vatEnabled" in patch) persistablePatch.vat_enabled = patch.vatEnabled;
       if ("vatRate" in patch) persistablePatch.vat_rate = patch.vatRate;
+      if ("cbmsRealtimeEnabled" in patch) persistablePatch.cbms_realtime_enabled = patch.cbmsRealtimeEnabled;
+      if ("defaultHsCode" in patch) persistablePatch.default_hs_code = patch.defaultHsCode ?? null;
       if (Object.keys(persistablePatch).length === 0) return;
       try {
         const response = await branchSettingsApi.update(branchId, persistablePatch);

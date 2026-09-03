@@ -134,10 +134,12 @@ class RestroOrder(Base):
     buyer_name = Column(String(200), nullable=True)
     buyer_pan = Column(String(50), nullable=True)
 
-    # Snapshot of the waiter who opened the order. `waiter_cred_id` is FK-lite
-    # (no cascade) so credential deletion doesn't wipe history.
-    waiter_name = Column(String(100), nullable=False)
-    waiter_cred_id = Column(String(36), nullable=True)
+    # Snapshot of the staff member who opened the order (IRD Annex-5:
+    # Entered_By). `entered_by_cred_id` is FK-lite (no cascade) so credential
+    # deletion doesn't wipe history. `entered_by_name` uses the credential's
+    # display `name` field, not the login username.
+    entered_by_name = Column(String(100), nullable=False)
+    entered_by_cred_id = Column(String(36), nullable=True)
 
     # Delivery workflow status (only meaningful for type='delivery').
     delivery_status = Column(String(20), nullable=True)  # pending|out|delivered
@@ -160,12 +162,13 @@ class RestroOrder(Base):
     reprint_of = Column(String(36), ForeignKey("public.restro_orders.id"), nullable=True)
     reprint_number = Column(Integer, nullable=True)
     # Annexure-5's Is_Bill_Printed/Printed_Time/Printed_By — Printed_By is
-    # deliberately separate from waiter_cred_id (Entered_By): whoever
+    # deliberately separate from entered_by_cred_id (Entered_By): whoever
     # opened/took the order isn't necessarily who triggered the print
     # (e.g. a manager reprinting a bill later at the counter).
     is_bill_printed = Column(Boolean, nullable=False, default=False)
     printed_time = Column(DateTime(timezone=True), nullable=True)
-    printed_by = Column(String(36), nullable=True)
+    printed_by = Column(String(36), nullable=True)       # cred_id of the printer
+    printed_by_name = Column(String(100), nullable=True) # display name snapshot
 
     # ── Credit notes (IRD: reversal of a paid bill) ───────────────────────────
     is_credit_note = Column(Boolean, nullable=False, default=False)
@@ -175,6 +178,20 @@ class RestroOrder(Base):
     # ── CBMS (IRD Central Billing Monitoring System) ──────────────────────────
     cbms_synced = Column(Boolean, nullable=False, default=False)
     cbms_synced_at = Column(DateTime(timezone=True), nullable=True)
+    # IRD Annex-5: Is_realtime — was this bill pushed to CBMS at issuance time
+    # (real-time), as opposed to a retroactive batch submission? Only ever True
+    # for VAT-registered tenants with cbms_realtime_enabled on. Deferred until
+    # the actual CBMS API push is implemented; stored now so the schema is
+    # complete from day one.
+    is_realtime = Column(Boolean, nullable=False, default=False)
+    # IRD §8(ख): VAT refund applicable when the customer pays via electronic
+    # means (QR/FonePay/eSewa). 60% of vat_amount, capped at Rs. 5,000.
+    # NULL for cash, khata, or PAN-only (non-VAT) tenants.
+    vat_refund_amount = Column(Numeric(12, 2), nullable=True)
+    # Electronic payment transaction reference (QR scan ID / FonePay /
+    # eSewa txn ID). Supplied by the frontend at mark-paid time; NULL for
+    # cash or khata payments.
+    transaction_id = Column(String(100), nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(

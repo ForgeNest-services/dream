@@ -54,7 +54,7 @@ const MS_PER_DAY = 86400000;
 // by appending Z when the string has no timezone marker.
 export function parseApiDate(iso: string | null | undefined): Date | null {
   if (!iso) return null;
-  const hasTz = /[zZ]|[+\-]\d{2}:?\d{2}$/.test(iso);
+  const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso);
   return new Date(hasTz ? iso : iso + "Z");
 }
 

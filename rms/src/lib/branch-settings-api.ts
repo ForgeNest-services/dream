@@ -7,6 +7,8 @@ export interface BranchSettingsDto {
   vat_enabled: boolean;
   vat_rate: string; // Decimal serialized as string
   qr_image_url: string | null;
+  cbms_realtime_enabled: boolean;
+  default_hs_code: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -16,6 +18,8 @@ export interface UpdateBranchSettingsPayload {
   vat_rate?: number;
   qr_image_url?: string | null;
   clear_qr?: boolean;
+  cbms_realtime_enabled?: boolean;
+  default_hs_code?: string | null;
 }
 
 export const branchSettingsApi = {
