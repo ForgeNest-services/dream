@@ -106,7 +106,19 @@ def build_pdf(
             elements.append(Paragraph(line, business_style))
     elements.append(Paragraph(title, title_style))
 
-    table_data = [columns] + [
+    # A wide report (many columns, e.g. the 20-field Annex-5 Standard View)
+    # needs a smaller font or every column collides with its neighbor —
+    # plain-string table cells never wrap, they just overflow into the next
+    # cell. Scale font size down as column count grows, and wrap header text
+    # via Paragraph so a multi-word header ("Excisable Amt") breaks onto a
+    # second line instead of overflowing.
+    font_size = 9.5 if len(columns) <= 10 else (8 if len(columns) <= 16 else 6.5)
+    header_style = ParagraphStyle(
+        "TableHeader", parent=styles["Normal"], fontSize=font_size, leading=font_size + 2,
+        textColor=colors.white, fontName="Helvetica-Bold", alignment=TA_CENTER,
+    )
+    header_row = [Paragraph(str(h), header_style) for h in columns]
+    table_data = [header_row] + [
         [str(v) if not isinstance(v, Decimal) else f"{v:,.2f}" for v in row] for row in rows
     ]
 
@@ -121,7 +133,8 @@ def build_pdf(
         for i, h in enumerate(columns)
     ]
     total_weight = sum(weights) or 1
-    col_widths = [max(15 * mm, available_width * w / total_weight) for w in weights]
+    min_col_width = (10 if len(columns) > 16 else 12 if len(columns) > 10 else 15) * mm
+    col_widths = [max(min_col_width, available_width * w / total_weight) for w in weights]
     # Rescale down if the minimum-width floor pushed the total over budget.
     scale = available_width / sum(col_widths)
     if scale < 1:
@@ -132,18 +145,18 @@ def build_pdf(
     style = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 1), (-1, -1), font_size),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4 if len(columns) > 16 else 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4 if len(columns) > 16 else 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3 if len(columns) > 16 else 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3 if len(columns) > 16 else 6),
     ]
     for col_idx in numeric_cols:
-        style.append(("ALIGN", (col_idx, 0), (col_idx, -1), "RIGHT"))
+        style.append(("ALIGN", (col_idx, 1), (col_idx, -1), "RIGHT"))
     table.setStyle(TableStyle(style))
     elements.append(table)
 

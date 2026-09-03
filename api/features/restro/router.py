@@ -2806,7 +2806,14 @@ def _restro_business_header_lines(tenant) -> list[str]:
     return lines
 
 
-def _restro_export_response(fmt: str, title: str, columns: list[str], rows: list[list], business_lines: list[str] | None = None):
+def _restro_export_response(
+    fmt: str,
+    title: str,
+    columns: list[str],
+    rows: list[list],
+    business_lines: list[str] | None = None,
+    wide: bool = False,
+):
     from utils.reports_export import build_xlsx, build_pdf
     from fastapi import Response as _Response
 
@@ -2817,7 +2824,7 @@ def _restro_export_response(fmt: str, title: str, columns: list[str], rows: list
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ext = "xlsx"
     else:
-        content = build_pdf(title, columns, rows, business_lines)
+        content = build_pdf(title, columns, rows, business_lines, wide=wide)
         media_type = "application/pdf"
         ext = "pdf"
     safe_title = title.lower().replace(" ", "-").encode("ascii", "ignore").decode("ascii") or "export"
@@ -2982,7 +2989,9 @@ def export_restro_standard_view(
         for idx, o in enumerate(orders, start=1)
     ]
     tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
-    return _restro_export_response(format, "Standard View (Annex-5)", columns, rows, _restro_business_header_lines(tenant))
+    return _restro_export_response(
+        format, "Standard View (Annex-5)", columns, rows, _restro_business_header_lines(tenant), wide=True
+    )
 
 
 @router.get("/reports/credit-notes/export")
@@ -3034,7 +3043,9 @@ def export_restro_credit_notes(
         for idx, o in enumerate(credit_notes, start=1)
     ]
     tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
-    return _restro_export_response(format, "Credit Notes Register", columns, rows, _restro_business_header_lines(tenant))
+    return _restro_export_response(
+        format, "Credit Notes Register", columns, rows, _restro_business_header_lines(tenant), wide=True
+    )
 
 
 # ---------------------------------------------------------------------------

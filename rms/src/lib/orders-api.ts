@@ -286,6 +286,16 @@ export const ordersApi = {
       {},
     );
   },
+  // IRD: Electronic Billing Procedure 2082, clause 6.2ज — the post-issuance
+  // "sales return" path, distinct from cancel() (pre-issuance reverse
+  // entry). Only valid on a paid, non-credit-note order; creates a new
+  // linked negative-amount order rather than editing the original.
+  creditNote(branchId: string, orderId: string, reason: string) {
+    return apiClient.post<OrderDto>(
+      `/restro/branches/${branchId}/orders/${orderId}/credit-note`,
+      { reason },
+    );
+  },
   setDeliveryStatus(
     branchId: string,
     orderId: string,
