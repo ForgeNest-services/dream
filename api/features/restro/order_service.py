@@ -704,6 +704,7 @@ class OrderService:
             performer_type="staff",
             after_state={
                 "bill_number": order.bill_number,
+                "bill_code": order.bill_code,
                 "payment_method": payment_method,
                 "total": float(total),
             },
@@ -849,7 +850,7 @@ class OrderService:
             action="cancel",
             performed_by=performed_by or "unknown",
             performer_type="staff",
-            after_state={"bill_number": order.bill_number, "fiscal_year": order.fiscal_year},
+            after_state={"bill_number": order.bill_number, "bill_code": order.bill_code, "fiscal_year": order.fiscal_year},
             terminal_ip=terminal_ip,
         )
         db.commit()
@@ -969,7 +970,7 @@ class OrderService:
             action="credit_note",
             performed_by=performed_by or "unknown",
             performer_type="staff",
-            after_state={"credit_note_id": cn.id, "bill_number": bill_num, "reason": reason},
+            after_state={"credit_note_id": cn.id, "bill_number": bill_num, "bill_code": cn.bill_code, "reason": reason},
             terminal_ip=terminal_ip,
         )
         db.commit()

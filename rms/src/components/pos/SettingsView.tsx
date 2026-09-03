@@ -723,10 +723,11 @@ function AuditLogCard() {
                   </td>
                   <td className="py-1.5">{AUDIT_ACTION_LABELS[e.action] ?? e.action}</td>
                   <td className="py-1.5">
-                    {(e.after_state?.bill_number as number | undefined) !== undefined
-                      ? `Bill #${e.after_state?.bill_number}`
-                      : ((e.after_state?.username as string | undefined) ??
-                        `${e.entity_type} · ${e.entity_id.slice(0, 8)}`)}
+                    {(e.after_state?.bill_code as string | undefined) ??
+                      ((e.after_state?.bill_number as number | undefined) !== undefined
+                        ? `Bill #${e.after_state?.bill_number}`
+                        : ((e.after_state?.username as string | undefined) ??
+                          `${e.entity_type} · ${e.entity_id.slice(0, 8)}`))}
                   </td>
                   <td className="py-1.5">{e.reason ?? "—"}</td>
                   <td className="py-1.5">{e.terminal_ip ?? "—"}</td>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { Calendar, Download, FileSpreadsheet, Filter } from "lucide-react";
+import { Calendar, Download, FileSpreadsheet, Filter, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -31,6 +31,8 @@ import {
 import { exportReportPdf, exportReportXlsx } from "@/lib/reports-export";
 import { useOrdersList } from "@/hooks/useOrdersList";
 import type { ReportsSearch } from "@/routes/_app.reports";
+import { auditLogApi, type AuditLogEntryDto } from "@/lib/audit-log-api";
+import type { PageMeta } from "@/lib/api-client";
 import { BsDatePicker } from "./BsDatePicker";
 
 // Route ID for the typed useSearch read. `useNavigate()` is called WITHOUT
@@ -42,6 +44,7 @@ const TABS: { id: ReportsSearch["tab"]; label: string }[] = [
   { id: "orders", label: "Order wise" },
   { id: "category", label: "Category wise" },
   { id: "items", label: "Menu wise" },
+  { id: "activity", label: "Activity Log" },
 ];
 
 // Quick preset ranges — click, done. `todayBs` is the anchor, ranges are
@@ -454,6 +457,10 @@ export function ReportsView() {
         {search.tab === "items" && (
           <ItemsTable items={items} loading={itemsLoading} />
         )}
+
+        {search.tab === "activity" && (
+          <ActivityLogTab role={actualRole} />
+        )}
       </div>
 
       {search.tab === "orders" && meta && meta.total > orders.length && (
@@ -824,5 +831,182 @@ function ItemsTable({
         )}
       </tbody>
     </table>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Activity Log — IRD Electronic Billing Procedure 2082, clause 6.3ג requires
+// the User Activity Log be viewable/filterable from the front-end.
+// Owner / Manager only.
+// ---------------------------------------------------------------------------
+
+const ENTITY_TYPES = ["order", "menu_item", "category", "employee", "expense", "credential", "settings"];
+const ACTIONS = ["create", "update", "void", "cancel", "mark_paid", "credit_note", "print", "reprint", "login"];
+
+function ActivityLogTab({ role }: { role: string }) {
+  const [rows, setRows] = useState<AuditLogEntryDto[]>([]);
+  const [meta, setMeta] = useState<PageMeta | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [entityType, setEntityType] = useState("");
+  const [action, setAction] = useState("");
+  const [q, setQ] = useState("");
+
+  const isAllowed = role === "owner" || role === "manager";
+
+  useEffect(() => {
+    if (!isAllowed) return;
+    setLoading(true);
+    auditLogApi
+      .list({ entity_type: entityType || undefined, action: action || undefined, q: q || undefined, page, per_page: 25 })
+      .then((res) => {
+        setRows((res.data as AuditLogEntryDto[]) ?? []);
+        setMeta((res.meta as PageMeta) ?? null);
+      })
+      .catch(() => toast.error("Failed to load activity log"))
+      .finally(() => setLoading(false));
+  }, [isAllowed, entityType, action, q, page]);
+
+  if (!isAllowed) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
+        <ClipboardList className="size-10 opacity-30" />
+        <p className="text-sm">Activity log is visible to Owner and Manager only.</p>
+      </div>
+    );
+  }
+
+  const fmtTime = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleString("en-GB", {
+      timeZone: "Asia/Kathmandu",
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    });
+  };
+
+  const actionLabel = (a: string) =>
+    a.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  const actionTone: Record<string, string> = {
+    mark_paid: "bg-primary/10 text-primary",
+    create: "bg-secondary text-foreground",
+    void: "bg-danger/10 text-danger",
+    cancel: "bg-danger/10 text-danger",
+    credit_note: "bg-danger/10 text-danger",
+    reprint: "bg-warning/10 text-warning",
+    update: "bg-secondary text-foreground",
+    login: "bg-secondary text-foreground",
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* filters */}
+      <div className="flex flex-wrap gap-3">
+        <input
+          type="text"
+          placeholder="Search entity ID, staff, reason…"
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setPage(1); }}
+          className="h-9 flex-1 min-w-48 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary/40"
+        />
+        <select
+          value={entityType}
+          onChange={(e) => { setEntityType(e.target.value); setPage(1); }}
+          className="h-9 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary/40"
+        >
+          <option value="">All entities</option>
+          {ENTITY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select
+          value={action}
+          onChange={(e) => { setAction(e.target.value); setPage(1); }}
+          className="h-9 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-primary/40"
+        >
+          <option value="">All actions</option>
+          {ACTIONS.map((a) => <option key={a} value={a}>{actionLabel(a)}</option>)}
+        </select>
+      </div>
+
+      <table className="w-full min-w-[760px] border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
+            <th className="py-3 pr-3">Time (NPT)</th>
+            <th className="py-3 pr-3">Action</th>
+            <th className="py-3 pr-3">Entity</th>
+            <th className="py-3 pr-3">Performed by</th>
+            <th className="py-3 pr-3">Type</th>
+            <th className="py-3">IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id} className="border-b border-border/70 align-top hover:bg-secondary/30">
+              <td className="py-2.5 pr-3 text-muted-foreground whitespace-nowrap">{fmtTime(r.created_at)}</td>
+              <td className="py-2.5 pr-3">
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${actionTone[r.action] ?? "bg-secondary text-foreground"}`}>
+                  {actionLabel(r.action)}
+                </span>
+              </td>
+              <td className="py-2.5 pr-3">
+                {(r.after_state?.bill_code as string | undefined) ? (
+                  r.after_state!.bill_code as string
+                ) : (r.after_state?.bill_number as number | undefined) !== undefined ? (
+                  `Bill #${r.after_state!.bill_number}`
+                ) : (r.after_state?.username as string | undefined) ? (
+                  r.after_state!.username as string
+                ) : (
+                  <>
+                    <span className="font-medium">{r.entity_type}</span>
+                    <span className="ml-1.5 text-[11px] text-muted-foreground font-mono">{r.entity_id.slice(0, 8)}…</span>
+                  </>
+                )}
+              </td>
+              <td className="py-2.5 pr-3 text-muted-foreground">{r.performed_by.slice(0, 8)}…</td>
+              <td className="py-2.5 pr-3 text-muted-foreground capitalize">{r.performer_type.replace("_", " ")}</td>
+              <td className="py-2.5 text-xs text-muted-foreground">{r.terminal_ip ?? "—"}</td>
+            </tr>
+          ))}
+          {!loading && rows.length === 0 && (
+            <tr>
+              <td colSpan={6} className="py-12 text-center text-muted-foreground">
+                No activity log entries found.
+              </td>
+            </tr>
+          )}
+          {loading && rows.length === 0 && (
+            <tr>
+              <td colSpan={6} className="py-12 text-center text-muted-foreground">
+                Loading…
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {meta && meta.total_pages > 1 && (
+        <div className="flex items-center justify-between text-sm">
+          <p className="text-muted-foreground">
+            {meta.total} entries · page {meta.page} of {meta.total_pages}
+          </p>
+          <div className="flex gap-2">
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <button
+              disabled={page >= meta.total_pages}
+              onClick={() => setPage((p) => p + 1)}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
