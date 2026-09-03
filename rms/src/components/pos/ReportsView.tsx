@@ -245,7 +245,7 @@ export function ReportsView() {
               disabled={!canExport}
             >
               <Download className="size-4" />
-              Export
+              Export summary
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -470,8 +470,13 @@ export function ReportsView() {
         </p>
       )}
 
-      {tenant?.is_vat_registered && (actualRole === "owner" || actualRole === "manager") && (
-        <IrdExportsCard branchId={branchId ?? ""} bsFrom={fromBs} bsTo={toBs} />
+      {(actualRole === "owner" || actualRole === "manager") && (
+        <IrdExportsCard
+          branchId={branchId ?? ""}
+          bsFrom={fromBs}
+          bsTo={toBs}
+          vatRegistered={!!tenant?.is_vat_registered}
+        />
       )}
     </div>
   );
@@ -683,10 +688,12 @@ function IrdExportsCard({
   branchId,
   bsFrom,
   bsTo,
+  vatRegistered,
 }: {
   branchId: string;
   bsFrom: string;
   bsTo: string;
+  vatRegistered: boolean;
 }) {
   const [downloading, setDownloading] = useState<string | null>(null);
 
@@ -710,6 +717,10 @@ function IrdExportsCard({
     }
   };
 
+  // IRD: Electronic Billing Procedure 2082, Annexure-5 — Standard View and
+  // Credit Notes register apply to every bill regardless of VAT status, so
+  // they're always offered. The other three are VAT-register formats and
+  // only make sense for a VAT-registered tenant.
   const registers: {
     key: string;
     label: string;
@@ -717,32 +728,50 @@ function IrdExportsCard({
     fn: (fmt: IrdExportFormat) => Promise<void>;
   }[] = [
     {
-      key: "sales-register",
-      label: "Sales Register",
-      description: "Per-bill VAT breakdown — Bill No., Buyer, PAN, Taxable, VAT, Total",
-      fn: (fmt) => irdExportsApi.salesRegister(branchId, bsFrom, bsTo, fmt),
+      key: "standard-view",
+      label: "Standard View",
+      description: "अनुसूची ५ — all 20 mandatory fields, every bill in the period",
+      fn: (fmt) => irdExportsApi.standardView(branchId, bsFrom, bsTo, fmt),
     },
     {
-      key: "annexure-13",
-      label: "Annexure 13",
-      description: "अनुसूची १३ — output VAT summary totals for the selected period",
-      fn: (fmt) => irdExportsApi.annexure13(branchId, bsFrom, bsTo, fmt),
+      key: "credit-notes",
+      label: "Credit Notes",
+      description: "Credit notes issued in the period with their reference bill",
+      fn: (fmt) => irdExportsApi.creditNotes(branchId, bsFrom, bsTo, fmt),
     },
-    {
-      key: "monthly-vat",
-      label: "Monthly VAT Summary",
-      description: "मासिक — one row per BS month: taxable amount and output VAT",
-      fn: (fmt) => irdExportsApi.monthlyVatSummary(branchId, bsFrom, bsTo, fmt),
-    },
+    ...(vatRegistered
+      ? [
+          {
+            key: "sales-register",
+            label: "Sales Register",
+            description: "Per-bill VAT breakdown — Bill No., Buyer, PAN, Taxable, VAT, Total",
+            fn: (fmt: IrdExportFormat) => irdExportsApi.salesRegister(branchId, bsFrom, bsTo, fmt),
+          },
+          {
+            key: "annexure-13",
+            label: "Annexure 13",
+            description: "अनुसूची १३ — output VAT summary totals for the selected period",
+            fn: (fmt: IrdExportFormat) => irdExportsApi.annexure13(branchId, bsFrom, bsTo, fmt),
+          },
+          {
+            key: "monthly-vat",
+            label: "Monthly VAT Summary",
+            description: "मासिक — one row per BS month: taxable amount and output VAT",
+            fn: (fmt: IrdExportFormat) =>
+              irdExportsApi.monthlyVatSummary(branchId, bsFrom, bsTo, fmt),
+          },
+        ]
+      : []),
   ];
 
   return (
     <div className="pos-card p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="font-display text-lg">IRD VAT Registers</h3>
+          <h3 className="font-display text-lg">IRD Reports</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Downloads use the selected date range above. For VAT-registered businesses only.
+            Downloads use the selected date range above.
+            {!vatRegistered && " VAT registers hidden — this business is PAN-only."}
           </p>
         </div>
       </div>

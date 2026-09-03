@@ -89,6 +89,11 @@ export interface OrderDto {
   original_order_id: string | null;
   note_reason: string | null;
   cbms_synced: boolean;
+  is_realtime: boolean;
+  // IRD §8(ख): 60% VAT refund on electronic-payment bills, capped Rs 5,000.
+  // Null unless applicable (qr payment, VAT-registered, computed at mark-paid).
+  vat_refund_amount: string | null;
+  transaction_id: string | null;
   // Embedded (slim) customer object — populated whenever customer_id is set.
   // Delivery orders always have this; dine-in orders have it when the
   // waiter attached a customer at pay time (khata).

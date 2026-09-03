@@ -157,6 +157,12 @@ export type Order = {
   // kitchen" round). Only populated when the order was fetched
   // individually or just sent to kitchen — undefined elsewhere.
   slipNumbers?: number[];
+  // IRD: Annexure-5 Standard View fields — Is_realtime, VAT_Refund_Amount,
+  // Transaction_Id. vatRefundAmount/transactionId only set for an
+  // electronic-payment (qr) bill that actually qualifies.
+  isRealtime?: boolean;
+  vatRefundAmount?: number;
+  transactionId?: string;
 };
 
 export type InventoryItem = {

@@ -95,7 +95,6 @@ export function UsersSection() {
 
   useEffect(() => {
     if (canSwitchBranch) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canSwitchBranch]);
 
   if (!canSwitchBranch) return null;

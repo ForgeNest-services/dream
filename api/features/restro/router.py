@@ -2968,10 +2968,12 @@ def export_restro_standard_view(
             o.total_amount or Decimal("0"),
             o.taxable_amount or Decimal("0"),
             o.vat_amount or Decimal("0"),
-            Decimal("0"), Decimal("0"),
-            Decimal("0"), Decimal("0"),
-            Decimal("0"), Decimal("0"),
-            Decimal("0"),
+            # RMS has no excise/HST/ESF/export-sales concept — these Annex-5
+            # columns are structurally N/A for a restaurant bill, not zero.
+            "N/A", "N/A",
+            "N/A", "N/A",
+            "N/A", "N/A",
+            "N/A",
             o.exempt_amount or Decimal("0"),
             "Yes" if o.is_realtime else "No",
             o.vat_refund_amount or Decimal("0"),

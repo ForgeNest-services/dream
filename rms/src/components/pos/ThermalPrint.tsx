@@ -13,11 +13,7 @@ import { buildIrdQrPayload } from "@/lib/ird-qr";
 import type { TenantInfoDto } from "@/lib/tenant-api";
 import { usePos } from "@/lib/pos/store";
 import { IrdQrCode } from "./IrdQrCode";
-import {
-  formatBikramSambat,
-  NEPALI_MONTHS,
-  parseApiDate,
-} from "@/lib/pos/nepali-date";
+import { formatBikramSambat, NEPALI_MONTHS } from "@/lib/pos/nepali-date";
 
 function Divider() {
   return <div className="my-1 border-t border-dashed border-black" />;
@@ -33,8 +29,6 @@ function bsFromOrder(order: Order): string {
   return `${month} ${Number(d)}, ${Number(y)} BS`;
 }
 
-// `order.placedAt` was parsed via parseApiDate (UTC), so this formats in
-// NPT via toLocaleTimeString({ timeZone }).
 function nptTime(ts: number): string {
   return new Date(ts).toLocaleTimeString("en-GB", {
     timeZone: "Asia/Kathmandu",
@@ -175,10 +169,7 @@ export function BillReceipt({
   slipNumbers?: number[];
 }) {
   const { tenant } = usePos();
-  // Prefer the paid_at for closed bills, placed_at for drafts — matches what
-  // the customer expects to see on the receipt (when THIS bill was closed).
-  const displayTs =
-    order.status === "paid" && order.paidAtBs ? order.placedAt : order.placedAt;
+  const displayTs = order.placedAt;
   const row = (label: string, value: string) => (
     <div className="flex justify-between gap-2">
       <span>{label}</span>
@@ -323,9 +314,6 @@ export function BillReceipt({
     </div>
   );
 }
-// parseApiDate re-exported here in case any consumer needs it, avoiding a
-// circular import — actually it's already used above via order.placedAt (already parsed).
-void parseApiDate;
 
 export function PrintDialog({
   open,

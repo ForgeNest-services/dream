@@ -109,7 +109,12 @@ export const asNum = (v: string | number | undefined): number =>
 // ---------------------------------------------------------------------------
 
 function irdExportPath(
-  register: "sales-register" | "annexure-13" | "monthly-vat-summary",
+  register:
+    | "sales-register"
+    | "annexure-13"
+    | "monthly-vat-summary"
+    | "standard-view"
+    | "credit-notes",
   format: IrdExportFormat,
   branchId: string,
   bsFrom: string,
@@ -136,6 +141,20 @@ export const irdExportsApi = {
     return apiClient.download(
       irdExportPath("monthly-vat-summary", format, branchId, bsFrom, bsTo),
       `monthly-vat-summary.${format}`,
+    );
+  },
+  // IRD: Electronic Billing Procedure 2082, Annexure-5 — the 20-field
+  // Standard View, all bills regardless of VAT registration status.
+  standardView(branchId: string, bsFrom: string, bsTo: string, format: IrdExportFormat) {
+    return apiClient.download(
+      irdExportPath("standard-view", format, branchId, bsFrom, bsTo),
+      `standard-view.${format}`,
+    );
+  },
+  creditNotes(branchId: string, bsFrom: string, bsTo: string, format: IrdExportFormat) {
+    return apiClient.download(
+      irdExportPath("credit-notes", format, branchId, bsFrom, bsTo),
+      `credit-notes.${format}`,
     );
   },
 };

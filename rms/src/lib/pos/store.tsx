@@ -140,6 +140,9 @@ function toOrder(o: OrderDto): Order {
   if (o.buyer_pan) order.buyerPan = o.buyer_pan;
   if (o.slip_numbers) order.slipNumbers = o.slip_numbers;
   if (o.bill_code) order.billCode = o.bill_code;
+  order.isRealtime = o.is_realtime;
+  if (o.vat_refund_amount) order.vatRefundAmount = Number(o.vat_refund_amount);
+  if (o.transaction_id) order.transactionId = o.transaction_id;
   return order;
 }
 
