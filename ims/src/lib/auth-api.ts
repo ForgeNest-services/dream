@@ -3,6 +3,7 @@ import { apiClient } from "./api-client";
 export interface LoginResponse {
   token: string;
   role: string;
+  name: string;
   tenant_id: string;
   branch_id: string | null;
   expires_at: string;

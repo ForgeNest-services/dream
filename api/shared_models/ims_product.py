@@ -39,6 +39,13 @@ class IMSProduct(Base):
     # doc comment. Stored nullable so "unset" and "false" stay distinguishable.
     taxable = Column(Boolean, nullable=True)
     tax_rate = Column(Numeric(5, 2), nullable=True)
+    # Harmonized System code — Annexure ६'s एच.एस.कोड line-item column.
+    # Manual, optional: the law shows this column on every bill template but
+    # never states it's mandatory to populate, and there's no way to derive
+    # a customs classification from a product name/category — a wrong
+    # auto-guessed code would be worse than a blank one. Left nullable so
+    # product creation/sale is never blocked on it.
+    hs_code = Column(String(20), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(

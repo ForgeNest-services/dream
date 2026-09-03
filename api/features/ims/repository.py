@@ -8,15 +8,21 @@ class IMSCredentialRepository:
         db: Session,
         tenant_id: str,
         role: str,
+        name: str,
         username: str,
         password_hash: str,
         created_by: str,
         branch_id: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
     ) -> IMSCredential:
         cred = IMSCredential(
             tenant_id=tenant_id,
             branch_id=branch_id,
             role=role,
+            name=name,
+            email=email,
+            phone=phone,
             username=username,
             password_hash=password_hash,
             created_by=created_by,
@@ -33,20 +39,6 @@ class IMSCredentialRepository:
             .filter(
                 IMSCredential.id == cred_id,
                 IMSCredential.tenant_id == tenant_id,
-            )
-            .first()
-        )
-
-    @staticmethod
-    def get_by_tenant_branch_and_role(
-        db: Session, tenant_id: str, branch_id: str | None, role: str
-    ) -> IMSCredential | None:
-        return (
-            db.query(IMSCredential)
-            .filter(
-                IMSCredential.tenant_id == tenant_id,
-                IMSCredential.branch_id == branch_id,
-                IMSCredential.role == role,
             )
             .first()
         )
@@ -72,9 +64,18 @@ class IMSCredentialRepository:
     def update(
         db: Session,
         cred: IMSCredential,
+        name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
         username: str | None = None,
         password_hash: str | None = None,
     ) -> IMSCredential:
+        if name is not None:
+            cred.name = name
+        if email is not None:
+            cred.email = email
+        if phone is not None:
+            cred.phone = phone
         if username is not None:
             cred.username = username
         if password_hash is not None:

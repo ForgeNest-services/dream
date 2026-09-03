@@ -37,6 +37,7 @@ export interface ProductDto {
   description: string | null;
   taxable: boolean | null;
   tax_rate: number | string | null;
+  hs_code: string | null;
   created_at: string;
   updated_at: string;
   variants: VariantDto[];
@@ -66,6 +67,7 @@ export interface CreateProductPayload {
   description?: string | undefined;
   taxable: boolean;
   tax_rate?: number | undefined;
+  hs_code?: string | undefined;
   branch_id_for_stock: string;
   variants: VariantInput[];
 }
@@ -79,6 +81,7 @@ export interface UpdateProductPayload {
   description?: string | undefined;
   taxable: boolean;
   tax_rate?: number | undefined;
+  hs_code?: string | undefined;
   variants: VariantInput[];
 }
 

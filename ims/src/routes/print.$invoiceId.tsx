@@ -231,6 +231,11 @@ function PrintInvoicePage() {
             <p>
               <span className="font-medium">Branch:</span> {branch?.name}
             </p>
+            {inv.enteredByName && (
+              <p>
+                <span className="font-medium">Entered by:</span> {inv.enteredByName}
+              </p>
+            )}
           </div>
         </div>
 
@@ -239,6 +244,7 @@ function PrintInvoicePage() {
             <tr className="border-y border-black/70">
               <th className="px-1 py-1.5 text-left">S.N.</th>
               <th className="px-1 py-1.5 text-left">Particulars / विवरण</th>
+              <th className="px-1 py-1.5 text-left">HS Code</th>
               <th className="px-1 py-1.5 text-right">Qty</th>
               <th className="px-1 py-1.5 text-right">Rate</th>
               <th className="px-1 py-1.5 text-right">Amount</th>
@@ -254,6 +260,7 @@ function PrintInvoicePage() {
                     <span className="ml-1 text-[9px] uppercase text-black/60">(non-taxable)</span>
                   ) : null}
                 </td>
+                <td className="px-1 py-1.5">{l.hsCode || "—"}</td>
                 <td className="px-1 py-1.5 text-right">
                   {l.qty} {app.unitSymbol(l.unitId)}
                 </td>

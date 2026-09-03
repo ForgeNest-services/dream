@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { Loader2, Plus, Pencil, Trash2, Building2, Users as UsersIcon } from "lucide-react";
+import {
+  Loader2,
+  Plus,
+  Pencil,
+  Trash2,
+  Building2,
+  Users as UsersIcon,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,26 +30,46 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useApp } from "@/context/app-store";
 import { ApiError } from "@/lib/api-client";
 import {
   staffCredentialsApi,
   type StaffCredentialDto,
+  type CreateStaffCredentialPayload,
 } from "@/lib/staff-credentials-api";
 
 const ROLES = [
-  { code: "manager", label: "Manager", description: "Runs day-to-day inventory at one branch: stock levels, purchase orders, and reports for that branch only." },
-  { code: "storekeeper", label: "Store Keeper", description: "Records stock in and out at one branch. No access to reports or settings." },
+  {
+    code: "manager",
+    label: "Manager",
+    description: "Runs day-to-day inventory at one branch.",
+  },
+  {
+    code: "storekeeper",
+    label: "Store Keeper",
+    description: "Records stock in and out at one branch.",
+  },
 ] as const;
 
-type Slot = { role: string; branchId: string; branchName: string; cred: StaffCredentialDto | null };
+type RoleCode = (typeof ROLES)[number]["code"];
 
 export function UsersSection() {
   const app = useApp();
   const isOwner = app.currentUser?.role === "owner";
   const [creds, setCreds] = useState<StaffCredentialDto[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [addingSlot, setAddingSlot] = useState<Slot | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    manager: true,
+    storekeeper: true,
+  });
+  const [addingRole, setAddingRole] = useState<RoleCode | null>(null);
   const [editingCred, setEditingCred] = useState<StaffCredentialDto | null>(null);
   const [deletingCred, setDeletingCred] = useState<StaffCredentialDto | null>(null);
   const [saving, setSaving] = useState(false);
@@ -50,13 +79,14 @@ export function UsersSection() {
     staffCredentialsApi
       .list()
       .then((r) => setCreds(r.data ?? []))
-      .catch((e: unknown) => toast.error(e instanceof ApiError ? e.message : "Failed to load users"))
+      .catch((e: unknown) =>
+        toast.error(e instanceof ApiError ? e.message : "Failed to load users")
+      )
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     if (isOwner) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOwner]);
 
   if (!isOwner) return null;
@@ -69,33 +99,34 @@ export function UsersSection() {
     );
   }
 
+  const toggle = (role: string) =>
+    setExpanded((prev) => ({ ...prev, [role]: !prev[role] }));
+
   return (
     <div className="rounded-lg border bg-card p-5">
       <div className="flex items-center gap-2">
         <UsersIcon className="h-5 w-5 text-primary" />
-        <p className="text-sm font-medium">Staff logins</p>
+        <p className="text-sm font-medium">Users</p>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        Create logins for your staff — each role signs in at this app's login screen with a shared
-        username and password for that role and branch.
+        Create individual logins for each staff member. Each person gets their own name (shown on
+        bills) and username (used to sign in).
       </p>
 
-      <div className="mt-4 space-y-4">
-        {app.branches.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Add a branch first — staff roles are tied to a location.</p>
-        ) : (
-          ROLES.map((r) => {
-            const slots: Slot[] = app.branches.map((b) => ({
-              role: r.code,
-              branchId: b.id,
-              branchName: b.name,
-              cred: creds.find((c) => c.role === r.code && c.branch_id === b.id) ?? null,
-            }));
-            const filledCount = slots.filter((s) => s.cred).length;
+      <div className="mt-4 space-y-3">
+        {ROLES.map((r) => {
+          const roleCreds = creds.filter((c) => c.role === r.code);
+          const isOpen = expanded[r.code] ?? true;
 
-            return (
-              <div key={r.code} className="overflow-hidden rounded-md border">
-                <div className="flex items-start justify-between gap-3 border-b bg-muted/40 p-4">
+          return (
+            <div key={r.code} className="overflow-hidden rounded-md border">
+              {/* Role header */}
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 border-b bg-muted/40 p-4"
+                onClick={() => toggle(r.code)}
+              >
+                <div className="flex items-center gap-3 text-left">
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold">{r.label}</p>
@@ -103,90 +134,117 @@ export function UsersSection() {
                         Per branch
                       </span>
                     </div>
-                    <p className="mt-1 max-w-md text-xs text-muted-foreground">{r.description}</p>
+                    <p className="text-xs text-muted-foreground">{r.description}</p>
                   </div>
-                  <span className="shrink-0 text-xs font-medium text-muted-foreground">
-                    {filledCount}/{slots.length} set up
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {roleCreds.length} account{roleCreds.length !== 1 ? "s" : ""}
                   </span>
+                  {isOpen ? (
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  )}
                 </div>
+              </button>
+
+              {isOpen && (
                 <div>
-                  {slots.map((slot) => (
-                    <div
-                      key={slot.branchId}
-                      className="flex items-center justify-between gap-3 border-b p-3 text-sm last:border-b-0"
-                    >
-                      <div className="flex min-w-0 items-center gap-2">
-                        <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="shrink-0 font-medium">{slot.branchName}</span>
-                        {slot.cred ? (
-                          <span className="num truncate text-xs text-muted-foreground">
-                            · {slot.cred.username}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">· No login yet</span>
-                        )}
-                      </div>
-                      {slot.cred ? (
-                        <div className="flex shrink-0 gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-8 w-8"
-                            onClick={() => setEditingCred(slot.cred)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => setDeletingCred(slot.cred)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 shrink-0 gap-1 text-xs"
-                          onClick={() => setAddingSlot(slot)}
+                  {roleCreds.length === 0 ? (
+                    <p className="px-4 py-3 text-xs text-muted-foreground">
+                      No {r.label.toLowerCase()} accounts yet.
+                    </p>
+                  ) : (
+                    roleCreds.map((cred) => {
+                      const branch = app.branches.find((b) => b.id === cred.branch_id);
+                      return (
+                        <div
+                          key={cred.id}
+                          className="flex items-center justify-between gap-3 border-b px-4 py-3 text-sm last:border-b-0"
                         >
-                          <Plus className="h-3.5 w-3.5" />
-                          Create login
-                        </Button>
-                      )}
-                    </div>
-                  ))}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 font-medium">
+                              {cred.name}
+                            </div>
+                            <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                              <span className="num font-mono">{cred.username}</span>
+                              {branch && (
+                                <>
+                                  <span>·</span>
+                                  <Building2 className="h-3 w-3 shrink-0" />
+                                  <span>{branch.name}</span>
+                                </>
+                              )}
+                              {cred.phone && (
+                                <>
+                                  <span>·</span>
+                                  <span>{cred.phone}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              onClick={() => setEditingCred(cred)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={() => setDeletingCred(cred)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div className="border-t px-4 py-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 gap-1 text-xs"
+                      onClick={() => setAddingRole(r.code)}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add {r.label}
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            );
-          })
-        )}
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {addingSlot && (
+      {addingRole && (
         <CreateDialog
-          slot={addingSlot}
+          role={addingRole}
+          roleLabel={ROLES.find((r) => r.code === addingRole)?.label ?? addingRole}
+          branches={app.branches}
           saving={saving}
-          onClose={() => setAddingSlot(null)}
-          onSubmit={async (username, password) => {
+          onClose={() => setAddingRole(null)}
+          onSubmit={async (payload) => {
             setSaving(true);
             try {
-              await staffCredentialsApi.create({
-                role: addingSlot.role,
-                username,
-                password,
-                branch_id: addingSlot.branchId,
-              });
-              toast.success(`Login created for ${addingSlot.role}`);
-              setAddingSlot(null);
+              await staffCredentialsApi.create(payload);
+              toast.success("Account created");
+              setAddingRole(null);
               load();
             } catch (e) {
               const err = e as ApiError;
-              if (err.code === "USERNAME_TAKEN") toast.error("That username is already in use. Pick another.");
-              else if (err.code === "ROLE_ALREADY_HAS_CREDENTIAL") toast.error("A login already exists for this role and branch.");
-              else toast.error(err.message || "Failed to create login");
+              if (err.code === "USERNAME_TAKEN")
+                toast.error("That username is already taken. Pick another.");
+              else if (err.code === "BRANCH_REQUIRED")
+                toast.error("Please select a branch for this role.");
+              else toast.error(err.message || "Failed to create account");
             } finally {
               setSaving(false);
             }
@@ -199,24 +257,18 @@ export function UsersSection() {
           cred={editingCred}
           saving={saving}
           onClose={() => setEditingCred(null)}
-          onSubmit={async (username, password) => {
-            const payload: { username?: string; password?: string } = {};
-            if (username && username !== editingCred.username) payload.username = username;
-            if (password) payload.password = password;
-            if (Object.keys(payload).length === 0) {
-              setEditingCred(null);
-              return;
-            }
+          onSubmit={async (payload) => {
             setSaving(true);
             try {
               await staffCredentialsApi.update(editingCred.id, payload);
-              toast.success("Login updated");
+              toast.success("Account updated");
               setEditingCred(null);
               load();
             } catch (e) {
               const err = e as ApiError;
-              if (err.code === "USERNAME_TAKEN") toast.error("That username is already in use.");
-              else toast.error(err.message || "Failed to update login");
+              if (err.code === "USERNAME_TAKEN")
+                toast.error("That username is already taken.");
+              else toast.error(err.message || "Failed to update account");
             } finally {
               setSaving(false);
             }
@@ -227,10 +279,10 @@ export function UsersSection() {
       <AlertDialog open={!!deletingCred} onOpenChange={(o) => !o && setDeletingCred(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove this login?</AlertDialogTitle>
+            <AlertDialogTitle>Remove {deletingCred?.name}&apos;s account?</AlertDialogTitle>
             <AlertDialogDescription>
-              Staff currently signed in stay signed in until their session expires. After that, this
-              login stops working — you can create a new one any time.
+              If they&apos;re currently signed in, their session stays active until it expires (8
+              hours). After that, this login stops working.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -241,11 +293,11 @@ export function UsersSection() {
                 if (!deletingCred) return;
                 try {
                   await staffCredentialsApi.remove(deletingCred.id);
-                  toast.success("Login removed");
+                  toast.success("Account removed");
                   setDeletingCred(null);
                   load();
                 } catch (err) {
-                  toast.error(err instanceof ApiError ? err.message : "Failed to remove login");
+                  toast.error(err instanceof ApiError ? err.message : "Failed to remove account");
                 }
               }}
             >
@@ -259,37 +311,102 @@ export function UsersSection() {
 }
 
 function CreateDialog({
-  slot,
+  role,
+  roleLabel,
+  branches,
   saving,
   onClose,
   onSubmit,
 }: {
-  slot: Slot;
+  role: RoleCode;
+  roleLabel: string;
+  branches: { id: string; name: string }[];
   saving: boolean;
   onClose: () => void;
-  onSubmit: (username: string, password: string) => Promise<void>;
+  onSubmit: (payload: CreateStaffCredentialPayload) => Promise<void>;
 }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const roleLabel = ROLES.find((r) => r.code === slot.role)?.label ?? slot.role;
+  const [branchId, setBranchId] = useState(branches[0]?.id ?? "");
+
+  const valid =
+    name.trim().length > 0 && username.trim().length >= 3 && password.length >= 6 && !!branchId;
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New {roleLabel} login — {slot.branchName}</DialogTitle>
+          <DialogTitle>Add {roleLabel}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label className="text-xs">Username</Label>
+            <Label className="text-xs">Branch</Label>
+            <Select value={branchId} onValueChange={setBranchId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select branch" />
+              </SelectTrigger>
+              <SelectContent>
+                {branches.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs">
+              Full name <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Ramesh Shrestha"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Shown on printed bills as &quot;Entered by&quot;.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label className="text-xs">Phone</Label>
+              <Input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="98XXXXXXXX"
+                inputMode="tel"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Email</Label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="optional"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs">
+              Username <span className="text-destructive">*</span>
+            </Label>
             <Input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder={`e.g. ${slot.role}-${slot.branchName.toLowerCase().replace(/\s+/g, "-")}`}
+              placeholder={`e.g. ${role}-1`}
             />
+            <p className="text-[11px] text-muted-foreground">
+              Globally unique — used only to sign in, not shown on bills.
+            </p>
           </div>
           <div className="space-y-2">
-            <Label className="text-xs">Password</Label>
+            <Label className="text-xs">
+              Password <span className="text-destructive">*</span>
+            </Label>
             <Input
               type="password"
               value={password}
@@ -297,20 +414,26 @@ function CreateDialog({
               placeholder="At least 6 characters"
             />
           </div>
-          <p className="text-xs text-muted-foreground">
-            Share these with your {roleLabel.toLowerCase()} staff at {slot.branchName}. Anyone with the
-            login can sign in — it's shared, not per-person.
-          </p>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
           <Button
-            disabled={saving || username.trim().length < 3 || password.length < 6}
-            onClick={() => onSubmit(username.trim(), password)}
+            disabled={saving || !valid}
+            onClick={() =>
+              onSubmit({
+                role,
+                name: name.trim(),
+                email: email.trim() || null,
+                phone: phone.trim() || null,
+                username: username.trim(),
+                password,
+                branch_id: branchId,
+              })
+            }
           >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create login"}
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create account"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -327,19 +450,69 @@ function EditDialog({
   cred: StaffCredentialDto;
   saving: boolean;
   onClose: () => void;
-  onSubmit: (username: string, password: string) => Promise<void>;
+  onSubmit: (payload: {
+    name?: string;
+    email?: string | null;
+    phone?: string | null;
+    username?: string;
+    password?: string;
+  }) => Promise<void>;
 }) {
+  const [name, setName] = useState(cred.name);
+  const [email, setEmail] = useState(cred.email ?? "");
+  const [phone, setPhone] = useState(cred.phone ?? "");
   const [username, setUsername] = useState(cred.username);
   const [password, setPassword] = useState("");
+
   const roleLabel = ROLES.find((r) => r.code === cred.role)?.label ?? cred.role;
+
+  const handleSubmit = () => {
+    const payload: Parameters<typeof onSubmit>[0] = {};
+    if (name.trim() && name.trim() !== cred.name) payload.name = name.trim();
+    if (email.trim() !== (cred.email ?? "")) payload.email = email.trim() || null;
+    if (phone.trim() !== (cred.phone ?? "")) payload.phone = phone.trim() || null;
+    if (username.trim() !== cred.username) payload.username = username.trim();
+    if (password) payload.password = password;
+    if (Object.keys(payload).length === 0) {
+      onClose();
+      return;
+    }
+    onSubmit(payload);
+  };
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit {roleLabel} login</DialogTitle>
+          <DialogTitle>
+            Edit {roleLabel} — {cred.name}
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-xs">Full name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label className="text-xs">Phone</Label>
+              <Input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="98XXXXXXXX"
+                inputMode="tel"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Email</Label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="optional"
+              />
+            </div>
+          </div>
           <div className="space-y-2">
             <Label className="text-xs">Username</Label>
             <Input value={username} onChange={(e) => setUsername(e.target.value)} />
@@ -354,8 +527,7 @@ function EditDialog({
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            Staff already signed in stay signed in until their session expires. New logins need the
-            updated password.
+            Active sessions stay active until they expire. New logins use the updated credentials.
           </p>
         </div>
         <DialogFooter>
@@ -363,8 +535,8 @@ function EditDialog({
             Cancel
           </Button>
           <Button
-            disabled={saving || username.trim().length < 3}
-            onClick={() => onSubmit(username.trim(), password)}
+            disabled={saving || name.trim().length === 0 || username.trim().length < 3}
+            onClick={handleSubmit}
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}
           </Button>

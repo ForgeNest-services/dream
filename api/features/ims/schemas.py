@@ -12,6 +12,9 @@ class CredentialData(BaseModel):
     tenant_id: str
     branch_id: str | None
     role: str
+    name: str
+    email: str | None
+    phone: str | None
     username: str
     created_by: str
     created_at: datetime
@@ -20,6 +23,9 @@ class CredentialData(BaseModel):
 
 class CreateCredentialRequest(BaseModel):
     role: str
+    name: str
+    email: str | None = None
+    phone: str | None = None
     username: str
     password: str
     branch_id: str | None = None
@@ -38,8 +44,18 @@ class CreateCredentialRequest(BaseModel):
             raise ValueError("Password must be at least 6 characters")
         return v
 
+    @field_validator("name")
+    @classmethod
+    def name_nonempty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Name cannot be empty")
+        return v.strip()
+
 
 class UpdateCredentialRequest(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
     username: str | None = None
     password: str | None = None
 
@@ -59,6 +75,7 @@ class StaffLoginRequest(BaseModel):
 class StaffLoginResponse(BaseModel):
     token: str
     role: str
+    name: str
     tenant_id: str
     branch_id: str | None
     expires_at: datetime
@@ -170,6 +187,7 @@ class ProductData(BaseModel):
     description: str | None
     taxable: bool | None
     tax_rate: Decimal | None
+    hs_code: str | None
     created_at: datetime
     updated_at: datetime
     variants: list[VariantData] = []
@@ -190,6 +208,7 @@ class CreateProductRequest(BaseModel):
     description: str | None = None
     taxable: bool = True
     tax_rate: Decimal | None = None
+    hs_code: str | None = None
     branch_id_for_stock: str
     variants: list[VariantInput]
 
@@ -203,6 +222,7 @@ class UpdateProductRequest(BaseModel):
     description: str | None = None
     taxable: bool = True
     tax_rate: Decimal | None = None
+    hs_code: str | None = None
     variants: list[VariantInput]
 
 
@@ -224,6 +244,10 @@ class StockMovementData(BaseModel):
     reference: str | None
     supplier_id: str | None
     user_id: str
+    # Display name for the credential that recorded this movement — resolved
+    # server-side (see list_movements), not stored on the row itself. None
+    # only if the credential has since been deleted.
+    user_name: str | None = None
     created_at: datetime
 
 
@@ -500,6 +524,7 @@ class InvoiceData(BaseModel):
     status: str
     note: str | None
     user_id: str
+    entered_by_name: str | None
     # IRD credit note / reprint fields
     is_reprint: bool
     reprint_of: str | None
@@ -507,6 +532,7 @@ class InvoiceData(BaseModel):
     is_bill_printed: bool
     printed_time: datetime | None
     printed_by: str | None
+    printed_by_name: str | None
     is_credit_note: bool
     original_invoice_id: str | None
     note_reason: str | None

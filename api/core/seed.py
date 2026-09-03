@@ -154,6 +154,12 @@ def ensure_ims_products_schema() -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_ims_product_tenant_sku_active "
             "ON public.ims_products (tenant_id, sku) WHERE is_active = true"
         ))
+        # IRD: Electronic Billing Procedure 2082, Annexure ६ — एच.एस.कोड
+        # line-item column. Manual, optional (see IMSProduct.hs_code).
+        db.execute(text(
+            "ALTER TABLE public.ims_products "
+            "ADD COLUMN IF NOT EXISTS hs_code VARCHAR(20)"
+        ))
         db.commit()
     except Exception as e:
         db.rollback()
@@ -260,6 +266,14 @@ def ensure_ims_invoice_line_vat_schema() -> None:
         db.execute(text(
             "ALTER TABLE public.ims_invoice_lines "
             "ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(12,2) NOT NULL DEFAULT 0"
+        ))
+        # IRD: Electronic Billing Procedure 2082, Annexure ६ — एच.एस.कोड
+        # line-item column, snapshotted from IMSProduct.hs_code at sale time
+        # (see IMSInvoiceLine.hs_code). Existing rows predate this — NULL,
+        # same "unknown for old rows" treatment as tax_rate/vat_amount above.
+        db.execute(text(
+            "ALTER TABLE public.ims_invoice_lines "
+            "ADD COLUMN IF NOT EXISTS hs_code VARCHAR(20)"
         ))
         db.commit()
     except Exception as e:
@@ -693,7 +707,7 @@ def ensure_org_tax_settings_schema() -> None:
 _IMMUTABLE_TABLES: dict[str, set[str]] = {
     "ims_invoices": {
         "paid_amount", "status", "is_bill_printed", "printed_time",
-        "printed_by", "is_reprint", "reprint_number", "cbms_synced",
+        "printed_by", "printed_by_name", "is_reprint", "reprint_number", "cbms_synced",
         "cbms_synced_at",
         # IMSInvoiceService.convert() — turning a saved quotation into a
         # real sale. A quotation isn't an issued bill yet (no IRD serial,
@@ -895,6 +909,13 @@ def ensure_app_role() -> None:
             if mutable_cols:
                 cols = ", ".join(f'"{c}"' for c in sorted(mutable_cols))
                 db.execute(text(f'GRANT UPDATE ({cols}) ON public."{table}" TO "{user}"'))
+        # ims_invoices: DELETE re-granted at the table level, but a quotation
+        # is the ONLY row it can ever actually remove — enforced by
+        # ims_invoices_delete_guard (see ensure_ims_invoices_delete_trigger),
+        # which raises for any row where kind != 'quotation'. Postgres has no
+        # column/row-level DELETE grant, so the trigger is what does the real
+        # narrowing here, same division of labor as RMS's immutability trigger.
+        db.execute(text(f'GRANT DELETE ON public."ims_invoices" TO "{user}"'))
         db.commit()
         logger.info(
             f"App role '{user}' ready — UPDATE/DELETE revoked on "
@@ -904,6 +925,51 @@ def ensure_app_role() -> None:
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to ensure app DB role: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
+def ensure_ims_invoices_delete_trigger() -> None:
+    """IRD: Electronic Billing Procedure 2082, clause ६.३घ / दफा ६.२ज — a real
+    invoice (kind 'tax'/'abbreviated') can never be deleted, only reversed
+    via issue_credit_note(); a quotation (kind='quotation') was never an
+    issued bill — no IRD serial, no stock/ledger effect (see
+    IMSInvoiceService.create()'s `if not is_quotation` guards) — so removing
+    one via void_quotation() is safe and leaves nothing to reconcile.
+
+    ensure_app_role() grants DELETE on ims_invoices at the table level
+    because Postgres has no column/row-level DELETE grant; this trigger is
+    what actually narrows that down to "only a quotation row" — real
+    row-level enforcement that holds even against the DATABASE_ADMIN_URL
+    superuser, matching RMS's restro_orders_immutability trigger's approach
+    to the same class of problem. Idempotent, safe to re-run every startup."""
+    db = AdminSessionLocal()
+    try:
+        db.execute(text("""
+            CREATE OR REPLACE FUNCTION public.ims_invoices_delete_guard() RETURNS trigger AS $$
+            BEGIN
+                IF OLD.kind <> 'quotation' THEN
+                    RAISE EXCEPTION 'ims_invoices: cannot delete an issued invoice (kind=%) — IRD Electronic Billing Procedure 2082, clause 6.3घ. Use a credit note instead.', OLD.kind
+                        USING ERRCODE = '23514';
+                END IF;
+                RETURN OLD;
+            END;
+            $$ LANGUAGE plpgsql;
+        """))
+        db.execute(text(
+            "DROP TRIGGER IF EXISTS trg_ims_invoices_delete_guard ON public.ims_invoices"
+        ))
+        db.execute(text("""
+            CREATE TRIGGER trg_ims_invoices_delete_guard
+            BEFORE DELETE ON public.ims_invoices
+            FOR EACH ROW EXECUTE FUNCTION public.ims_invoices_delete_guard();
+        """))
+        db.commit()
+        logger.info("ims_invoices delete guard trigger ready (quotations only)")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to create ims_invoices delete trigger: {type(e).__name__}: {str(e)}")
         raise
     finally:
         db.close()

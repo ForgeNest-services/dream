@@ -3,6 +3,7 @@ const ROLE_KEY = "ims.role";
 const TENANT_KEY = "ims.tenant_id";
 const BRANCH_KEY = "ims.branch_id";
 const USERNAME_KEY = "ims.username";
+const NAME_KEY = "ims.name";
 const EXPIRES_KEY = "ims.expires_at";
 
 export interface StoredAuth {
@@ -11,6 +12,9 @@ export interface StoredAuth {
   tenantId: string;
   branchId: string | null;
   username: string;
+  // Display name — IRD Annex-5's Entered_By/Printed_By. Falls back to
+  // username for a session stored before this field existed.
+  name: string;
   expiresAt: string;
 }
 
@@ -26,6 +30,7 @@ export const authStorage = {
       localStorage.removeItem(BRANCH_KEY);
     }
     localStorage.setItem(USERNAME_KEY, auth.username);
+    localStorage.setItem(NAME_KEY, auth.name);
     localStorage.setItem(EXPIRES_KEY, auth.expiresAt);
   },
 
@@ -36,6 +41,7 @@ export const authStorage = {
     const tenantId = localStorage.getItem(TENANT_KEY);
     const branchId = localStorage.getItem(BRANCH_KEY);
     const username = localStorage.getItem(USERNAME_KEY);
+    const name = localStorage.getItem(NAME_KEY);
     const expiresAt = localStorage.getItem(EXPIRES_KEY);
     if (!token || !role || !tenantId || !username || !expiresAt) return null;
 
@@ -43,7 +49,7 @@ export const authStorage = {
       this.clear();
       return null;
     }
-    return { token, role, tenantId, branchId, username, expiresAt };
+    return { token, role, tenantId, branchId, username, name: name ?? username, expiresAt };
   },
 
   clear(): void {
@@ -53,6 +59,7 @@ export const authStorage = {
     localStorage.removeItem(TENANT_KEY);
     localStorage.removeItem(BRANCH_KEY);
     localStorage.removeItem(USERNAME_KEY);
+    localStorage.removeItem(NAME_KEY);
     localStorage.removeItem(EXPIRES_KEY);
   },
 

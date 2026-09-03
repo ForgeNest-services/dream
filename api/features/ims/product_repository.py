@@ -163,7 +163,7 @@ class IMSProductRepository:
         return (
             db.query(IMSVariant)
             .join(IMSProduct, IMSVariant.product_id == IMSProduct.id)
-            .options(joinedload(IMSVariant.stock_rows))
+            .options(joinedload(IMSVariant.stock_rows), joinedload(IMSVariant.product))
             .filter(IMSVariant.id == variant_id, IMSProduct.tenant_id == tenant_id)
             .first()
         )

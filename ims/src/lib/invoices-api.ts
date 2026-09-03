@@ -15,6 +15,7 @@ export interface InvoiceLineDto {
   taxable: boolean;
   tax_rate: number | string;
   vat_amount: number | string;
+  hs_code: string | null;
 }
 
 export interface InvoiceDto {
@@ -46,10 +47,14 @@ export interface InvoiceDto {
   status: "paid" | "partial" | "unpaid";
   note: string | null;
   user_id: string;
+  // IRD Annex-5 Entered_By — display name snapshot, not the raw credential
+  // id above. Null only for a pre-migration row.
+  entered_by_name: string | null;
   // IRD reprint fields
   is_reprint: boolean;
   reprint_of: string | null;
   reprint_number: number | null;
+  printed_by_name: string | null;
   // IRD credit note fields
   is_credit_note: boolean;
   original_invoice_id: string | null;
@@ -129,6 +134,11 @@ export const invoicesApi = {
   },
   convert(invoiceId: string, payload: ConvertQuotationPayload) {
     return apiClient.post<InvoiceDto>(`/ims/invoices/${invoiceId}/convert`, payload);
+  },
+  // IRD: दफा ६.२ज — only ever valid on a still-open quotation (never an
+  // issued invoice; both the backend and a DB-level trigger reject that).
+  voidQuotation(invoiceId: string) {
+    return apiClient.delete<void>(`/ims/invoices/${invoiceId}/void-quotation`);
   },
   creditNote(invoiceId: string, reason: string) {
     return apiClient.post<InvoiceDto>(`/ims/invoices/${invoiceId}/credit-note`, { reason });

@@ -29,6 +29,7 @@ from core.seed import (
     ensure_branch_code_schema,
     ensure_restro_bill_code_schema,
     ensure_restro_immutability_trigger,
+    ensure_ims_invoices_delete_trigger,
 )
 from core.storage import ensure_bucket
 import shared_models
@@ -86,6 +87,14 @@ async def lifespan(app: FastAPI):
         logger.info("App DB role ready")
     except Exception as e:
         logger.error(f"Failed to ensure app DB role: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Ensuring ims_invoices delete guard trigger (IRD)...")
+        ensure_ims_invoices_delete_trigger()
+        logger.info("ims_invoices delete guard trigger ready")
+    except Exception as e:
+        logger.error(f"Failed to ensure ims_invoices delete trigger: {type(e).__name__}: {str(e)}")
         raise
 
     try:

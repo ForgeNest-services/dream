@@ -139,6 +139,11 @@ export interface Product {
    *  means "use the company's VAT rate" — only a handful of exempt/reduced
    *  items usually need to differ. Ignored when taxable is false. */
   taxRate?: number | undefined;
+  /** Harmonized System code — Annexure ६'s एच.एस.कोड line-item column.
+   *  Manual, optional: no way to derive a customs classification from a
+   *  product name/category, and the law never states it's mandatory to
+   *  populate — left blank rather than guessed. */
+  hsCode?: string | undefined;
   createdAt: string;
 }
 
@@ -158,6 +163,7 @@ export interface StockMovement {
   reference?: string | undefined;
   supplierId?: string | undefined;
   userId: string;
+  userName?: string | null | undefined;
 }
 
 export interface Party {
@@ -204,6 +210,9 @@ export interface InvoiceLine {
    * cart line won't have these until the invoice is actually created. */
   taxRate?: number | undefined;
   vatAmount?: number | undefined;
+  /** Snapshotted from the product's HS code at sale time — see
+   *  IMSInvoiceLine.hs_code. Undefined for a line predating this field. */
+  hsCode?: string | null | undefined;
 }
 
 export type InvoiceStatus = "paid" | "partial" | "unpaid" | "cancelled";
@@ -220,6 +229,8 @@ export interface Invoice {
   paidAmount: number;
   status: InvoiceStatus;
   userId: string;
+  // IRD Annex-5 Entered_By — display name snapshotted at issue time.
+  enteredByName?: string | null;
   note?: string | undefined;
   isCopy?: boolean | undefined;
   // IRD Annex 5: seller snapshot (printed on the bill, snapshotted at issue time)
@@ -234,6 +245,7 @@ export interface Invoice {
   isReprint?: boolean;
   reprintOf?: string | null;
   reprintNumber?: number | null;
+  printedByName?: string | null;
   // IRD credit note fields
   isCreditNote?: boolean;
   originalInvoiceId?: string | null;

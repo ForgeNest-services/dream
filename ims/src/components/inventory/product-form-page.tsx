@@ -64,6 +64,7 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
   const [variants, setVariants] = useState<DraftVariant[]>([]);
   const [taxable, setTaxable] = useState(false);
   const [taxRate, setTaxRate] = useState<number | "">("");
+  const [hsCode, setHsCode] = useState("");
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [brandDialogOpen, setBrandDialogOpen] = useState(false);
 
@@ -78,6 +79,7 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
       setDescription(product.description ?? "");
       setTaxable(app.company.vatRegistered && product.taxable !== false);
       setTaxRate(product.taxRate ?? app.company.vatRate);
+      setHsCode(product.hsCode ?? "");
       setHasVariants(
         existingVariants.length > 1 || (existingVariants[0]?.name ?? "Default") !== "Default",
       );
@@ -188,6 +190,7 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
       description: description.trim() || undefined,
       taxable,
       taxRate: taxRate === "" || Number(taxRate) === app.company.vatRate ? undefined : Number(taxRate),
+      hsCode: hsCode.trim() || undefined,
     };
 
     setSubmitting(true);
@@ -361,6 +364,17 @@ export function ProductFormPage({ product }: { product?: Product | undefined }) 
               rows={2}
               placeholder="Optional notes shown on the product page"
             />
+          </div>
+          <div className="mt-4 max-w-56 space-y-1.5">
+            <Label>HS code</Label>
+            <Input
+              value={hsCode}
+              onChange={(e) => setHsCode(e.target.value)}
+              placeholder="e.g. 8471.30"
+            />
+            <p className="text-xs text-muted-foreground">
+              Optional — Harmonized System code for customs classification, printed on the bill.
+            </p>
           </div>
         </div>
 

@@ -127,7 +127,13 @@ class IMSInvoiceService:
         return {"success": True, "invoice": invoice}
 
     @staticmethod
-    def register_print(db: Session, tenant_id: str, invoice_id: str, printed_by: str | None) -> dict:
+    def register_print(
+        db: Session,
+        tenant_id: str,
+        invoice_id: str,
+        printed_by: str | None,
+        printed_by_name: str | None = None,
+    ) -> dict:
         """Call once per actual print of an issued invoice — bumps the
         reprint counter and tells the caller whether THIS print is the
         original (no watermark) or a reprint ("Copy of Original (N)"). Not
@@ -137,7 +143,7 @@ class IMSInvoiceService:
             return {"success": False, "error_code": "DOCUMENT_NOT_FOUND"}
         if invoice.kind == "quotation":
             return {"success": True, "invoice": invoice, "is_reprint": False}
-        invoice = IMSInvoiceRepository.register_print(db, invoice, printed_by)
+        invoice = IMSInvoiceRepository.register_print(db, invoice, printed_by, printed_by_name)
         return {"success": True, "invoice": invoice, "is_reprint": invoice.is_reprint}
 
     @staticmethod
@@ -228,6 +234,7 @@ class IMSInvoiceService:
         db: Session,
         tenant_id: str,
         user_id: str,
+        entered_by_name: str,
         date: datetime,
         branch_id: str,
         customer_id: str,
@@ -405,6 +412,7 @@ class IMSInvoiceService:
                 status=final_status,
                 note=note,
                 user_id=user_id,
+                entered_by_name=entered_by_name,
             )
 
             for resolved in resolved_lines:
@@ -423,6 +431,7 @@ class IMSInvoiceService:
                     taxable=resolved["taxable"],
                     tax_rate=totals["effective_rate"] if resolved["taxable"] else Decimal(0),
                     vat_amount=resolved["line_vat"],
+                    hs_code=variant.product.hs_code if variant.product else None,
                 )
 
                 # A quotation is a price offer only — no stock movement, no
@@ -686,6 +695,7 @@ class IMSInvoiceService:
         db: Session,
         tenant_id: str,
         user_id: str,
+        entered_by_name: str,
         invoice_id: str,
         reason: str,
         terminal_ip: str | None = None,
@@ -732,6 +742,7 @@ class IMSInvoiceService:
                 status="paid",
                 note=reason,
                 user_id=user_id,
+                entered_by_name=entered_by_name,
                 is_credit_note=True,
                 original_invoice_id=original.id,
                 note_reason=reason,
@@ -763,6 +774,7 @@ class IMSInvoiceService:
                     taxable=line.taxable,
                     tax_rate=line.tax_rate,
                     vat_amount=-line.vat_amount,
+                    hs_code=line.hs_code,
                 )
 
                 stock_row = txn.get_or_create_stock_row(db, line.variant_id, original.branch_id)
@@ -828,3 +840,43 @@ class IMSInvoiceService:
         db.commit()
 
         return {"success": True, "invoice": IMSInvoiceRepository.get_by_id(db, tenant_id, cn.id)}
+
+    @staticmethod
+    def void_quotation(
+        db: Session,
+        tenant_id: str,
+        invoice_id: str,
+        performed_by: str | None = None,
+        terminal_ip: str | None = None,
+    ) -> dict:
+        """IRD: Electronic Billing Procedure 2082, दफा ६.२ज's reverse-entry
+        concept — but scoped to what's actually pre-issuance in IMS. A
+        quotation (kind="quotation") is a price offer, not a bill: no IRD
+        serial, no stock deduction, no ledger post (see create()'s
+        `if not is_quotation` guards). Removing one leaves nothing to
+        reconcile, unlike voiding a real invoice — which this method
+        refuses to touch (NOT_A_QUOTATION), since a real invoice already has
+        a bill number and stock/ledger effects and must go through
+        issue_credit_note() instead, per clause ६.३घ's immutability rule."""
+        invoice = IMSInvoiceRepository.get_by_id(db, tenant_id, invoice_id)
+        if not invoice:
+            return {"success": False, "error_code": "INVOICE_NOT_FOUND"}
+        if invoice.kind != "quotation":
+            return {"success": False, "error_code": "NOT_A_QUOTATION"}
+
+        quotation_number = invoice.number
+        AuditRepository.write(
+            db,
+            tenant_id=tenant_id,
+            app_code="ims",
+            entity_type="invoice",
+            entity_id=invoice.id,
+            action="void_quotation",
+            performed_by=performed_by or "unknown",
+            performer_type="staff",
+            after_state={"number": quotation_number},
+            terminal_ip=terminal_ip,
+        )
+        IMSInvoiceRepository.delete(db, invoice)
+        logger.info(f"IMS quotation voided: {quotation_number}", extra={"tenant_id": tenant_id})
+        return {"success": True}

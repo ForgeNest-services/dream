@@ -3,7 +3,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   BadgePercent,
   BarChart3,
+  Banknote,
   BookUser,
+  ClipboardList,
+  FileMinus,
+  FileSpreadsheet,
+  Landmark,
   PackageSearch,
   ReceiptText,
   ShoppingCart,
@@ -27,6 +32,18 @@ export const Route = createFileRoute("/_app/reports/")({
 
 const REPORTS = [
   {
+    to: "/reports/standard-view" as const,
+    icon: FileSpreadsheet,
+    title: "Standard View",
+    description: "अनुसूची ५ — all 20 mandatory fields, every invoice in the period.",
+  },
+  {
+    to: "/reports/credit-notes" as const,
+    icon: FileMinus,
+    title: "Credit Notes",
+    description: "Credit notes issued in the period with their reference invoice.",
+  },
+  {
     to: "/reports/sales" as const,
     icon: ReceiptText,
     title: "Sales report",
@@ -37,6 +54,24 @@ const REPORTS = [
     icon: BadgePercent,
     title: "VAT sales register",
     description: "IRD-format VAT register: buyer PAN, taxable amount and VAT per invoice.",
+  },
+  {
+    to: "/reports/annexure-13" as const,
+    icon: ClipboardList,
+    title: "Annexure 13",
+    description: "अनुसूची १३ — output/input VAT summary and net payable for the period.",
+  },
+  {
+    to: "/reports/monthly-vat-summary" as const,
+    icon: Landmark,
+    title: "Monthly VAT summary",
+    description: "मासिक — one row per BS month: taxable amounts and net VAT payable.",
+  },
+  {
+    to: "/reports/tds" as const,
+    icon: Banknote,
+    title: "TDS report",
+    description: "Tax Deducted at Source on supplier purchases for the selected period.",
   },
   {
     to: "/reports/purchases" as const,
@@ -82,9 +117,13 @@ function ReportsLandingPage() {
       <PageHeader title="Reports" subtitle="Detailed, filterable reports — export to XLSX or PDF from any of them." />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {REPORTS.map((r) => (
+          // Each report route has its own (heterogeneous) search schema, so
+          // there's no single search value valid for every `to` in this
+          // union — navigating with none lets the target route's own
+          // validateSearch supply its defaults, same as opening it fresh.
           <Link
             key={r.to}
-            to={r.to}
+            to={r.to as never}
             className="group rounded-lg border bg-card p-4 transition hover:border-primary/50 hover:shadow-sm"
           >
             <r.icon className="h-6 w-6 text-primary" />

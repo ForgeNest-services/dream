@@ -29,6 +29,10 @@ class IMSInvoiceLine(Base):
     taxable = Column(Boolean, nullable=False, default=True)
     tax_rate = Column(Numeric(5, 2), nullable=False, default=0)
     vat_amount = Column(Numeric(12, 2), nullable=False, default=0)
+    # Snapshotted from IMSProduct.hs_code at sale time, same reasoning as
+    # tax_rate/vat_amount above — a printed bill must never change even if
+    # the product's HS code is corrected/reclassified later.
+    hs_code = Column(String(20), nullable=True)
 
     invoice = relationship("IMSInvoice", back_populates="lines")
 
