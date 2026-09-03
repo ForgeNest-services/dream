@@ -193,6 +193,7 @@ export function BillReceipt({
       ? "KHATA (on tab)"
       : order.paymentMethod.toUpperCase()
     : null;
+  const { session } = usePos();
   return (
     <div className="thermal-receipt mx-auto p-2">
       {isReprint && (
@@ -200,6 +201,12 @@ export function BillReceipt({
           <p className="text-center text-[13px] font-bold tracking-widest">
             Copy of Original ({printCount ?? "?"})
           </p>
+          {/* IRD §6.2(च): reprint must show who triggered this print */}
+          {session && (
+            <p className="text-center text-[10px]">
+              Printed by: {session.name || session.username}
+            </p>
+          )}
           <Divider />
         </>
       )}
@@ -223,6 +230,8 @@ export function BillReceipt({
       <p>Date : {bsFromOrder(order)}</p>
       <p>Also : {nptDate(displayTs)}</p>
       <p>Time : {nptTime(displayTs)}</p>
+      {/* IRD §6.2 / Annex-5 Entered_By — staff member who opened the bill */}
+      <p>By   : {order.enteredByName}</p>
       <Divider />
       {order.lines.map((l) => (
         <div key={l.id} className="mb-1">

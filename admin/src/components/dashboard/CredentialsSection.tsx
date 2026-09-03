@@ -27,8 +27,8 @@ interface Props {
   branchesLoading: boolean;
 }
 
-type CreateFormValues = { username: string; password: string };
-type EditFormValues = { username?: string; password?: string };
+type CreateFormValues = { name: string; username: string; password: string };
+type EditFormValues = { name?: string; username?: string; password?: string };
 
 // A "slot" is a (role, branch) pair that either has a credential or doesn't yet.
 type Slot = {
@@ -219,6 +219,7 @@ export function CredentialsSection({ appCode, branches, branchesLoading }: Props
           onSubmit={async (values) => {
             const ok = await create({
               role: addingSlot.role,
+              name: values.name,
               username: values.username,
               password: values.password,
               branch_id: addingSlot.branchId,
@@ -385,7 +386,11 @@ function SlotRow({
           <span style={{ fontSize: '13px', color: colors.neutral[500], display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
             {slot.branchName && <span style={{ color: colors.neutral[300] }}>·</span>}
             <MdCheckCircle size={14} color={colors.status.success} style={{ flexShrink: 0 }} />
-            <span style={{ fontFamily: 'monospace', color: colors.neutral[800], overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span style={{ color: colors.neutral[800], overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }}>
+              {slot.cred.name}
+            </span>
+            <span style={{ color: colors.neutral[300] }}>·</span>
+            <span style={{ fontFamily: 'monospace', color: colors.neutral[500], overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {slot.cred.username}
             </span>
           </span>
@@ -594,6 +599,17 @@ function CreateCredentialModal({
       </div>
       <form onSubmit={handleSubmit(onSubmit)}>
         <FormInput
+          {...register('name', {
+            required: 'Display name is required',
+            validate: (v) => v.trim().length > 0 || 'Display name is required',
+          })}
+          label="Display name"
+          placeholder="e.g. Ramesh Shrestha"
+          icon={<MdOutlineVpnKey size={18} />}
+          error={errors.name?.message}
+          disabled={isSaving}
+        />
+        <FormInput
           {...register('username', {
             required: 'Username is required',
             minLength: { value: 3, message: 'At least 3 characters' },
@@ -618,7 +634,7 @@ function CreateCredentialModal({
           disabled={isSaving}
         />
         <p style={{ fontSize: '12px', color: colors.neutral[500], marginBottom: spacing.lg }}>
-          Share these with your {roleLabel.toLowerCase()} staff{branchName ? ` at ${branchName}` : ''}. Anyone with the login can sign in — it's shared, not per-person.
+          The display name appears on printed bills and the activity log. The username is for signing in only.
         </p>
         <Button type="submit" isLoading={isSaving} size="lg">
           Create Login
@@ -648,12 +664,13 @@ function EditCredentialModal({
     handleSubmit,
     formState: { errors },
   } = useForm<EditFormValues>({
-    defaultValues: { username: current?.username || '', password: '' },
+    defaultValues: { name: current?.name || '', username: current?.username || '', password: '' },
   });
   const [copied, setCopied] = useState(false);
 
   const submit = async (values: EditFormValues) => {
     const payload: EditFormValues = {};
+    if (values.name && values.name !== current?.name) payload.name = values.name;
     if (values.username && values.username !== current?.username) payload.username = values.username;
     if (values.password) payload.password = values.password;
     if (Object.keys(payload).length === 0) {
@@ -679,6 +696,15 @@ function EditCredentialModal({
   return (
     <ModalShell title={title} onClose={onClose}>
       <form onSubmit={handleSubmit(submit)}>
+        <FormInput
+          {...register('name', {
+            validate: (v) => !v || v.trim().length > 0 || 'Display name cannot be blank',
+          })}
+          label="Display name"
+          icon={<MdOutlineVpnKey size={18} />}
+          error={errors.name?.message}
+          disabled={isSaving}
+        />
         <div style={{ position: 'relative' }}>
           <FormInput
             {...register('username', {

@@ -142,7 +142,8 @@ class OrderService:
 
     @staticmethod
     def register_print(
-        db: Session, tenant_id: str, branch_id: str, order_id: str, printed_by: str | None = None
+        db: Session, tenant_id: str, branch_id: str, order_id: str,
+        printed_by: str | None = None, printed_by_name: str | None = None
     ) -> dict:
         """Call once per actual print of a paid bill — bumps print_count and
         tells the caller whether THIS print is the original (count==1, no
@@ -156,7 +157,7 @@ class OrderService:
             return {"success": False, "error_code": "ORDER_NOT_FOUND"}
         if order.status != "paid":
             return {"success": True, "is_reprint": False, "print_count": 0}
-        order = OrderRepository.increment_print_count(db, order, printed_by)
+        order = OrderRepository.increment_print_count(db, order, printed_by, printed_by_name)
         return {"success": True, "is_reprint": order.print_count > 1, "print_count": order.print_count}
 
     @staticmethod
@@ -180,8 +181,8 @@ class OrderService:
         tenant_id: str,
         branch_id: str,
         type: str,
-        waiter_name: str,
-        waiter_cred_id: str | None,
+        entered_by_name: str,
+        entered_by_cred_id: str | None,
         table_id: str | None = None,
         customer_id: str | None = None,
     ) -> dict:
@@ -228,8 +229,8 @@ class OrderService:
                 type=type,
                 table_id=primary_table_id,
                 customer_id=customer_id,
-                waiter_name=waiter_name,
-                waiter_cred_id=waiter_cred_id,
+                entered_by_name=entered_by_name,
+                entered_by_cred_id=entered_by_cred_id,
                 branch_code=branch.code,
             )
             logger.info(
@@ -909,8 +910,8 @@ class OrderService:
             seller_pan=original.seller_pan,
             buyer_name=original.buyer_name,
             buyer_pan=original.buyer_pan,
-            waiter_name="system",
-            waiter_cred_id=performed_by,
+            entered_by_name="system",
+            entered_by_cred_id=performed_by,
             is_credit_note=True,
             original_order_id=original.id,
             note_reason=reason,

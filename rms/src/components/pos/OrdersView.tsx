@@ -228,7 +228,7 @@ function BillsTable({ onOpen }: { onOpen: (t: RestaurantTable) => void }) {
     discountType: o.discount_type,
     discountValue: Number(o.discount_value),
     ...(o.payment_method ? { paymentMethod: o.payment_method } : {}),
-    waiter: o.waiter_name,
+    enteredByName: o.entered_by_name,
     ...(o.kind ? { kind: o.kind } : {}),
     ...(o.buyer_pan ? { buyerPan: o.buyer_pan } : {}),
     ...(o.bill_code ? { billCode: o.bill_code } : {}),

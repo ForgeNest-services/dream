@@ -119,7 +119,7 @@ function toOrder(o: OrderDto): Order {
     placedAtBs: o.placed_at_bs,
     discountType: o.discount_type,
     discountValue: Number(o.discount_value),
-    waiter: o.waiter_name,
+    enteredByName: o.entered_by_name,
   };
   if (o.paid_at_bs) order.paidAtBs = o.paid_at_bs;
   const settledDate = parseApiDate(o.settled_at);
@@ -595,6 +595,7 @@ export function PosProvider({ children }: { children: ReactNode }) {
       const stored: StoredSession = {
         token: data.token,
         role: data.role as Role,
+        name: data.name ?? username,
         tenantId: data.tenant_id,
         branchId: data.branch_id,
         username,

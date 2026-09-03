@@ -5,6 +5,9 @@ export interface StaffCredentialDto {
   tenant_id: string;
   branch_id: string | null;
   role: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
   username: string;
   created_by: string;
   created_at: string;
@@ -13,12 +16,18 @@ export interface StaffCredentialDto {
 
 export interface CreateStaffCredentialPayload {
   role: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
   username: string;
   password: string;
   branch_id?: string | null;
 }
 
 export interface UpdateStaffCredentialPayload {
+  name?: string;
+  email?: string | null;
+  phone?: string | null;
   username?: string;
   password?: string;
 }

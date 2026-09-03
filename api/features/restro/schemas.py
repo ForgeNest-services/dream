@@ -11,6 +11,9 @@ class CredentialData(BaseModel):
     tenant_id: str
     branch_id: str | None
     role: str
+    name: str
+    email: str | None
+    phone: str | None
     username: str
     created_by: str
     created_at: datetime
@@ -19,6 +22,9 @@ class CredentialData(BaseModel):
 
 class CreateCredentialRequest(BaseModel):
     role: str
+    name: str
+    email: str | None = None
+    phone: str | None = None
     username: str
     password: str
     branch_id: str | None = None
@@ -37,8 +43,18 @@ class CreateCredentialRequest(BaseModel):
             raise ValueError("Password must be at least 6 characters")
         return v
 
+    @field_validator("name")
+    @classmethod
+    def name_nonempty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Name cannot be empty")
+        return v.strip()
+
 
 class UpdateCredentialRequest(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
     username: str | None = None
     password: str | None = None
 
@@ -58,6 +74,7 @@ class StaffLoginRequest(BaseModel):
 class StaffLoginResponse(BaseModel):
     token: str
     role: str
+    name: str
     tenant_id: str
     branch_id: str | None
     expires_at: datetime
@@ -426,8 +443,8 @@ class OrderData(BaseModel):
     seller_pan: str | None
     buyer_name: str | None
     buyer_pan: str | None
-    waiter_name: str
-    waiter_cred_id: str | None
+    entered_by_name: str
+    entered_by_cred_id: str | None
     delivery_status: str | None
     # ── Reprint / credit note (IRD) ────────────────────────────────────────
     print_count: int
@@ -437,6 +454,7 @@ class OrderData(BaseModel):
     is_bill_printed: bool
     printed_time: datetime | None
     printed_by: str | None
+    printed_by_name: str | None
     is_credit_note: bool
     original_order_id: str | None
     note_reason: str | None

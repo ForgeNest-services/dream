@@ -76,14 +76,15 @@ export interface OrderDto {
   seller_pan: string | null;
   buyer_name: string | null;
   buyer_pan: string | null;
-  waiter_name: string;
-  waiter_cred_id: string | null;
+  entered_by_name: string;
+  entered_by_cred_id: string | null;
   delivery_status: DeliveryStatus | null;
   // ── Reprint / credit note (IRD) ──────────────────────────────────────
   print_count: number;
   is_reprint: boolean;
   reprint_of: string | null;
   reprint_number: number | null;
+  printed_by_name: string | null;
   is_credit_note: boolean;
   original_order_id: string | null;
   note_reason: string | null;

@@ -351,6 +351,7 @@ def staff_login(data: StaffLoginRequest, request: Request, db: Session = Depends
         data=StaffLoginResponse(
             token=result["token"],
             role=result["role"],
+            name=result["name"],
             tenant_id=result["tenant_id"],
             branch_id=result["branch_id"],
             expires_at=result["expires_at"],
@@ -403,6 +404,9 @@ def create_credential(
         tenant_id=user.tenant_id,
         created_by=user.id,
         role=data.role,
+        name=data.name,
+        email=data.email,
+        phone=data.phone,
         username=data.username,
         password=data.password,
         branch_id=data.branch_id,
@@ -412,12 +416,6 @@ def create_credential(
         code = result["error_code"]
         if code == "BRANCH_NOT_FOUND":
             return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
-        if code == "ROLE_ALREADY_HAS_CREDENTIAL":
-            return error_response(
-                "ROLE_ALREADY_HAS_CREDENTIAL",
-                f"A credential for role '{data.role}' already exists for this branch.",
-                409,
-            )
         if code == "USERNAME_TAKEN":
             return error_response(
                 "USERNAME_TAKEN",
@@ -445,6 +443,9 @@ def update_credential(
         db,
         tenant_id=user.tenant_id,
         cred_id=cred_id,
+        name=data.name,
+        email=data.email,
+        phone=data.phone,
         username=data.username,
         password=data.password,
     )
@@ -518,6 +519,9 @@ def staff_create_credential(
         tenant_id=staff["tenant_id"],
         created_by=_owner_user_id(db, staff["tenant_id"]),
         role=data.role,
+        name=data.name,
+        email=data.email,
+        phone=data.phone,
         username=data.username,
         password=data.password,
         branch_id=data.branch_id,
@@ -527,12 +531,6 @@ def staff_create_credential(
         code = result["error_code"]
         if code == "BRANCH_NOT_FOUND":
             return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)
-        if code == "ROLE_ALREADY_HAS_CREDENTIAL":
-            return error_response(
-                "ROLE_ALREADY_HAS_CREDENTIAL",
-                f"A credential for role '{data.role}' already exists for this branch.",
-                409,
-            )
         if code == "USERNAME_TAKEN":
             return error_response(
                 "USERNAME_TAKEN",
@@ -559,6 +557,9 @@ def staff_update_credential(
         db,
         tenant_id=staff["tenant_id"],
         cred_id=cred_id,
+        name=data.name,
+        email=data.email,
+        phone=data.phone,
         username=data.username,
         password=data.password,
     )
@@ -1495,15 +1496,16 @@ def create_order(
     db: Session = Depends(get_db),
 ):
     _assert_branch_scope(staff, branch_id)
-    # Snapshot the waiter's login username so the receipt can name them even
-    # if the credential is later renamed or deleted. The JWT doesn't carry
-    # username (only cred_id + role) — look it up here.
+    # Snapshot the staff member's display name (not login username) so the
+    # receipt's "Entered by" survives credential renames or deletions.
+    # JWT carries `name` from login time; fall back to a DB lookup for tokens
+    # issued before this field was added.
     cred_id = staff.get("cred_id")
-    waiter_name = staff.get("role") or "staff"
-    if cred_id:
+    entered_by_name = staff.get("name") or staff.get("role") or "staff"
+    if not staff.get("name") and cred_id:
         cred = RestroCredentialRepository.get_by_id(db, staff["tenant_id"], cred_id)
         if cred:
-            waiter_name = cred.username
+            entered_by_name = cred.name
     result = OrderService.create(
         db,
         tenant_id=staff["tenant_id"],
@@ -1511,8 +1513,8 @@ def create_order(
         type=data.type,
         table_id=data.table_id,
         customer_id=data.customer_id,
-        waiter_name=waiter_name,
-        waiter_cred_id=cred_id,
+        entered_by_name=entered_by_name,
+        entered_by_cred_id=cred_id,
     )
     if not result["success"]:
         return _order_error(result["error_code"])
@@ -1831,8 +1833,15 @@ def register_order_print(
     OrderService.register_print. Returns whether this print should carry the
     "Copy of Original (N)" watermark."""
     _assert_branch_scope(staff, branch_id)
+    cred_id = staff.get("cred_id")
+    printed_by_name = staff.get("name") or None
+    if not printed_by_name and cred_id:
+        cred = RestroCredentialRepository.get_by_id(db, staff["tenant_id"], cred_id)
+        if cred:
+            printed_by_name = cred.name
     result = OrderService.register_print(
-        db, staff["tenant_id"], branch_id, order_id, staff.get("cred_id")
+        db, staff["tenant_id"], branch_id, order_id,
+        printed_by=cred_id, printed_by_name=printed_by_name
     )
     if not result["success"]:
         return _order_error(result["error_code"])
@@ -2002,14 +2011,15 @@ def _inventory_error(code: str):
 
 
 def _actor_from_staff(db: Session, staff: dict) -> tuple[str, str | None]:
-    """Snapshot the acting user's username (like `waiter_name` on orders) so
-    the movement log survives credential renames or deletions."""
+    """Snapshot the acting user's display name so audit/movement logs survive
+    credential renames or deletions. JWT carries `name` since the multi-user
+    credential update; fall back to a DB lookup for older tokens."""
     cred_id = staff.get("cred_id")
-    name = staff.get("role") or "staff"
-    if cred_id:
+    name = staff.get("name") or staff.get("role") or "staff"
+    if not staff.get("name") and cred_id:
         cred = RestroCredentialRepository.get_by_id(db, staff["tenant_id"], cred_id)
         if cred:
-            name = cred.username
+            name = cred.name
     return name, cred_id
 
 
