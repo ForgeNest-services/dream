@@ -54,20 +54,51 @@ checklist + CBMS JSON contract: `docs/Srota_IRD_Compliance_Checklist.md`.
   invoice conversion — both fully wired end-to-end, found and verified
   during this pass after being initially (wrongly) suspected as missing
 
+### CBMS — live-tested against the real IRD sandbox, two real bugs found and fixed
+
+Confirmed via a user-supplied primary-source PDF (IRD's own CBMS API
+documentation) that the payload/URL/response-code contract was already
+byte-correct in both apps, then live-tested for real — not just curl, the
+app's actual code, real credentials (`Test_CBMS`/`test@321`,
+`seller_pan="999999999"`), real requests to `cbapi.ird.gov.np`:
+- **Bug found & fixed**: `_parse_ird_response()` assumed an object-shaped
+  response body; IRD's real body is a **bare JSON integer** (`200`, `101`,
+  ...) — every real submission would have crashed with an unhandled
+  `AttributeError` before this fix.
+- **Bug found & fixed**: `api/worker.py` never imported `main` before
+  starting the RQ worker loop, so the first `features.*` import any real job
+  triggered (both apps' `sync_document_job`s do this lazily) hit the
+  `features.auth` ↔ `core.deps` circular import and **crashed the worker
+  process itself** — meaning no CBMS sync job could ever complete in
+  production, independent of the bug above. `worker` builds from its own
+  image (`dream-worker`) separate from `dream-api` — rebuilding one doesn't
+  rebuild the other, a real gotcha hit while fixing this.
+- Both fixes re-verified end-to-end after the fact: real orders/invoices
+  built through each app's actual service layer (not hand-built payloads),
+  enqueued through the real `job_queue`, picked up by the real worker,
+  reaching IRD's live sandbox and getting back real response codes
+  (200/101/102/103/100 all observed across the two apps), correctly
+  classified and correctly handled per code (synced / retried via RQ's
+  `Retry` policy / flagged for manual review) — `CbmsSyncLog` rows written
+  correctly throughout.
+- Full narrative and exact commands: `docs/compliance.md`'s §6,
+  `docs/Srota_IRD_Compliance_Checklist.md`'s sandbox/RQ caveat notes.
+
 ### Still open — external only, same for both apps
 
 Nothing left in application code for either app. What remains needs an
 answer from IRD, a written document, or an infra decision — not more code:
 - Nepal server hosting confirmation + Annexure-७ tripartite agreement (if
   on a cloud/non-owned server)
-- Exact CBMS base URL, payload date-format, whether a sandbox exists —
-  `docs/Srota_IRD_Compliance_Checklist.md`'s own unresolved caveats
 - Submission packet: User Manual, System Architecture document — not written
 - Byte-exact verification of the printed bill / exports against IRD's actual
   Annexure-६ template images — built to the described column layout, never
   visually diffed against the source PDF's own template pages
 - DB backup / log archiving (दफा ६.१ग, ८च) — explicitly deferred, not
   evaluated this session
+- `IMS_CBMS_CERTIFIED`/`RMS_CBMS_CERTIFIED` stay `false` in real `.env` until
+  each app is actually IRD-certified — correct as-is, not a gap; only flip
+  once certification is granted
 
 ### Working notes
 - IRD source PDF: `c:\Users\HELIOS\Downloads\विद्युतीय बीजक सम्बन्धी कार्यविधि, २०८२_ab3ktjz.pdf`

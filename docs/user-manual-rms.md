@@ -1,9 +1,11 @@
 # User Manual
+
 ## Srota RMS — Restaurant Management System
+
 ### Electronic Billing Software
 
 **Software Name**: Srota RMS  
-**Developed by**: ForgeNest Pvt. Ltd.  
+**Developed by**: Forgenest Pvt. Ltd.  
 **Version**: [VERSION]  
 **Date**: [DATE]  
 **Prepared by**: [NAME], [DESIGNATION]  
@@ -59,13 +61,13 @@ Srota RMS operates as a web application:
 
 ## 2. System Requirements
 
-| Requirement | Specification |
-|---|---|
-| Device | PC, laptop, tablet, or smartphone |
-| Browser | Google Chrome 110+, Mozilla Firefox 110+, Microsoft Edge 110+ |
-| Internet | Minimum 2 Mbps broadband connection |
-| Printer | Any network or USB receipt/A4 printer |
-| Screen resolution | Minimum 1280 × 720 |
+| Requirement       | Specification                                                 |
+| ----------------- | ------------------------------------------------------------- |
+| Device            | PC, laptop, tablet, or smartphone                             |
+| Browser           | Google Chrome 110+, Mozilla Firefox 110+, Microsoft Edge 110+ |
+| Internet          | Minimum 2 Mbps broadband connection                           |
+| Printer           | Any network or USB receipt/A4 printer                         |
+| Screen resolution | Minimum 1280 × 720                                            |
 
 No local software installation is required. The system is fully web-based.
 
@@ -93,13 +95,13 @@ If you have forgotten your password, contact your branch manager or system admin
 
 Srota RMS implements role-based access control. Each user is assigned one of the following roles:
 
-| Role | Description | Key Permissions |
-|---|---|---|
-| **Owner** | Business owner or top-level admin | Full access to all branches, reports, settings, credentials |
-| **Manager** | Branch manager | Order management, billing, reports for assigned branch |
-| **Cashier** | Front-desk billing staff | Create orders, process payments, print bills |
-| **Waiter** | Service staff | Create and send orders to kitchen; cannot bill |
-| **Kitchen** | Kitchen display | View and update order status only |
+| Role        | Description                       | Key Permissions                                             |
+| ----------- | --------------------------------- | ----------------------------------------------------------- |
+| **Owner**   | Business owner or top-level admin | Full access to all branches, reports, settings, credentials |
+| **Manager** | Branch manager                    | Order management, billing, reports for assigned branch      |
+| **Cashier** | Front-desk billing staff          | Create orders, process payments, print bills                |
+| **Waiter**  | Service staff                     | Create and send orders to kitchen; cannot bill              |
+| **Kitchen** | Kitchen display                   | View and update order status only                           |
 
 ### 4.1 Managing Users
 
@@ -121,12 +123,12 @@ Each credential stores the user's **full name**, **email**, and **phone number**
 
 Key fields required for IRD compliance:
 
-| Field | Purpose |
-|---|---|
-| Business Name | Printed on every bill header |
+| Field            | Purpose                                                        |
+| ---------------- | -------------------------------------------------------------- |
+| Business Name    | Printed on every bill header                                   |
 | PAN / VAT Number | Printed on every bill; used in CBMS submission as `seller_pan` |
-| Address | Printed on every bill |
-| Phone | Printed on every bill |
+| Address          | Printed on every bill                                          |
+| Phone            | Printed on every bill                                          |
 
 ### 5.2 Branch Settings
 
@@ -134,11 +136,11 @@ Each physical location operates as a separate branch. Bills are numbered indepen
 
 [SCREENSHOT: Branch settings — showing branch name, address, bill series prefix]
 
-| Field | Purpose |
-|---|---|
-| Branch Name | Included in bill header |
-| Bill Series Prefix | Used in bill number format (`SERIES-BRANCH-FY-NNNNN`) |
-| Default HS Code | Applied to all menu items unless overridden at item level |
+| Field              | Purpose                                                   |
+| ------------------ | --------------------------------------------------------- |
+| Branch Name        | Included in bill header                                   |
+| Bill Series Prefix | Used in bill number format (`SERIES-BRANCH-FY-NNNNN`)     |
+| Default HS Code    | Applied to all menu items unless overridden at item level |
 
 ### 5.3 Tax Settings
 
@@ -237,6 +239,7 @@ Tap **Confirm Payment** to finalize the bill.
 [SCREENSHOT: Bill print preview — showing full bill layout before printing]
 
 Tap **Print** to send the bill to the connected printer. The system records:
+
 - `Is_Bill_Printed = Yes`
 - `Printed_Time` = timestamp of first print
 - `Entered_By` = logged-in cashier's name
@@ -258,19 +261,19 @@ Issued when: VAT-registered tenant AND taxable amount ≥ Rs 10,000.
 
 **Mandatory fields on this template:**
 
-| Field | Requirement |
-|---|---|
-| Seller PAN / VAT No. | Printed in header |
-| Bill Number | Sequential, format `SERIES-BRANCH-FY-NNNNN` |
-| Bill Date (BS) | Bikram Sambat date |
-| Buyer Name / PAN | Captured at checkout; blank for walk-in |
-| HS Code per line | Printed in item table |
-| Taxable Amount | Shown before VAT |
-| VAT (13%) | Shown separately |
-| Grand Total | |
-| VAT Refund Amount | Shown for QR/digital payments |
-| QR Code | Encodes bill data for offline verification |
-| Issuer Name | Staff name snapshotted at billing time |
+| Field                | Requirement                                 |
+| -------------------- | ------------------------------------------- |
+| Seller PAN / VAT No. | Printed in header                           |
+| Bill Number          | Sequential, format `SERIES-BRANCH-FY-NNNNN` |
+| Bill Date (BS)       | Bikram Sambat date                          |
+| Buyer Name / PAN     | Captured at checkout; blank for walk-in     |
+| HS Code per line     | Printed in item table                       |
+| Taxable Amount       | Shown before VAT                            |
+| VAT (13%)            | Shown separately                            |
+| Grand Total          |                                             |
+| VAT Refund Amount    | Shown for QR/digital payments               |
+| QR Code              | Encodes bill data for offline verification  |
+| Issuer Name          | Staff name snapshotted at billing time      |
 
 ### 10.2 Abbreviated Tax Invoice (संक्षिप्त कर बीजक) — Template 1.क.ई
 
@@ -313,6 +316,7 @@ Enter the **reason for return** and the amount. Confirm to issue.
 [SCREENSHOT: Credit note printout — showing "Credit Note" header, original bill number, return amounts, reason]
 
 The credit note is:
+
 - Assigned its own sequential bill number
 - Automatically submitted to CBMS via `/api/billreturn`
 - Listed separately in the Credit Notes register (never in the Sales Register)
@@ -390,6 +394,7 @@ Enter the business's **IRD Taxpayer Portal username and password**. These creden
 ### 14.2 How Synchronization Works
 
 Every time a bill is paid or a credit note is issued:
+
 1. The system queues a CBMS submission job
 2. The job sends the bill payload to `https://cbapi.ird.gov.np/api/bill` (or `/api/billreturn` for credit notes)
 3. IRD's response code is recorded in the sync log
@@ -400,14 +405,14 @@ The CBMS sync is a **separate process** from billing — a failed sync does not 
 
 [SCREENSHOT: Settings → CBMS Sync Log — showing table with columns: Bill No., Date, Status (synced/failed/pending), IRD Response Code, Last Attempted]
 
-| IRD Response Code | Meaning | System Action |
-|---|---|---|
-| 200 | Success | Marked synced |
-| 100 | Auth mismatch | Flagged — credentials need updating |
-| 101 | Already submitted | Treated as synced |
-| 102 / 103 | Transient error | Auto-retried with backoff |
-| 104 | Invalid payload | Flagged for investigation |
-| 105 | Bill not found (returns) | Flagged for investigation |
+| IRD Response Code | Meaning                  | System Action                       |
+| ----------------- | ------------------------ | ----------------------------------- |
+| 200               | Success                  | Marked synced                       |
+| 100               | Auth mismatch            | Flagged — credentials need updating |
+| 101               | Already submitted        | Treated as synced                   |
+| 102 / 103         | Transient error          | Auto-retried with backoff           |
+| 104               | Invalid payload          | Flagged for investigation           |
+| 105               | Bill not found (returns) | Flagged for investigation           |
 
 ### 14.4 Manual Resync
 
@@ -424,6 +429,7 @@ For failed entries, click **Retry** to resubmit manually.
 Once a bill is marked as **paid**, its financial data (amounts, items, tax values, bill number) **cannot be modified**. The system enforces this at the database level — no application-layer or direct database update can alter a paid bill's core fields.
 
 Only the following post-issue actions are permitted, as required by IRD:
+
 - **Reprint** (creates a "Copy of Original" watermark copy — original record unchanged)
 - **Credit Note** (creates a new reversing document — original record unchanged)
 
@@ -432,6 +438,7 @@ Only the following post-issue actions are permitted, as required by IRD:
 ### 15.2 Audit Log
 
 Every action performed in the system is logged with:
+
 - User identity (name + role)
 - Timestamp
 - Action type
@@ -452,6 +459,7 @@ User passwords are stored as cryptographic hashes (bcrypt). IRD CBMS credentials
 ### 16.1 Automated Backups
 
 The database is backed up automatically:
+
 - **Frequency**: [DAILY / AS CONFIGURED]
 - **Retention**: [NUMBER] days
 - **Storage**: [S3-compatible object storage / describe your backup destination]
@@ -464,7 +472,8 @@ PostgreSQL Write-Ahead Logging (WAL) is enabled. The system can be restored to a
 ### 16.3 Recovery Process
 
 In the event of a system failure:
-1. The system administrator contacts ForgeNest support
+
+1. The system administrator contacts Forgenest support
 2. A backup is identified and restored to the target point in time
 3. Recovery time objective (RTO): [SPECIFY, e.g. 4 hours]
 4. Recovery point objective (RPO): [SPECIFY, e.g. 1 hour]
@@ -487,10 +496,10 @@ Logs can be exported to XLSX for audit submission.
 
 ---
 
-*This manual is prepared for submission to the Inland Revenue Department of Nepal as part of the Electronic Billing Software registration process under Electronic Billing Procedure 2082.*
+_This manual is prepared for submission to the Inland Revenue Department of Nepal as part of the Electronic Billing Software registration process under Electronic Billing Procedure 2082._
 
-*Authorized Signature: _______________________*  
-*Name: _______________________*  
-*Designation: _______________________*  
-*Date: _______________________*  
-*Company Stamp:*
+_Authorized Signature: ****\*\*****\_\_\_****\*\*****_  
+_Name: ****\*\*****\_\_\_****\*\*****_  
+_Designation: ****\*\*****\_\_\_****\*\*****_  
+_Date: ****\*\*****\_\_\_****\*\*****_  
+_Company Stamp:_

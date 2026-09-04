@@ -51,10 +51,26 @@ def classify_response(code: str, is_credit_note: bool) -> str:
     return CLASSIFICATION_MANUAL
 
 
-def _parse_ird_response(body: dict) -> tuple[str, str]:
-    """Extracts (code, status_message) from IRD's response body. IRD is
-    inconsistent about where these land across endpoints/versions, so this
-    checks several plausible shapes rather than assuming one."""
+def _parse_ird_response(body) -> tuple[str, str]:
+    """Extracts (code, status_message) from IRD's response body.
+
+    CONFIRMED live against the real CBMS sandbox (2026-09-04, using the
+    Test_CBMS credentials from IRD's own CBMS API PDF): the entire response
+    body is a BARE JSON INTEGER — e.g. `200`, `101` — not an object with a
+    `code`/`status`/`data` field. `response.json()` on that body parses to a
+    plain Python int (or, defensively, a body that's already a numeric
+    string). That's the primary, now-confirmed case — checked first. The
+    object-shaped fallbacks below predate this confirmation (written when
+    the real shape was still a guess) and are kept only in case IRD's
+    response format ever changes; they're no longer the expected path."""
+    if isinstance(body, (int, float)):
+        return str(int(body)), _CODE_MEANING.get(str(int(body)), "")
+    if isinstance(body, str) and body.strip().lstrip("-").isdigit():
+        return body.strip(), _CODE_MEANING.get(body.strip(), "")
+
+    if not isinstance(body, dict):
+        return "103", ""
+
     ird_status = (
         (body.get("data") or {}).get("status")
         or body.get("status")
@@ -65,11 +81,10 @@ def _parse_ird_response(body: dict) -> tuple[str, str]:
         (body.get("data") or {}).get("code")
     )
     if ird_code is None:
-        # No explicit code field and an HTTP 200 — the checklist's sources
-        # only document code-bearing responses, but be defensive: infer
-        # success from a status string containing "success"/"ok", else
-        # treat as an unknown/unclassified response (code "103"-equivalent,
-        # safe to retry rather than silently swallowed as success).
+        # No explicit code field and an HTTP 200 — infer success from a
+        # status string containing "success"/"ok", else treat as an
+        # unknown/unclassified response (safe to retry, never silently
+        # swallowed as success).
         ird_code = "200" if isinstance(ird_status, str) and (
             "success" in ird_status.lower() or "ok" in ird_status.lower()
         ) else "103"
