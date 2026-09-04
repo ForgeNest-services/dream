@@ -199,7 +199,7 @@ Two endpoints, confirmed identically from two independent sources (IRD's own tec
 - `POST https://cbapi.ird.gov.np/api/bill` — every invoice
 - `POST https://cbapi.ird.gov.np/api/billreturn` — every credit note / sales return
 
-_(An older address, `http://202.166.207.75:9050`, also turned up in research — confirm with IRD which is current before building against either.)_
+_(An older address, `http://202.166.207.75:9050`, also appeared in early vendor documentation — `cbapi.ird.gov.np` is confirmed current from IRD's own CBMS API PDF (updated 2079 Ashoj 28).)_
 
 ### What you send for an invoice (`/api/bill`)
 
@@ -210,9 +210,9 @@ _(An older address, `http://202.166.207.75:9050`, also turned up in research —
 | `seller_pan`         | string   | The billing business's own PAN                                                                                                                         |
 | `buyer_pan`          | string   | Documented as required — **unconfirmed** how to handle a walk-in customer with no PAN (common in RMS); don't assume blank is accepted without checking |
 | `buyer_name`         | string   | Same caveat as `buyer_pan`                                                                                                                             |
-| `fiscal_year`        | string   | Nepali fiscal year — **exact string format unconfirmed**, e.g. is it `"2082-83"` or something else                                                     |
+| `fiscal_year`        | string   | Nepali fiscal year — **confirmed format `"2081.082"`** (dot-separated: start year + `.` + 3-digit end year, e.g. `"2073.074"` from IRD API PDF)       |
 | `invoice_number`     | string   | Must match your own sequential numbering                                                                                                               |
-| `invoice_date`       | string   | **Format unconfirmed** — likely BS (Bikram Sambat) given the tax context, but not stated outright anywhere found                                       |
+| `invoice_date`       | string   | **Confirmed BS date with dots**: `"YYYY.MM.DD"` e.g. `"2074.07.06"` — Bikram Sambat date, confirmed from IRD API PDF sample                           |
 | `total_sales`        | number   |                                                                                                                                                        |
 | `taxable_sales_vat`  | number   | Portion of sales subject to VAT                                                                                                                        |
 | `vat`                | number   | VAT amount                                                                                                                                             |
@@ -261,5 +261,4 @@ The practical point for your DB design above: `102`/`103` are worth auto-retryin
 - Whether IMS and RMS being submitted separately, while sharing backend/billing infrastructure, changes anything about the second app's review
 - Current certification fee and processing timeline (only found from a secondary source, not an official IRD page)
 - Whether buyer PAN/name are truly mandatory on every CBMS submission, or there's an accepted way to handle anonymous/walk-in sales (matters most for RMS)
-- Exact expected string format for fiscal year and date fields in the CBMS payload
-- Whether any real test/sandbox environment exists for CBMS, or testing happens against production either way — nothing credible found confirms a sandbox exists (one source claimed one but didn't hold up under checking — see the earlier research thread)
+- Whether any production sandbox exists for end-to-end testing against a real IRD system. Test credentials (`username="Test_CBMS"`, `password="test@321"`, `seller_pan="999999999"`) are documented in IRD's own CBMS API PDF — use these to test submission logic. These are publicly documented; treat them as integration test credentials only.

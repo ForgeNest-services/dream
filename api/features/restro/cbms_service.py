@@ -10,7 +10,7 @@ from shared_models.org_tax_settings import OrgTaxSettings
 
 
 def _fy_to_ird_format(fiscal_year: str) -> str:
-    """Convert our '2081-82' format to IRD's '2081/082' format."""
+    """Convert our '2081-82' format to IRD's '2081.082' format (dot-separated)."""
     if not fiscal_year or "-" not in fiscal_year:
         return fiscal_year or ""
     parts = fiscal_year.split("-")
@@ -20,7 +20,7 @@ def _fy_to_ird_format(fiscal_year: str) -> str:
     end_short = parts[1].strip()
     century = start[:2]
     end_long = century + end_short.zfill(2)
-    return f"{start}/{end_long[-3:]}"
+    return f"{start}.{end_long[-3:]}"
 
 
 def build_cbms_payload(order, org: OrgTaxSettings) -> dict:
@@ -55,7 +55,6 @@ def build_cbms_payload(order, org: OrgTaxSettings) -> dict:
         "export_sales": 0.00,
         "tax_exempted_sales": round(tax_exempted_sales, 2),
         "isrealtime": bool(order.is_realtime),
-        "vatRefundAmount": round(float(order.vat_refund_amount or 0), 2),
         "datetimeClient": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
     }
 

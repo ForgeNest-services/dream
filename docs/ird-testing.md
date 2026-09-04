@@ -246,9 +246,12 @@ The QR must be decodable offline and contain:
 
 ## 7. CBMS payload inspection (दफा ६.४क)
 
-Without live CBMS credentials you can still verify the payload structure.
+IRD's CBMS API PDF documents test credentials for integration testing:
+- `username`: `Test_CBMS` · `password`: `test@321` · `seller_pan`: `999999999`
 
-**Method**: After enabling CBMS settings in the admin app (even with dummy credentials), pay an order. A sync log entry is created. Inspect the payload via:
+Use these in the admin app's CBMS settings to test live submission without real business credentials. The confirmed endpoints are `POST https://cbapi.ird.gov.np/api/bill` and `/api/billreturn`.
+
+**To verify payload structure without a live call**, pay an order and inspect via:
 
 ```
 GET /api/restro/cbms/{branch_id}/orders/{order_id}/payload
@@ -259,7 +262,7 @@ Or check the sync log entry's stored payload in `cbms_sync_log.cbms_response_bod
 | Field | Expected | Pass |
 |---|---|---|
 | `pan` / `vatNumber` | Seller's PAN | ☐ |
-| `fiscalYear` | Format e.g. `2081/082` | ☐ |
+| `fiscalYear` | Format `"2081.082"` (dot-separated, confirmed) | ☐ |
 | `billDate` / `date` | BS date of the bill | ☐ |
 | `billNumber` | Full formatted bill number | ☐ |
 | `billType` | `"tax"` / `"abbreviated"` / `"credit_note"` | ☐ |
@@ -356,7 +359,7 @@ Produce and archive one of each:
 | Activity Log export (any period) | Settings → Activity Log | `sample-activity-log.xlsx` | ☐ |
 | CBMS test-sync Standard View | After at least one successful CBMS sync | `sample-cbms-standard-view.xlsx` | ☐ |
 
-The last item (CBMS test-sync) requires live IRD credentials — it is the only item blocked until CBMS access is confirmed.
+The CBMS test-sync item can use the publicly documented test credentials (`Test_CBMS` / `test@321`) — see §7. Production credentials are needed only for verifying real business data flows end-to-end.
 
 ---
 
@@ -364,8 +367,7 @@ The last item (CBMS test-sync) requires live IRD credentials — it is the only 
 
 | Item | Blocked by |
 |---|---|
-| CBMS live submission (response codes 200/100/101/102...) | Need `ird_username` + `ird_password` from IRD registration |
-| CBMS base URL confirmation (`cbapi.ird.gov.np` vs legacy IP) | IRD technical documentation or sandbox access |
+| CBMS live submission against production (real response codes) | Need real `ird_username` + `ird_password` from IRD registration (test creds in §7 test submission logic only) |
 | QR URL verification (online scan → IRD portal) | Business must be registered and live in IRD's system |
 | Annexure 3 inspection by tax officer | IRD scheduling after application submission |
 
