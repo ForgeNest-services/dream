@@ -10,7 +10,7 @@ fi
 
 if ! docker ps --format "{{.Names}}" | grep -q "^srota-minio$"; then
   echo "ERROR: srota-minio container is not running." >&2
-  echo "Run: docker-compose up -d postgres minio redis" >&2
+  echo "Run: docker compose up -d postgres minio redis" >&2
   exit 1
 fi
 
@@ -18,7 +18,7 @@ MODE="${1:-restore-all}"
 
 case "$MODE" in
   restore-all)
-    docker-compose run --rm -e MODE=restore-all minio-backup
+    docker compose run --rm -e MODE=restore-all minio-backup
     ;;
   restore-latest)
     BUCKET="${2:-}"
@@ -26,7 +26,7 @@ case "$MODE" in
       echo "Usage: $0 restore-latest <bucket-name>" >&2
       exit 1
     fi
-    docker-compose run --rm -e MODE=restore-latest -e RESTORE_BUCKET="$BUCKET" minio-backup
+    docker compose run --rm -e MODE=restore-latest -e RESTORE_BUCKET="$BUCKET" minio-backup
     ;;
   restore)
     FILE="${2:-}"
@@ -34,10 +34,10 @@ case "$MODE" in
       echo "Usage: $0 restore <exact-filename>" >&2
       exit 1
     fi
-    docker-compose run --rm -e MODE=restore -e RESTORE_FILE="$FILE" minio-backup
+    docker compose run --rm -e MODE=restore -e RESTORE_FILE="$FILE" minio-backup
     ;;
   list)
-    docker-compose run --rm -e MODE=list minio-backup
+    docker compose run --rm -e MODE=list minio-backup
     ;;
   *)
     echo "Unknown mode: $MODE" >&2
@@ -47,4 +47,4 @@ case "$MODE" in
 esac
 
 echo "Done."
-echo "Next: run scripts/restore-wal.sh if WAL archiving was enabled, then docker-compose up -d --build"
+echo "Next: run scripts/restore-wal.sh if WAL archiving was enabled, then docker compose up -d --build"

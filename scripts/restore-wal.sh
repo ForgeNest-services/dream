@@ -3,7 +3,7 @@ set -euo pipefail
 
 if ! docker ps --format "{{.Names}}" | grep -q "^srota-postgres$"; then
   echo "ERROR: srota-postgres container is not running." >&2
-  echo "Run: docker-compose up -d postgres minio redis" >&2
+  echo "Run: docker compose up -d postgres minio redis" >&2
   exit 1
 fi
 
@@ -44,4 +44,4 @@ docker restart srota-postgres
 echo "Done. Postgres will replay all available WAL segments on startup and"
 echo "automatically exit recovery mode once complete -- check 'docker logs"
 echo "srota-postgres' for 'database system is ready to accept connections'."
-echo "Next: docker-compose up -d --build"
+echo "Next: docker compose up -d --build"

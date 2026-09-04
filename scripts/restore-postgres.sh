@@ -3,7 +3,7 @@ set -euo pipefail
 
 if ! docker ps --format "{{.Names}}" | grep -q "^srota-postgres$"; then
   echo "ERROR: srota-postgres container is not running." >&2
-  echo "Run: docker-compose up -d postgres minio redis" >&2
+  echo "Run: docker compose up -d postgres minio redis" >&2
   exit 1
 fi
 
@@ -67,4 +67,4 @@ fi
 
 echo "Verified: restored database has ${TABLE_COUNT} table(s) in the public schema."
 echo "Done. Restored: ${FILENAME}"
-echo "Next: run scripts/restore-minio.sh, then scripts/restore-wal.sh if needed, then docker-compose up -d --build"
+echo "Next: run scripts/restore-minio.sh, then scripts/restore-wal.sh if needed, then docker compose up -d --build"
