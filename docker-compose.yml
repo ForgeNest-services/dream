@@ -23,11 +23,24 @@ services:
         condition: service_started
 
   postgres:
-    image: postgres:15-alpine
+    build: ./backup/wal-archive
     container_name: srota-postgres
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - BACKUP_S3_BUCKET=${BACKUP_S3_BUCKET}
+      - BACKUP_S3_REGION=${BACKUP_S3_REGION}
+      - AWS_ACCESS_KEY_ID=${BACKUP_S3_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${BACKUP_S3_SECRET_ACCESS_KEY}
+    command:
+      - postgres
+      - -c
+      - archive_mode=${WAL_ARCHIVE_ENABLED}
+      - -c
+      - archive_command=/usr/local/bin/archive-wal.sh %p %f
+      - -c
+      - archive_timeout=1800
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
