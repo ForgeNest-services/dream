@@ -547,7 +547,7 @@ function CbmsCredentialsCard({ isOwner }: { isOwner: boolean }) {
 
   const load = () => {
     cbmsApi
-      .syncLog({ status: statusFilter || undefined, per_page: 25 })
+      .syncLog({ ...(statusFilter ? { status: statusFilter } : {}), per_page: 25 })
       .then((res) => {
         if (res.data) setEntries(res.data);
       })
@@ -689,9 +689,9 @@ function AuditLogCard() {
   useEffect(() => {
     auditLogApi
       .list({
-        entity_type: entityType || undefined,
-        action: action || undefined,
-        q: q || undefined,
+        ...(entityType ? { entity_type: entityType } : {}),
+        ...(action ? { action } : {}),
+        ...(q ? { q } : {}),
         page,
         per_page: 25,
       })
@@ -752,7 +752,7 @@ function AuditLogCard() {
             setPage(1);
           }}
           placeholder="Search bill #, staff, reason…"
-          className="h-8 max-w-[220px] text-xs"
+          className="h-8 max-w-55 text-xs"
         />
       </div>
 
@@ -780,10 +780,10 @@ function AuditLogCard() {
                   </td>
                   <td className="py-1.5">{AUDIT_ACTION_LABELS[e.action] ?? e.action}</td>
                   <td className="py-1.5">
-                    {(e.after_state?.bill_code as string | undefined) ??
-                      ((e.after_state?.bill_number as number | undefined) !== undefined
-                        ? `Bill #${e.after_state?.bill_number}`
-                        : ((e.after_state?.username as string | undefined) ??
+                    {(e.after_state?.["bill_code"] as string | undefined) ??
+                      ((e.after_state?.["bill_number"] as number | undefined) !== undefined
+                        ? `Bill #${e.after_state?.["bill_number"]}`
+                        : ((e.after_state?.["username"] as string | undefined) ??
                           `${e.entity_type} · ${e.entity_id.slice(0, 8)}`))}
                   </td>
                   <td className="py-1.5">{e.reason ?? "—"}</td>
@@ -804,7 +804,7 @@ function AuditLogCard() {
               >
                 <ChevronLeft className="size-4" />
               </Button>
-              <span className="min-w-[70px] text-center text-muted-foreground">
+              <span className="min-w-17.5 text-center text-muted-foreground">
                 Page {page} of {totalPages}
               </span>
               <Button
