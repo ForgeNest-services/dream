@@ -4,15 +4,15 @@ One config file per subdomain. Each is a plain HTTP reverse-proxy pointing at
 its container's host port; certbot's nginx plugin rewrites them to add the
 SSL block + HTTP→HTTPS redirect on first run.
 
-| File                | Public host              | Proxies to        |
-| ------------------- | ------------------------ | ----------------- |
-| `srota-ui.conf`     | srotaapps.com + www      | `127.0.0.1:3009`  |
-| `srota-admin.conf`  | app.srotaapps.com        | `127.0.0.1:3006`  |
-| `srota-api.conf`    | api.srotaapps.com        | `127.0.0.1:8006`  |
-| `srota-pms.conf`    | pms.srotaapps.com        | `127.0.0.1:3007`  |
-| `srota-rms.conf`    | rms.srotaapps.com        | `127.0.0.1:3008`  |
-| `srota-ims.conf`    | ims.srotaapps.com        | `127.0.0.1:3010`  |
-| `srota-media.conf`  | media.srotaapps.com      | `127.0.0.1:9000`  |
+| File               | Public host         | Proxies to       |
+| ------------------ | ------------------- | ---------------- |
+| `srota-ui.conf`    | srotaapps.com + www | `127.0.0.1:3009` |
+| `srota-admin.conf` | app.srotaapps.com   | `127.0.0.1:3006` |
+| `srota-api.conf`   | api.srotaapps.com   | `127.0.0.1:8006` |
+| `srota-pms.conf`   | pms.srotaapps.com   | `127.0.0.1:3007` |
+| `srota-rms.conf`   | rms.srotaapps.com   | `127.0.0.1:3008` |
+| `srota-ims.conf`   | ims.srotaapps.com   | `127.0.0.1:3010` |
+| `srota-media.conf` | media.srotaapps.com | `127.0.0.1:9000` |
 
 > `media.srotaapps.com` proxies **only** MinIO's S3 API on :9000, not the
 > admin console on :9001. Visiting the root (`https://media.srotaapps.com/`)
