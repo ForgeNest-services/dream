@@ -82,8 +82,8 @@ services:
     labels:
       - com.github.nginx-proxy.nginx
     ports:
-      - "80:80"
-      - "443:443"
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
     volumes:
       - /var/run/docker.sock:/tmp/docker.sock:ro
       - nginx_certs:/etc/nginx/certs
@@ -96,7 +96,7 @@ services:
     image: nginxproxy/acme-companion:latest
     container_name: srota-acme-companion
     restart: unless-stopped
-    profiles: ["prod"]
+    profiles: ["${ACME_PROFILE:-prod}"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - nginx_certs:/etc/nginx/certs
