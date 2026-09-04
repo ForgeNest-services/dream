@@ -3,7 +3,7 @@
 ## Step 1 — Start Postgres and MinIO only
 
 ```bash
-docker-compose up -d postgres minio redis
+docker compose up -d postgres minio redis
 ```
 
 ## Step 2 — Restore Postgres from S3
@@ -125,7 +125,7 @@ resumed `on` (archiving continues normally post-recovery, no re-enable needed).
 ## Step 5 — Start everything else
 
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 Same bare command for both dev and prod. Whether `nginx-proxy` +
