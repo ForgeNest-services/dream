@@ -414,22 +414,43 @@ silently lost?
 - Confirmed a job whose retries are permanently exhausted lands correctly in
   RQ's `FailedJobRegistry` with the full traceback preserved — nothing is
   silently dropped.
-- **Gap found (not a data-loss bug, a visibility gap)**: `sync_document_job`
-  has no `except` block — only `finally: db.close()`. An exception raised
-  before the first `CbmsSyncLogRepository.record_attempt()` call (e.g. a DB
-  error inside `get_or_create_pending` itself — reproduced live with a
-  malformed `tenant_id`, a real `IntegrityError`) propagates uncaught,
-  retries per RQ's policy exactly as expected, but if it exhausts, the job
-  sits in RQ's `FailedJobRegistry` with **zero corresponding `CbmsSyncLog`
-  row**. Confirmed live: `cbms_sync_log` had 0 rows for the failing
-  tenant/document while `FailedJobRegistry` correctly held the job. Neither
-  app's sync-status UI reads RQ's registry directly (only `CbmsSyncLog`), so
-  this class of failure is currently invisible there — recoverable (RQ kept
-  it, `rq requeue`/a registry read would surface it), but not surfaced
-  automatically. Not fixed this pass — flagged for a follow-up: either wrap
-  the job body in a broad `except Exception` that still writes a `failed`
-  `CbmsSyncLog` row before re-raising, or add a periodic check of
-  `FailedJobRegistry` into the sync-status view.
+- **Gap found and fixed, 2026-09-04**: `sync_document_job` had no `except`
+  block — only `finally: db.close()`. An exception raised before the first
+  `CbmsSyncLogRepository.record_attempt()` call (e.g. a DB error inside
+  `get_or_create_pending` itself — reproduced live with a malformed
+  `tenant_id`, a real `IntegrityError`) propagated uncaught, retried per
+  RQ's policy exactly as expected, but if it exhausted, the job sat in RQ's
+  `FailedJobRegistry` with **zero corresponding `CbmsSyncLog` row**.
+  Confirmed live: `cbms_sync_log` had 0 rows for the failing tenant/document
+  while `FailedJobRegistry` correctly held the job. Neither app's
+  sync-status UI reads RQ's registry directly (only `CbmsSyncLog`), so this
+  class of failure was invisible there — recoverable in principle (RQ kept
+  it), but not surfaced automatically.
+
+  Fixed: the job body now has `except RuntimeError: raise` (lets the
+  deliberate CBMS-retry signal through untouched, already logged above it)
+  followed by a broad `except Exception` that logs the error, best-effort
+  writes a `failed` `CbmsSyncLog` row (re-fetching the row fresh after a
+  `db.rollback()` — the original row from `get_or_create_pending` was only
+  `flush()`ed, never committed, so reusing that same in-memory object after
+  a rollback raised its own `Instance is not persistent within this
+  Session` error, a real bug caught during this fix's own live-test and
+  corrected before shipping), then re-raises so RQ's `Retry()` policy still
+  sees the exception and requeues exactly as before. If even the fallback
+  write fails (e.g. the tenant itself doesn't exist, so `CbmsSyncLog`'s own
+  FK constraint can't be satisfied either), that failure is logged too and
+  the original exception still re-raises — this is best-effort visibility,
+  not the source of truth for whether a retry happens (RQ's own registries
+  remain that).
+
+  Re-verified live after the fix: (1) a real unexpected exception
+  (`AttributeError` injected via a monkeypatch, simulating a genuine code
+  bug) on a real document now correctly produces a `failed` `CbmsSyncLog`
+  row with `attempt_count=1` and the real error message, and still
+  re-raises for RQ; (2) the designed retry path is unaffected — a real code
+  `102` from the live IRD sandbox still raises `RuntimeError` and is caught
+  by `except RuntimeError: raise`, passing through with no double-logging;
+  (3) all 24 pre-existing `test_cbms_submit.py` tests still pass unchanged.
 
 **Load/concurrency, live-tested 2026-09-04** — the question: is the current
 single-`api`-process, single-`worker`-process deployment resilient at
