@@ -15,24 +15,41 @@ import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppInventoryRouteImport } from './routes/_app.inventory'
 import { Route as AppPartiesRouteImport } from './routes/_app.parties'
 import { Route as AppPurchaseRouteImport } from './routes/_app.purchase'
-import { Route as AppReportsRouteImport } from './routes/_app.reports'
 import { Route as AppSalesRouteImport } from './routes/_app.sales'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as PrintInvoiceIdRouteImport } from './routes/print.$invoiceId'
+import { Route as PrintLabelsRouteImport } from './routes/print.labels'
 import { Route as AppInventoryIndexRouteImport } from './routes/_app.inventory.index'
 import { Route as AppInventoryCategoriesRouteImport } from './routes/_app.inventory.categories'
 import { Route as AppInventoryMediaRouteImport } from './routes/_app.inventory.media'
 import { Route as AppInventoryMovementsRouteImport } from './routes/_app.inventory.movements'
-import { Route as AppInventoryProductsRouteImport } from './routes/_app.inventory.products'
 import { Route as AppPartiesIndexRouteImport } from './routes/_app.parties.index'
 import { Route as AppPartiesCustomersRouteImport } from './routes/_app.parties.customers'
 import { Route as AppPartiesSuppliersRouteImport } from './routes/_app.parties.suppliers'
 import { Route as AppPurchaseBillsRouteImport } from './routes/_app.purchase.bills'
 import { Route as AppPurchaseNewRouteImport } from './routes/_app.purchase.new'
+import { Route as AppReportsIndexRouteImport } from './routes/_app.reports.index'
+import { Route as AppReportsAnnexure13RouteImport } from './routes/_app.reports.annexure-13'
+import { Route as AppReportsCreditNotesRouteImport } from './routes/_app.reports.credit-notes'
+import { Route as AppReportsCustomersRouteImport } from './routes/_app.reports.customers'
+import { Route as AppReportsLowStockRouteImport } from './routes/_app.reports.low-stock'
+import { Route as AppReportsMarginRouteImport } from './routes/_app.reports.margin'
+import { Route as AppReportsMonthlyVatSummaryRouteImport } from './routes/_app.reports.monthly-vat-summary'
+import { Route as AppReportsPurchasesRouteImport } from './routes/_app.reports.purchases'
+import { Route as AppReportsSalesRouteImport } from './routes/_app.reports.sales'
+import { Route as AppReportsStandardViewRouteImport } from './routes/_app.reports.standard-view'
+import { Route as AppReportsStockRouteImport } from './routes/_app.reports.stock'
+import { Route as AppReportsSuppliersRouteImport } from './routes/_app.reports.suppliers'
+import { Route as AppReportsTdsRouteImport } from './routes/_app.reports.tds'
+import { Route as AppReportsVatRegisterRouteImport } from './routes/_app.reports.vat-register'
 import { Route as AppSalesIndexRouteImport } from './routes/_app.sales.index'
-import { Route as AppSalesInvoicesRouteImport } from './routes/_app.sales.invoices'
 import { Route as AppSalesPosRouteImport } from './routes/_app.sales.pos'
 import { Route as AppSalesQuotationsRouteImport } from './routes/_app.sales.quotations'
+import { Route as AppInventoryProductsIndexRouteImport } from './routes/_app.inventory.products.index'
+import { Route as AppInventoryProductsProductIdRouteImport } from './routes/_app.inventory.products.$productId'
+import { Route as AppInventoryProductsNewRouteImport } from './routes/_app.inventory.products.new'
+import { Route as AppSalesInvoicesIndexRouteImport } from './routes/_app.sales.invoices.index'
+import { Route as AppSalesInvoicesInvoiceIdRouteImport } from './routes/_app.sales.invoices.$invoiceId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -63,11 +80,6 @@ const AppPurchaseRoute = AppPurchaseRouteImport.update({
   path: '/purchase',
   getParentRoute: () => AppRoute,
 } as any)
-const AppReportsRoute = AppReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppSalesRoute = AppSalesRouteImport.update({
   id: '/sales',
   path: '/sales',
@@ -81,6 +93,11 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
 const PrintInvoiceIdRoute = PrintInvoiceIdRouteImport.update({
   id: '/print/$invoiceId',
   path: '/print/$invoiceId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrintLabelsRoute = PrintLabelsRouteImport.update({
+  id: '/print/labels',
+  path: '/print/labels',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppInventoryIndexRoute = AppInventoryIndexRouteImport.update({
@@ -101,11 +118,6 @@ const AppInventoryMediaRoute = AppInventoryMediaRouteImport.update({
 const AppInventoryMovementsRoute = AppInventoryMovementsRouteImport.update({
   id: '/movements',
   path: '/movements',
-  getParentRoute: () => AppInventoryRoute,
-} as any)
-const AppInventoryProductsRoute = AppInventoryProductsRouteImport.update({
-  id: '/products',
-  path: '/products',
   getParentRoute: () => AppInventoryRoute,
 } as any)
 const AppPartiesIndexRoute = AppPartiesIndexRouteImport.update({
@@ -133,14 +145,80 @@ const AppPurchaseNewRoute = AppPurchaseNewRouteImport.update({
   path: '/new',
   getParentRoute: () => AppPurchaseRoute,
 } as any)
+const AppReportsIndexRoute = AppReportsIndexRouteImport.update({
+  id: '/reports/',
+  path: '/reports/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsAnnexure13Route = AppReportsAnnexure13RouteImport.update({
+  id: '/reports/annexure-13',
+  path: '/reports/annexure-13',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsCreditNotesRoute = AppReportsCreditNotesRouteImport.update({
+  id: '/reports/credit-notes',
+  path: '/reports/credit-notes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsCustomersRoute = AppReportsCustomersRouteImport.update({
+  id: '/reports/customers',
+  path: '/reports/customers',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsLowStockRoute = AppReportsLowStockRouteImport.update({
+  id: '/reports/low-stock',
+  path: '/reports/low-stock',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsMarginRoute = AppReportsMarginRouteImport.update({
+  id: '/reports/margin',
+  path: '/reports/margin',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsMonthlyVatSummaryRoute =
+  AppReportsMonthlyVatSummaryRouteImport.update({
+    id: '/reports/monthly-vat-summary',
+    path: '/reports/monthly-vat-summary',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppReportsPurchasesRoute = AppReportsPurchasesRouteImport.update({
+  id: '/reports/purchases',
+  path: '/reports/purchases',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsSalesRoute = AppReportsSalesRouteImport.update({
+  id: '/reports/sales',
+  path: '/reports/sales',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsStandardViewRoute = AppReportsStandardViewRouteImport.update({
+  id: '/reports/standard-view',
+  path: '/reports/standard-view',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsStockRoute = AppReportsStockRouteImport.update({
+  id: '/reports/stock',
+  path: '/reports/stock',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsSuppliersRoute = AppReportsSuppliersRouteImport.update({
+  id: '/reports/suppliers',
+  path: '/reports/suppliers',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsTdsRoute = AppReportsTdsRouteImport.update({
+  id: '/reports/tds',
+  path: '/reports/tds',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReportsVatRegisterRoute = AppReportsVatRegisterRouteImport.update({
+  id: '/reports/vat-register',
+  path: '/reports/vat-register',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSalesIndexRoute = AppSalesIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AppSalesRoute,
-} as any)
-const AppSalesInvoicesRoute = AppSalesInvoicesRouteImport.update({
-  id: '/invoices',
-  path: '/invoices',
   getParentRoute: () => AppSalesRoute,
 } as any)
 const AppSalesPosRoute = AppSalesPosRouteImport.update({
@@ -153,6 +231,34 @@ const AppSalesQuotationsRoute = AppSalesQuotationsRouteImport.update({
   path: '/quotations',
   getParentRoute: () => AppSalesRoute,
 } as any)
+const AppInventoryProductsIndexRoute =
+  AppInventoryProductsIndexRouteImport.update({
+    id: '/products/',
+    path: '/products/',
+    getParentRoute: () => AppInventoryRoute,
+  } as any)
+const AppInventoryProductsProductIdRoute =
+  AppInventoryProductsProductIdRouteImport.update({
+    id: '/products/$productId',
+    path: '/products/$productId',
+    getParentRoute: () => AppInventoryRoute,
+  } as any)
+const AppInventoryProductsNewRoute = AppInventoryProductsNewRouteImport.update({
+  id: '/products/new',
+  path: '/products/new',
+  getParentRoute: () => AppInventoryRoute,
+} as any)
+const AppSalesInvoicesIndexRoute = AppSalesInvoicesIndexRouteImport.update({
+  id: '/invoices/',
+  path: '/invoices/',
+  getParentRoute: () => AppSalesRoute,
+} as any)
+const AppSalesInvoicesInvoiceIdRoute =
+  AppSalesInvoicesInvoiceIdRouteImport.update({
+    id: '/invoices/$invoiceId',
+    path: '/invoices/$invoiceId',
+    getParentRoute: () => AppSalesRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -160,46 +266,80 @@ export interface FileRoutesByFullPath {
   '/inventory': typeof AppInventoryRouteWithChildren
   '/parties': typeof AppPartiesRouteWithChildren
   '/purchase': typeof AppPurchaseRouteWithChildren
-  '/reports': typeof AppReportsRoute
   '/sales': typeof AppSalesRouteWithChildren
   '/settings': typeof AppSettingsRoute
   '/print/$invoiceId': typeof PrintInvoiceIdRoute
+  '/print/labels': typeof PrintLabelsRoute
   '/inventory/categories': typeof AppInventoryCategoriesRoute
   '/inventory/media': typeof AppInventoryMediaRoute
   '/inventory/movements': typeof AppInventoryMovementsRoute
-  '/inventory/products': typeof AppInventoryProductsRoute
   '/parties/customers': typeof AppPartiesCustomersRoute
   '/parties/suppliers': typeof AppPartiesSuppliersRoute
   '/purchase/bills': typeof AppPurchaseBillsRoute
   '/purchase/new': typeof AppPurchaseNewRoute
-  '/sales/invoices': typeof AppSalesInvoicesRoute
+  '/reports/annexure-13': typeof AppReportsAnnexure13Route
+  '/reports/credit-notes': typeof AppReportsCreditNotesRoute
+  '/reports/customers': typeof AppReportsCustomersRoute
+  '/reports/low-stock': typeof AppReportsLowStockRoute
+  '/reports/margin': typeof AppReportsMarginRoute
+  '/reports/monthly-vat-summary': typeof AppReportsMonthlyVatSummaryRoute
+  '/reports/purchases': typeof AppReportsPurchasesRoute
+  '/reports/sales': typeof AppReportsSalesRoute
+  '/reports/standard-view': typeof AppReportsStandardViewRoute
+  '/reports/stock': typeof AppReportsStockRoute
+  '/reports/suppliers': typeof AppReportsSuppliersRoute
+  '/reports/tds': typeof AppReportsTdsRoute
+  '/reports/vat-register': typeof AppReportsVatRegisterRoute
   '/sales/pos': typeof AppSalesPosRoute
   '/sales/quotations': typeof AppSalesQuotationsRoute
   '/inventory/': typeof AppInventoryIndexRoute
   '/parties/': typeof AppPartiesIndexRoute
+  '/reports/': typeof AppReportsIndexRoute
   '/sales/': typeof AppSalesIndexRoute
+  '/inventory/products/$productId': typeof AppInventoryProductsProductIdRoute
+  '/inventory/products/new': typeof AppInventoryProductsNewRoute
+  '/sales/invoices/$invoiceId': typeof AppSalesInvoicesInvoiceIdRoute
+  '/inventory/products/': typeof AppInventoryProductsIndexRoute
+  '/sales/invoices/': typeof AppSalesInvoicesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof AppDashboardRoute
   '/purchase': typeof AppPurchaseRouteWithChildren
-  '/reports': typeof AppReportsRoute
   '/settings': typeof AppSettingsRoute
   '/print/$invoiceId': typeof PrintInvoiceIdRoute
+  '/print/labels': typeof PrintLabelsRoute
   '/inventory/categories': typeof AppInventoryCategoriesRoute
   '/inventory/media': typeof AppInventoryMediaRoute
   '/inventory/movements': typeof AppInventoryMovementsRoute
-  '/inventory/products': typeof AppInventoryProductsRoute
   '/parties/customers': typeof AppPartiesCustomersRoute
   '/parties/suppliers': typeof AppPartiesSuppliersRoute
   '/purchase/bills': typeof AppPurchaseBillsRoute
   '/purchase/new': typeof AppPurchaseNewRoute
-  '/sales/invoices': typeof AppSalesInvoicesRoute
+  '/reports/annexure-13': typeof AppReportsAnnexure13Route
+  '/reports/credit-notes': typeof AppReportsCreditNotesRoute
+  '/reports/customers': typeof AppReportsCustomersRoute
+  '/reports/low-stock': typeof AppReportsLowStockRoute
+  '/reports/margin': typeof AppReportsMarginRoute
+  '/reports/monthly-vat-summary': typeof AppReportsMonthlyVatSummaryRoute
+  '/reports/purchases': typeof AppReportsPurchasesRoute
+  '/reports/sales': typeof AppReportsSalesRoute
+  '/reports/standard-view': typeof AppReportsStandardViewRoute
+  '/reports/stock': typeof AppReportsStockRoute
+  '/reports/suppliers': typeof AppReportsSuppliersRoute
+  '/reports/tds': typeof AppReportsTdsRoute
+  '/reports/vat-register': typeof AppReportsVatRegisterRoute
   '/sales/pos': typeof AppSalesPosRoute
   '/sales/quotations': typeof AppSalesQuotationsRoute
   '/inventory': typeof AppInventoryIndexRoute
   '/parties': typeof AppPartiesIndexRoute
+  '/reports': typeof AppReportsIndexRoute
   '/sales': typeof AppSalesIndexRoute
+  '/inventory/products/$productId': typeof AppInventoryProductsProductIdRoute
+  '/inventory/products/new': typeof AppInventoryProductsNewRoute
+  '/sales/invoices/$invoiceId': typeof AppSalesInvoicesInvoiceIdRoute
+  '/inventory/products': typeof AppInventoryProductsIndexRoute
+  '/sales/invoices': typeof AppSalesInvoicesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -209,24 +349,41 @@ export interface FileRoutesById {
   '/_app/inventory': typeof AppInventoryRouteWithChildren
   '/_app/parties': typeof AppPartiesRouteWithChildren
   '/_app/purchase': typeof AppPurchaseRouteWithChildren
-  '/_app/reports': typeof AppReportsRoute
   '/_app/sales': typeof AppSalesRouteWithChildren
   '/_app/settings': typeof AppSettingsRoute
   '/print/$invoiceId': typeof PrintInvoiceIdRoute
+  '/print/labels': typeof PrintLabelsRoute
   '/_app/inventory/categories': typeof AppInventoryCategoriesRoute
   '/_app/inventory/media': typeof AppInventoryMediaRoute
   '/_app/inventory/movements': typeof AppInventoryMovementsRoute
-  '/_app/inventory/products': typeof AppInventoryProductsRoute
   '/_app/parties/customers': typeof AppPartiesCustomersRoute
   '/_app/parties/suppliers': typeof AppPartiesSuppliersRoute
   '/_app/purchase/bills': typeof AppPurchaseBillsRoute
   '/_app/purchase/new': typeof AppPurchaseNewRoute
-  '/_app/sales/invoices': typeof AppSalesInvoicesRoute
+  '/_app/reports/annexure-13': typeof AppReportsAnnexure13Route
+  '/_app/reports/credit-notes': typeof AppReportsCreditNotesRoute
+  '/_app/reports/customers': typeof AppReportsCustomersRoute
+  '/_app/reports/low-stock': typeof AppReportsLowStockRoute
+  '/_app/reports/margin': typeof AppReportsMarginRoute
+  '/_app/reports/monthly-vat-summary': typeof AppReportsMonthlyVatSummaryRoute
+  '/_app/reports/purchases': typeof AppReportsPurchasesRoute
+  '/_app/reports/sales': typeof AppReportsSalesRoute
+  '/_app/reports/standard-view': typeof AppReportsStandardViewRoute
+  '/_app/reports/stock': typeof AppReportsStockRoute
+  '/_app/reports/suppliers': typeof AppReportsSuppliersRoute
+  '/_app/reports/tds': typeof AppReportsTdsRoute
+  '/_app/reports/vat-register': typeof AppReportsVatRegisterRoute
   '/_app/sales/pos': typeof AppSalesPosRoute
   '/_app/sales/quotations': typeof AppSalesQuotationsRoute
   '/_app/inventory/': typeof AppInventoryIndexRoute
   '/_app/parties/': typeof AppPartiesIndexRoute
+  '/_app/reports/': typeof AppReportsIndexRoute
   '/_app/sales/': typeof AppSalesIndexRoute
+  '/_app/inventory/products/$productId': typeof AppInventoryProductsProductIdRoute
+  '/_app/inventory/products/new': typeof AppInventoryProductsNewRoute
+  '/_app/sales/invoices/$invoiceId': typeof AppSalesInvoicesInvoiceIdRoute
+  '/_app/inventory/products/': typeof AppInventoryProductsIndexRoute
+  '/_app/sales/invoices/': typeof AppSalesInvoicesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -236,46 +393,80 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/parties'
     | '/purchase'
-    | '/reports'
     | '/sales'
     | '/settings'
     | '/print/$invoiceId'
+    | '/print/labels'
     | '/inventory/categories'
     | '/inventory/media'
     | '/inventory/movements'
-    | '/inventory/products'
     | '/parties/customers'
     | '/parties/suppliers'
     | '/purchase/bills'
     | '/purchase/new'
-    | '/sales/invoices'
+    | '/reports/annexure-13'
+    | '/reports/credit-notes'
+    | '/reports/customers'
+    | '/reports/low-stock'
+    | '/reports/margin'
+    | '/reports/monthly-vat-summary'
+    | '/reports/purchases'
+    | '/reports/sales'
+    | '/reports/standard-view'
+    | '/reports/stock'
+    | '/reports/suppliers'
+    | '/reports/tds'
+    | '/reports/vat-register'
     | '/sales/pos'
     | '/sales/quotations'
     | '/inventory/'
     | '/parties/'
+    | '/reports/'
     | '/sales/'
+    | '/inventory/products/$productId'
+    | '/inventory/products/new'
+    | '/sales/invoices/$invoiceId'
+    | '/inventory/products/'
+    | '/sales/invoices/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/dashboard'
     | '/purchase'
-    | '/reports'
     | '/settings'
     | '/print/$invoiceId'
+    | '/print/labels'
     | '/inventory/categories'
     | '/inventory/media'
     | '/inventory/movements'
-    | '/inventory/products'
     | '/parties/customers'
     | '/parties/suppliers'
     | '/purchase/bills'
     | '/purchase/new'
-    | '/sales/invoices'
+    | '/reports/annexure-13'
+    | '/reports/credit-notes'
+    | '/reports/customers'
+    | '/reports/low-stock'
+    | '/reports/margin'
+    | '/reports/monthly-vat-summary'
+    | '/reports/purchases'
+    | '/reports/sales'
+    | '/reports/standard-view'
+    | '/reports/stock'
+    | '/reports/suppliers'
+    | '/reports/tds'
+    | '/reports/vat-register'
     | '/sales/pos'
     | '/sales/quotations'
     | '/inventory'
     | '/parties'
+    | '/reports'
     | '/sales'
+    | '/inventory/products/$productId'
+    | '/inventory/products/new'
+    | '/sales/invoices/$invoiceId'
+    | '/inventory/products'
+    | '/sales/invoices'
   id:
     | '__root__'
     | '/'
@@ -284,30 +475,48 @@ export interface FileRouteTypes {
     | '/_app/inventory'
     | '/_app/parties'
     | '/_app/purchase'
-    | '/_app/reports'
     | '/_app/sales'
     | '/_app/settings'
     | '/print/$invoiceId'
+    | '/print/labels'
     | '/_app/inventory/categories'
     | '/_app/inventory/media'
     | '/_app/inventory/movements'
-    | '/_app/inventory/products'
     | '/_app/parties/customers'
     | '/_app/parties/suppliers'
     | '/_app/purchase/bills'
     | '/_app/purchase/new'
-    | '/_app/sales/invoices'
+    | '/_app/reports/annexure-13'
+    | '/_app/reports/credit-notes'
+    | '/_app/reports/customers'
+    | '/_app/reports/low-stock'
+    | '/_app/reports/margin'
+    | '/_app/reports/monthly-vat-summary'
+    | '/_app/reports/purchases'
+    | '/_app/reports/sales'
+    | '/_app/reports/standard-view'
+    | '/_app/reports/stock'
+    | '/_app/reports/suppliers'
+    | '/_app/reports/tds'
+    | '/_app/reports/vat-register'
     | '/_app/sales/pos'
     | '/_app/sales/quotations'
     | '/_app/inventory/'
     | '/_app/parties/'
+    | '/_app/reports/'
     | '/_app/sales/'
+    | '/_app/inventory/products/$productId'
+    | '/_app/inventory/products/new'
+    | '/_app/sales/invoices/$invoiceId'
+    | '/_app/inventory/products/'
+    | '/_app/sales/invoices/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   PrintInvoiceIdRoute: typeof PrintInvoiceIdRoute
+  PrintLabelsRoute: typeof PrintLabelsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -354,13 +563,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPurchaseRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/reports': {
-      id: '/_app/reports'
-      path: '/reports'
-      fullPath: '/reports'
-      preLoaderRoute: typeof AppReportsRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/sales': {
       id: '/_app/sales'
       path: '/sales'
@@ -380,6 +582,13 @@ declare module '@tanstack/react-router' {
       path: '/print/$invoiceId'
       fullPath: '/print/$invoiceId'
       preLoaderRoute: typeof PrintInvoiceIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/print/labels': {
+      id: '/print/labels'
+      path: '/print/labels'
+      fullPath: '/print/labels'
+      preLoaderRoute: typeof PrintLabelsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/inventory/': {
@@ -408,13 +617,6 @@ declare module '@tanstack/react-router' {
       path: '/movements'
       fullPath: '/inventory/movements'
       preLoaderRoute: typeof AppInventoryMovementsRouteImport
-      parentRoute: typeof AppInventoryRoute
-    }
-    '/_app/inventory/products': {
-      id: '/_app/inventory/products'
-      path: '/products'
-      fullPath: '/inventory/products'
-      preLoaderRoute: typeof AppInventoryProductsRouteImport
       parentRoute: typeof AppInventoryRoute
     }
     '/_app/parties/': {
@@ -452,18 +654,109 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPurchaseNewRouteImport
       parentRoute: typeof AppPurchaseRoute
     }
+    '/_app/reports/': {
+      id: '/_app/reports/'
+      path: '/reports'
+      fullPath: '/reports/'
+      preLoaderRoute: typeof AppReportsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports/annexure-13': {
+      id: '/_app/reports/annexure-13'
+      path: '/reports/annexure-13'
+      fullPath: '/reports/annexure-13'
+      preLoaderRoute: typeof AppReportsAnnexure13RouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports/credit-notes': {
+      id: '/_app/reports/credit-notes'
+      path: '/reports/credit-notes'
+      fullPath: '/reports/credit-notes'
+      preLoaderRoute: typeof AppReportsCreditNotesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports/customers': {
+      id: '/_app/reports/customers'
+      path: '/reports/customers'
+      fullPath: '/reports/customers'
+      preLoaderRoute: typeof AppReportsCustomersRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports/low-stock': {
+      id: '/_app/reports/low-stock'
+      path: '/reports/low-stock'
+      fullPath: '/reports/low-stock'
+      preLoaderRoute: typeof AppReportsLowStockRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports/margin': {
+      id: '/_app/reports/margin'
+      path: '/reports/margin'
+      fullPath: '/reports/margin'
+      preLoaderRoute: typeof AppReportsMarginRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports/monthly-vat-summary': {
+      id: '/_app/reports/monthly-vat-summary'
+      path: '/reports/monthly-vat-summary'
+      fullPath: '/reports/monthly-vat-summary'
+      preLoaderRoute: typeof AppReportsMonthlyVatSummaryRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports/purchases': {
+      id: '/_app/reports/purchases'
+      path: '/reports/purchases'
+      fullPath: '/reports/purchases'
+      preLoaderRoute: typeof AppReportsPurchasesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports/sales': {
+      id: '/_app/reports/sales'
+      path: '/reports/sales'
+      fullPath: '/reports/sales'
+      preLoaderRoute: typeof AppReportsSalesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports/standard-view': {
+      id: '/_app/reports/standard-view'
+      path: '/reports/standard-view'
+      fullPath: '/reports/standard-view'
+      preLoaderRoute: typeof AppReportsStandardViewRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports/stock': {
+      id: '/_app/reports/stock'
+      path: '/reports/stock'
+      fullPath: '/reports/stock'
+      preLoaderRoute: typeof AppReportsStockRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports/suppliers': {
+      id: '/_app/reports/suppliers'
+      path: '/reports/suppliers'
+      fullPath: '/reports/suppliers'
+      preLoaderRoute: typeof AppReportsSuppliersRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports/tds': {
+      id: '/_app/reports/tds'
+      path: '/reports/tds'
+      fullPath: '/reports/tds'
+      preLoaderRoute: typeof AppReportsTdsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/reports/vat-register': {
+      id: '/_app/reports/vat-register'
+      path: '/reports/vat-register'
+      fullPath: '/reports/vat-register'
+      preLoaderRoute: typeof AppReportsVatRegisterRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/sales/': {
       id: '/_app/sales/'
       path: '/'
       fullPath: '/sales/'
       preLoaderRoute: typeof AppSalesIndexRouteImport
-      parentRoute: typeof AppSalesRoute
-    }
-    '/_app/sales/invoices': {
-      id: '/_app/sales/invoices'
-      path: '/invoices'
-      fullPath: '/sales/invoices'
-      preLoaderRoute: typeof AppSalesInvoicesRouteImport
       parentRoute: typeof AppSalesRoute
     }
     '/_app/sales/pos': {
@@ -480,6 +773,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSalesQuotationsRouteImport
       parentRoute: typeof AppSalesRoute
     }
+    '/_app/inventory/products/': {
+      id: '/_app/inventory/products/'
+      path: '/products'
+      fullPath: '/inventory/products/'
+      preLoaderRoute: typeof AppInventoryProductsIndexRouteImport
+      parentRoute: typeof AppInventoryRoute
+    }
+    '/_app/inventory/products/$productId': {
+      id: '/_app/inventory/products/$productId'
+      path: '/products/$productId'
+      fullPath: '/inventory/products/$productId'
+      preLoaderRoute: typeof AppInventoryProductsProductIdRouteImport
+      parentRoute: typeof AppInventoryRoute
+    }
+    '/_app/inventory/products/new': {
+      id: '/_app/inventory/products/new'
+      path: '/products/new'
+      fullPath: '/inventory/products/new'
+      preLoaderRoute: typeof AppInventoryProductsNewRouteImport
+      parentRoute: typeof AppInventoryRoute
+    }
+    '/_app/sales/invoices/': {
+      id: '/_app/sales/invoices/'
+      path: '/invoices'
+      fullPath: '/sales/invoices/'
+      preLoaderRoute: typeof AppSalesInvoicesIndexRouteImport
+      parentRoute: typeof AppSalesRoute
+    }
+    '/_app/sales/invoices/$invoiceId': {
+      id: '/_app/sales/invoices/$invoiceId'
+      path: '/invoices/$invoiceId'
+      fullPath: '/sales/invoices/$invoiceId'
+      preLoaderRoute: typeof AppSalesInvoicesInvoiceIdRouteImport
+      parentRoute: typeof AppSalesRoute
+    }
   }
 }
 
@@ -487,16 +815,20 @@ interface AppInventoryRouteChildren {
   AppInventoryCategoriesRoute: typeof AppInventoryCategoriesRoute
   AppInventoryMediaRoute: typeof AppInventoryMediaRoute
   AppInventoryMovementsRoute: typeof AppInventoryMovementsRoute
-  AppInventoryProductsRoute: typeof AppInventoryProductsRoute
   AppInventoryIndexRoute: typeof AppInventoryIndexRoute
+  AppInventoryProductsProductIdRoute: typeof AppInventoryProductsProductIdRoute
+  AppInventoryProductsNewRoute: typeof AppInventoryProductsNewRoute
+  AppInventoryProductsIndexRoute: typeof AppInventoryProductsIndexRoute
 }
 
 const AppInventoryRouteChildren: AppInventoryRouteChildren = {
   AppInventoryCategoriesRoute: AppInventoryCategoriesRoute,
   AppInventoryMediaRoute: AppInventoryMediaRoute,
   AppInventoryMovementsRoute: AppInventoryMovementsRoute,
-  AppInventoryProductsRoute: AppInventoryProductsRoute,
   AppInventoryIndexRoute: AppInventoryIndexRoute,
+  AppInventoryProductsProductIdRoute: AppInventoryProductsProductIdRoute,
+  AppInventoryProductsNewRoute: AppInventoryProductsNewRoute,
+  AppInventoryProductsIndexRoute: AppInventoryProductsIndexRoute,
 }
 
 const AppInventoryRouteWithChildren = AppInventoryRoute._addFileChildren(
@@ -534,17 +866,19 @@ const AppPurchaseRouteWithChildren = AppPurchaseRoute._addFileChildren(
 )
 
 interface AppSalesRouteChildren {
-  AppSalesInvoicesRoute: typeof AppSalesInvoicesRoute
   AppSalesPosRoute: typeof AppSalesPosRoute
   AppSalesQuotationsRoute: typeof AppSalesQuotationsRoute
   AppSalesIndexRoute: typeof AppSalesIndexRoute
+  AppSalesInvoicesInvoiceIdRoute: typeof AppSalesInvoicesInvoiceIdRoute
+  AppSalesInvoicesIndexRoute: typeof AppSalesInvoicesIndexRoute
 }
 
 const AppSalesRouteChildren: AppSalesRouteChildren = {
-  AppSalesInvoicesRoute: AppSalesInvoicesRoute,
   AppSalesPosRoute: AppSalesPosRoute,
   AppSalesQuotationsRoute: AppSalesQuotationsRoute,
   AppSalesIndexRoute: AppSalesIndexRoute,
+  AppSalesInvoicesInvoiceIdRoute: AppSalesInvoicesInvoiceIdRoute,
+  AppSalesInvoicesIndexRoute: AppSalesInvoicesIndexRoute,
 }
 
 const AppSalesRouteWithChildren = AppSalesRoute._addFileChildren(
@@ -556,9 +890,22 @@ interface AppRouteChildren {
   AppInventoryRoute: typeof AppInventoryRouteWithChildren
   AppPartiesRoute: typeof AppPartiesRouteWithChildren
   AppPurchaseRoute: typeof AppPurchaseRouteWithChildren
-  AppReportsRoute: typeof AppReportsRoute
   AppSalesRoute: typeof AppSalesRouteWithChildren
   AppSettingsRoute: typeof AppSettingsRoute
+  AppReportsAnnexure13Route: typeof AppReportsAnnexure13Route
+  AppReportsCreditNotesRoute: typeof AppReportsCreditNotesRoute
+  AppReportsCustomersRoute: typeof AppReportsCustomersRoute
+  AppReportsLowStockRoute: typeof AppReportsLowStockRoute
+  AppReportsMarginRoute: typeof AppReportsMarginRoute
+  AppReportsMonthlyVatSummaryRoute: typeof AppReportsMonthlyVatSummaryRoute
+  AppReportsPurchasesRoute: typeof AppReportsPurchasesRoute
+  AppReportsSalesRoute: typeof AppReportsSalesRoute
+  AppReportsStandardViewRoute: typeof AppReportsStandardViewRoute
+  AppReportsStockRoute: typeof AppReportsStockRoute
+  AppReportsSuppliersRoute: typeof AppReportsSuppliersRoute
+  AppReportsTdsRoute: typeof AppReportsTdsRoute
+  AppReportsVatRegisterRoute: typeof AppReportsVatRegisterRoute
+  AppReportsIndexRoute: typeof AppReportsIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -566,9 +913,22 @@ const AppRouteChildren: AppRouteChildren = {
   AppInventoryRoute: AppInventoryRouteWithChildren,
   AppPartiesRoute: AppPartiesRouteWithChildren,
   AppPurchaseRoute: AppPurchaseRouteWithChildren,
-  AppReportsRoute: AppReportsRoute,
   AppSalesRoute: AppSalesRouteWithChildren,
   AppSettingsRoute: AppSettingsRoute,
+  AppReportsAnnexure13Route: AppReportsAnnexure13Route,
+  AppReportsCreditNotesRoute: AppReportsCreditNotesRoute,
+  AppReportsCustomersRoute: AppReportsCustomersRoute,
+  AppReportsLowStockRoute: AppReportsLowStockRoute,
+  AppReportsMarginRoute: AppReportsMarginRoute,
+  AppReportsMonthlyVatSummaryRoute: AppReportsMonthlyVatSummaryRoute,
+  AppReportsPurchasesRoute: AppReportsPurchasesRoute,
+  AppReportsSalesRoute: AppReportsSalesRoute,
+  AppReportsStandardViewRoute: AppReportsStandardViewRoute,
+  AppReportsStockRoute: AppReportsStockRoute,
+  AppReportsSuppliersRoute: AppReportsSuppliersRoute,
+  AppReportsTdsRoute: AppReportsTdsRoute,
+  AppReportsVatRegisterRoute: AppReportsVatRegisterRoute,
+  AppReportsIndexRoute: AppReportsIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
@@ -577,6 +937,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   PrintInvoiceIdRoute: PrintInvoiceIdRoute,
+  PrintLabelsRoute: PrintLabelsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

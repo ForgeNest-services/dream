@@ -10,7 +10,7 @@ from shared_models.org_tax_settings import OrgTaxSettings
 
 
 def _fy_to_ird_format(fiscal_year: str) -> str:
-    """Convert our '2081-82' format to IRD's '2081/082' format."""
+    """Convert our '2081-82' format to IRD's '2081.082' format (dot-separated)."""
     if not fiscal_year or "-" not in fiscal_year:
         return fiscal_year or ""
     parts = fiscal_year.split("-")
@@ -20,7 +20,7 @@ def _fy_to_ird_format(fiscal_year: str) -> str:
     end_short = parts[1].strip()  # "82"
     century = start[:2]  # "20"
     end_long = century + end_short.zfill(2)  # "2082" → use last 3 digits → "082"
-    return f"{start}/{end_long[-3:]}"  # "2081/082"
+    return f"{start}.{end_long[-3:]}"  # "2081.082"
 
 
 def _fiscal_year_from_date_bs(date_bs: str) -> str:
@@ -67,7 +67,7 @@ def build_cbms_payload(invoice, org: OrgTaxSettings) -> dict:
         "esf": 0.00,
         "export_sales": 0.00,
         "tax_exempted_sales": round(tax_exempted_sales, 2),
-        "isrealtime": True,
+        "isrealtime": False,
         "datetimeClient": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
     }
 
@@ -106,6 +106,6 @@ def build_credit_note_payload(credit_note, original_invoice, org: OrgTaxSettings
         "esf": 0.00,
         "export_sales": 0.00,
         "tax_exempted_sales": round(tax_exempted_sales, 2),
-        "isrealtime": True,
+        "isrealtime": False,
         "datetimeClient": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
     }

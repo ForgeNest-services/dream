@@ -61,7 +61,12 @@ class IMSInvoice(Base):
     status = Column(String(20), nullable=False)  # paid | partial | unpaid
     note = Column(String(1000), nullable=True)
     # Annexure-5's "Entered_By" — the staff member who recorded the sale.
+    # user_id is the credential's id (FK-shaped, not itself a display value);
+    # entered_by_name is a snapshot of that credential's display name at
+    # creation time, so the printed bill / Standard View export still shows
+    # the right person even if the credential is later renamed or deleted.
     user_id = Column(String(36), nullable=False)
+    entered_by_name = Column(String(100), nullable=True)
 
     # ── Reprint (IRD: new row per reprint, watermarked "Copy of Original (N)")
     # per Electronic Billing Procedure 2082, clause 6.2(च) and Annexure-3's
@@ -75,6 +80,7 @@ class IMSInvoice(Base):
     is_bill_printed = Column(Boolean, nullable=False, default=False)
     printed_time = Column(DateTime(timezone=True), nullable=True)
     printed_by = Column(String(36), nullable=True)
+    printed_by_name = Column(String(100), nullable=True)
 
     # ── Credit notes (IRD: own serial sequence, reverses original) ───────────
     is_credit_note = Column(Boolean, nullable=False, default=False)

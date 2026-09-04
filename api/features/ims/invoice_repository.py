@@ -54,7 +54,21 @@ class IMSInvoiceRepository:
         )
 
     @staticmethod
-    def register_print(db: Session, invoice: IMSInvoice, printed_by: str | None) -> IMSInvoice:
+    def delete(db: Session, invoice: IMSInvoice) -> None:
+        """Real DELETE — only ever called for a quotation (see
+        IMSInvoiceService.void_quotation). A quotation never entered the IRD
+        bill-number sequence (its QT-#### number is a live COUNT(*), not a
+        persisted gapless serial) and never touched stock/ledger, so removing
+        it leaves no gap to explain — unlike a real invoice, which the DB
+        immutability trigger/grants (core/seed.py) refuse to let this method
+        touch anyway."""
+        db.delete(invoice)
+        db.commit()
+
+    @staticmethod
+    def register_print(
+        db: Session, invoice: IMSInvoice, printed_by: str | None, printed_by_name: str | None = None
+    ) -> IMSInvoice:
         """Electronic Billing Procedure 2082, clause 6.2(च): a reprint must
         show "Copy of Original" and the print count — Annexure-3's sample
         formats this as "Copy of Original (1)", "(2)", etc. First print sets
@@ -70,6 +84,7 @@ class IMSInvoiceRepository:
             invoice.is_bill_printed = True
         invoice.printed_time = now
         invoice.printed_by = printed_by
+        invoice.printed_by_name = printed_by_name
         db.commit()
         db.refresh(invoice)
         return invoice

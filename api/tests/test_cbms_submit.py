@@ -102,3 +102,29 @@ class TestParseIrdResponse:
     def test_completely_empty_body_is_unknown(self):
         code, _ = _parse_ird_response({})
         assert code == "103"
+
+    # IRD's REAL response body is a bare JSON integer, not an object — see
+    # docs/compliance.md's §6 for the live-sandbox confirmation (2026-09-04)
+    # and the AttributeError this shape crashed on before the fix.
+    def test_bare_integer_body_success(self):
+        code, status = _parse_ird_response(200)
+        assert code == "200"
+        assert status == "Success"
+
+    def test_bare_integer_body_already_exists(self):
+        code, _ = _parse_ird_response(101)
+        assert code == "101"
+
+    def test_bare_float_body(self):
+        # response.json() can hand back a float for a bare numeric body
+        # depending on the JSON decoder path; must still parse cleanly.
+        code, _ = _parse_ird_response(200.0)
+        assert code == "200"
+
+    def test_bare_numeric_string_body(self):
+        code, _ = _parse_ird_response("101")
+        assert code == "101"
+
+    def test_non_numeric_non_dict_body_is_unknown(self):
+        code, _ = _parse_ird_response("not json-shaped at all")
+        assert code == "103"

@@ -2844,27 +2844,37 @@ def export_sales_register(
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
 ):
-    """Standard VAT sales register layout — SN/Date/Bill/Buyer/PAN/Taxable/
-    VAT/Total. Cross-check against IRD's exact prescribed Annexure format
-    before a real submission (see docs/Srota_IRD_Compliance_Checklist.md —
-    no authoritative template was available to build against directly)."""
+    """IRD Annexure-6 Sales Register (धिक्री खाता) — Date, Bill No, Buyer,
+    PAN, Total/Taxable/VAT/Tax-exempt, and export columns (all '—' for
+    domestic Nepal transactions)."""
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only owner or manager can export reports")
     if branch_id:
         _assert_branch_scope(staff, branch_id)
     from features.auth.repository import TenantRepository
 
-    orders = OrderRepository.list_for_report(db, staff["tenant_id"], branch_id, bs_from, bs_to)
-    columns = ["SN", "Date (BS)", "Bill No.", "Buyer", "Buyer PAN", "Taxable", "VAT", "Total"]
+    orders = OrderRepository.list_for_report(
+        db, staff["tenant_id"], branch_id, bs_from, bs_to, include_credit_notes=False
+    )
+    columns = [
+        "Date (BS)", "Bill No.", "Buyer", "Buyer PAN",
+        "Total Amount", "Taxable Value", "VAT",
+        "Tax-exempt Amount",
+        "Export Value", "Export Country", "Export Customs No.", "Export Customs Date",
+    ]
     rows = [
         [
-            idx, o.placed_at_bs, o.bill_number, o.buyer_name or "Walk-in", o.buyer_pan or "—",
-            o.taxable_amount or Decimal("0"), o.vat_amount or Decimal("0"), o.total_amount or Decimal("0"),
+            o.placed_at_bs, o.bill_number, o.buyer_name or "Walk-in", o.buyer_pan or "—",
+            o.total_amount or Decimal("0"),
+            o.taxable_amount or Decimal("0"),
+            o.vat_amount or Decimal("0"),
+            max(Decimal("0"), (o.total_amount or Decimal("0")) - (o.taxable_amount or Decimal("0")) - (o.vat_amount or Decimal("0"))),
+            "—", "—", "—", "—",
         ]
-        for idx, o in enumerate(orders, start=1)
+        for o in orders
     ]
     tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
-    return _restro_export_response(format, "Sales Register", columns, rows, _restro_business_header_lines(tenant))
+    return _restro_export_response(format, "Sales Register", columns, rows, _restro_business_header_lines(tenant), wide=True)
 
 
 @router.get("/reports/annexure-13/export")

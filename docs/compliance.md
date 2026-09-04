@@ -128,7 +128,7 @@ not a UI preference** (दफा ६.२ङ / Annexure ६ १.क.ई's own foo
 
 | Clause | Requirement | Status |
 |---|---|---|
-| ६.३क | Pre-formatted Sales Register, Purchase Register, Sales Return, Purchase Return, ready for CBMS Excel upload | ✅ **RMS**: Sales Register, Annexure 13, Monthly VAT Summary, Standard View (Annex-5), and Credit Notes register all exist as working export endpoints (`GET /restro/reports/{sales-register,annexure-13,monthly-vat-summary,standard-view,credit-notes}/export`), XLSX+PDF, with frontend buttons in `ReportsView.tsx`'s "IRD Reports" card — VAT registers gated to VAT-registered tenants, Standard View/Credit Notes shown to every tenant. No Purchase Register (RMS has no purchasing — correctly N/A). **Still open**: exact IRD column layout not byte-verified against Annexure ६'s Nepali headers (see §5) — built to a standard structure, flag for confirmation before real submission. IMS: not re-verified this pass. |
+| ६.३क | Pre-formatted Sales Register, Purchase Register, Sales Return, Purchase Return, ready for CBMS Excel upload | ✅ **RMS**: Sales Register, Annexure 13, Monthly VAT Summary, Standard View (Annex-5), and Credit Notes register all exist as working export endpoints (`GET /restro/reports/{sales-register,annexure-13,monthly-vat-summary,standard-view,credit-notes}/export`), XLSX+PDF, with frontend buttons in `ReportsView.tsx`'s "IRD Reports" card — VAT registers gated to VAT-registered tenants, Standard View/Credit Notes shown to every tenant. No Purchase Register (RMS has no purchasing — correctly N/A). **Column layout now matches Annexure ６ exactly** (2026-09-04): 12-column IRD template including Tax-exempt and Export columns, landscape PDF. ✅ **IMS**: Sales Register (`/reports/vat-register/export`) and Purchase Register (`/reports/purchases/export`) both updated to the same 12-column IRD template (2026-09-04). |
 | ६.३ख | **All user activity (User Activity Log)** stored in DB | ✅ — `audit_log` table, append-only (DB grants: INSERT+SELECT only, no UPDATE/DELETE — see model docstring). |
 | ६.३ग | Audit Trail Report / Activity Log viewable + filterable from the **front end** | ✅ — RMS: "Activity Log" tab in `SettingsView.tsx` (Owner/Manager only, entity/action filters, search, pagination). IMS: same pattern in `_app.settings.tsx`. |
 | ६.३घ | **Once entered, transaction data cannot be removed or modified — from front end OR back end** | ✅ — the heaviest single piece of work this session. Two different DB-level mechanisms (not app-code checks, so they hold even against a bug or a direct DB client): <br>• **IMS**: restricted Postgres role `srota_app` with column-level `REVOKE UPDATE/DELETE`, per-table allowlist of "follow-on" columns still writable (`_IMMUTABLE_TABLES` in `api/core/seed.py`). <br>• **RMS**: `BEFORE UPDATE/DELETE` Postgres triggers (`restro_orders_immutability()`, `restro_order_lines_immutability()`, `api/core/seed.py`) — freezes a row once `status` becomes `paid`/`cancelled`, needed because RMS legitimately rewrites the same columns many times while `status='draft'`. Verified adversarially, including as the Postgres superuser. |
@@ -216,12 +216,15 @@ column layouts (दफा ६.३क references these). The register layouts spe
 
 **Status — RMS**: Sales Register export exists and is UI-reachable
 (`ReportsView.tsx`'s "IRD Reports" card). Purchase Register is correctly
-N/A (RMS has no purchasing). **The exact IRD template hasn't been confirmed
-against these Annexure ६ Nepali column headers line-by-line** — built to the
-widely-used standard structure (SN, Date, Doc No, Party, PAN, Taxable, VAT,
-Total) and flagging for confirmation before real submission. IMS: not
-re-verified this pass — `docs/Srota_IRD_Compliance_Checklist.md` may still
-be accurate for it, check before assuming parity with RMS's current state.
+N/A (RMS has no purchasing). **Column layout now matches the PDF Annexure ６
+template exactly** (2026-09-04 pass): Date, Bill No., Buyer, Buyer PAN,
+Total Amount, Taxable Value, VAT, Tax-exempt Amount, Export Value, Export
+Country, Export Customs No., Export Customs Date — 12 columns, PDF rendered
+in landscape A4 (`wide=True`). Credit notes excluded from Sales Register
+(they appear only in the Credit Notes register). IMS: same column structure
+applied to both Sales Register (VAT register endpoint) and Purchase Register
+(which includes all 12 IRD columns including import/capital columns — filled
+with 0 for domestic-only businesses).
 
 **HS Code**: every Annexure ६ bill template has an एच.एस. कोड (HS Code)
 column per line item. Now implemented as a **branch-level default**
@@ -264,26 +267,226 @@ already-exists-or-doesn't (treat as handled), `102`/`103` transient
   (pending/failed counts, last-synced timestamp) for an admin-facing status
   view.
 
-**Not yet confirmed / open** (from `docs/Srota_IRD_Compliance_Checklist.md`'s
-own "things neither checklist can fully close out" section — still true as
-of this doc):
-- Exact CBMS base URL — checklist's primary source says
-  `https://cbapi.ird.gov.np/api/bill`; an older `202.166.207.75:9050`
-  address also surfaced in research. Confirm with IRD before going live.
-- Exact fiscal-year/date string format IRD's CBMS API expects in the
-  payload (built as `"2081-82"` → `"2081/082"` / `YYYY.MM.DD`-style —
-  unconfirmed, only lead available).
-- Whether buyer PAN/name are truly mandatory on every submission or there's
-  an accepted path for anonymous/walk-in sales (matters most for RMS —
-  walk-in restaurant guests are the common case, not the exception).
-- Whether any real CBMS sandbox/test environment exists, or all testing is
-  against production regardless.
+**CONFIRMED against IRD's own official CBMS API Documentation** (PDF dated
+"Updated on October 14, 2022 (2079 Ashoj 28)", supplied directly by the
+business owner — this is IRD's own developer documentation, not third-party
+research, and settles every item this section previously flagged as
+unconfirmed):
+- **Base URLs — exact match, byte-for-byte**: `POST https://cbapi.ird.gov.np/api/bill`
+  (bill) and `POST https://cbapi.ird.gov.np/api/billreturn` (credit note) —
+  identical to what `core/configs.py`'s `IRD_CBMS_URL`/`IRD_CBMS_RETURN_URL`
+  defaults already use. The old `202.166.207.75:9050` lead was wrong/stale;
+  discard it.
+- **Fiscal year format — confirmed**: `"2081.082"` — dot-separated, 4-digit
+  start year + `.` + 3-digit zero-padded end year (PDF's own sample:
+  `fiscal_year = "2073.074"`). Matches `_fy_to_ird_format()` in both
+  `restro/cbms_service.py` and `ims/cbms_service.py` exactly — no code
+  change needed, this was already built correctly.
+- **Date format — confirmed**: `YYYY.MM.DD`, dot-separated (PDF's sample:
+  `invoice_date="2074.07.06"`). Matches `date_ad.strftime("%Y.%m.%d")` in
+  both apps' payload builders exactly.
+- **Every payload field name — confirmed, all 21 (bill) / 23 (credit note)
+  fields match exactly**, including casing (`isrealtime` lowercase,
+  `datetimeClient` camelCase) — cross-checked field-by-field against
+  `build_cbms_payload()`/`build_credit_note_payload()` in both apps.
+- **Response codes 100–105 — confirmed, all six match exactly**, including
+  the subtlety that code 101 means opposite things on the two endpoints
+  ("bill already exists" on `/api/bill` vs. "bill does not exist" on
+  `/api/billreturn`) — `classify_response()` in `api/features/cbms/submit.py`
+  already handles this correctly via its `is_credit_note` branch.
+
+**LIVE-TESTED, 2026-09-04 — a real sandbox exists and our integration works
+end-to-end.** Posted real requests to the actual production CBMS endpoints
+using the `Test_CBMS`/`test@321` credentials from IRD's own PDF:
+- `POST /api/bill` with a fresh `invoice_number` → **HTTP 200, body `200`
+  (Success)** — a genuine first-time accepted submission.
+- Re-posting the same `invoice_number` → **HTTP 200, body `101`** (already
+  exists), correctly classified `synced` by our code (idempotent, not a
+  fresh failure) — confirms both the sandbox's duplicate-detection and our
+  classification logic.
+- `POST /api/billreturn` referencing that invoice, unique
+  `credit_note_number` → **HTTP 200, body `200`** — a genuine credit note
+  accepted, closing the full bill→credit-note lifecycle.
+- All three ran through the app's own `post_to_cbms()` in the live `api`
+  container, not standalone curl — this exercises our real request/response
+  code, not just the network path.
+- **A wrong password against the sandbox still returned `200` (success)**,
+  not code `100` (auth mismatch) — observed fact, not a rule: the sandbox
+  may not validate the password field for the `Test_CBMS` account, or `100`
+  triggers on a different failure than a bad password specifically.
+  Untested: what a genuinely bad *username* does.
+- Buyer PAN/name being optional (blank accepted) is still only a lead, not
+  directly re-tested this pass — the PDF's own sample already sends
+  `buyer_name=""` and IRD's docs don't state it's optional as a rule.
+
+**A real bug was found and fixed during this test**: `_parse_ird_response()`
+in `api/features/cbms/submit.py` assumed IRD's response body was always a
+JSON *object* with a `code`/`status`/`data` field (several guessed shapes,
+since the real one was unconfirmed) — the live test crashed immediately
+with `AttributeError: 'int' object has no attribute 'get'`. IRD's real
+response body is a **bare JSON integer** (`200`, `101`, ...), nothing else.
+Fixed: the bare-int/bare-numeric-string case is now checked first (the
+confirmed, primary path); the old object-shaped guesses are kept only as a
+defensive fallback in case the format ever changes. Re-tested after the fix
+— all cases above now parse and classify correctly. **This means the CBMS
+integration was silently broken for any real submission before this fix** —
+every live sync would have thrown an unhandled exception rather than
+succeeding, misclassifying, or even hitting the retry path.
 
 **Confirmed built for RMS** (re-verified against live code, not just the
 plan): RQ-based retry engine (`_enqueue_cbms_sync()`, `restro/router.py`,
 `Retry(max=3, interval=[60,300,900])`) and the sync-status UI in
 `SettingsView.tsx`. IMS's equivalent has not been re-verified in this pass —
 check before assuming parity.
+
+**A second real bug was found and fixed, 2026-09-04 — the RQ worker itself
+crashed on every job.** Built a real RMS order through `OrderService`
+end-to-end (not a hand-built payload) and manually enqueued its
+`sync_document_job`. The actual `srota-worker` container crashed processing
+it:
+```
+ImportError: cannot import name 'get_current_user' from partially
+initialized module 'core.deps' (most likely due to a circular import)
+```
+Root cause: `api/worker.py` never imported `main` (or anything that forces
+the app's full module graph to resolve first) before starting `Worker.work()`
+— unlike every other entrypoint in this codebase. `sync_document_job`
+deliberately lazy-imports `features.restro`/`features.ims` submodules inside
+the function body (`jobs/cbms_jobs.py`'s `_load_document`), so the *first*
+time those modules were ever touched inside the worker process was mid-job,
+which hits the `features.auth` ↔ `core.deps` circular-import ordering that
+only resolves safely when `main.py`'s own import sequence runs first.
+**This meant the CBMS RQ pipeline could not execute a single sync job
+successfully in production** — every job would crash the moment it tried to
+load a document, regardless of the `_parse_ird_response` fix above.
+
+Fixed: `api/worker.py` now does `import main` before starting the worker
+loop (safe — `main.py` only *defines* the FastAPI app at import time; the
+lifespan/schema-seeding functions only run when uvicorn actually serves
+requests, not on plain import). Rebuilt the **`worker` service specifically**
+(it has its own image, `dream-worker` — rebuilding `api` alone does not
+rebuild it, a real gotcha hit during this fix) and confirmed via
+`docker exec srota-worker cat /app/worker.py` that the new code was actually
+in the running container before retesting.
+
+Re-verified end-to-end after the fix, real network calls to the live IRD
+sandbox, real orders through the real service layer:
+- A fresh order with `seller_pan` snapshotted to the sandbox's `999999999`
+  test PAN → job executed cleanly, reached `post_to_cbms`, got back a real
+  `103` (unknown error) → correctly classified `retry` → correctly **raised**
+  so RQ's `Retry(max=3, interval=[60,300,900])` policy requeued it (confirmed
+  in `ScheduledJobRegistry`, not `FailedJobRegistry` — retries remaining).
+- A second attempt with the test tenant's synthetic PAN (`600000001`, not the
+  sandbox's expected `999999999`) → real `100` (auth mismatch) — confirms the
+  sandbox validates `seller_pan` against the account, not just
+  username/password; a mismatched seller PAN alone is enough to trigger 100.
+- `CbmsSyncLog` rows written correctly for both attempts with the right
+  `cbms_response_code` and incrementing `attempt_count`.
+- Confirmed the correct default-off gate independently: with
+  `RMS_CBMS_CERTIFIED` unset (default `false`, as in the real `.env`), the
+  same job short-circuits before any network call and logs
+  `"not yet IRD-certified"` — verified by temporarily running a second,
+  disposable worker container with the flag overridden just for this test,
+  never touching the shared `.env`/real worker's config.
+- **Repeated the same full test on IMS** (real Tenant → User → Branch →
+  IMSCredential → OrgTaxSettings → IMSParty → real Product/Variant with
+  stock → real Invoice via `IMSInvoiceService.create()`), independently of
+  the RMS run: `sync_document_job('ims', ...)` picked up cleanly by the
+  regular (uncertified) worker, logged `"ims not yet IRD-certified"`,
+  completed without crashing — confirms the worker fix isn't RMS-specific,
+  since `_load_document`'s lazy import branches on `source_app` and IMS's
+  branch (`features.ims.invoice_repository`) goes through a different, but
+  equally circular, import chain. With `IMS_CBMS_CERTIFIED` overridden on a
+  disposable worker, the real invoice reached IRD's sandbox and got back a
+  real `102`, correctly classified and raised for retry, `CbmsSyncLog`
+  written correctly (`ims`/`invoice`/`102`/`attempt_count=2`).
+
+**Retry/requeue resilience for genuinely unexpected failures, live-tested
+2026-09-04.** The question this answers: if `sync_document_job` fails for a
+reason nobody anticipated (a transient DB error, a bug — not the designed
+CBMS response-code path), does RQ still catch and retry it, or does it get
+silently lost?
+- Confirmed RQ's `Retry()` policy is **exception-type-agnostic** — it does
+  not special-case `sync_document_job`'s deliberate `RuntimeError`. Injected
+  an unrelated `TypeError` (simulating a genuine bug) into a throwaway probe
+  job with `Retry(max=3, interval=[3,5,8])`: failed twice, succeeded on the
+  3rd attempt, backoff timing matched the policy exactly.
+- Confirmed a job whose retries are permanently exhausted lands correctly in
+  RQ's `FailedJobRegistry` with the full traceback preserved — nothing is
+  silently dropped.
+- **Gap found and fixed, 2026-09-04**: `sync_document_job` had no `except`
+  block — only `finally: db.close()`. An exception raised before the first
+  `CbmsSyncLogRepository.record_attempt()` call (e.g. a DB error inside
+  `get_or_create_pending` itself — reproduced live with a malformed
+  `tenant_id`, a real `IntegrityError`) propagated uncaught, retried per
+  RQ's policy exactly as expected, but if it exhausted, the job sat in RQ's
+  `FailedJobRegistry` with **zero corresponding `CbmsSyncLog` row**.
+  Confirmed live: `cbms_sync_log` had 0 rows for the failing tenant/document
+  while `FailedJobRegistry` correctly held the job. Neither app's
+  sync-status UI reads RQ's registry directly (only `CbmsSyncLog`), so this
+  class of failure was invisible there — recoverable in principle (RQ kept
+  it), but not surfaced automatically.
+
+  Fixed: the job body now has `except RuntimeError: raise` (lets the
+  deliberate CBMS-retry signal through untouched, already logged above it)
+  followed by a broad `except Exception` that logs the error, best-effort
+  writes a `failed` `CbmsSyncLog` row (re-fetching the row fresh after a
+  `db.rollback()` — the original row from `get_or_create_pending` was only
+  `flush()`ed, never committed, so reusing that same in-memory object after
+  a rollback raised its own `Instance is not persistent within this
+  Session` error, a real bug caught during this fix's own live-test and
+  corrected before shipping), then re-raises so RQ's `Retry()` policy still
+  sees the exception and requeues exactly as before. If even the fallback
+  write fails (e.g. the tenant itself doesn't exist, so `CbmsSyncLog`'s own
+  FK constraint can't be satisfied either), that failure is logged too and
+  the original exception still re-raises — this is best-effort visibility,
+  not the source of truth for whether a retry happens (RQ's own registries
+  remain that).
+
+  Re-verified live after the fix: (1) a real unexpected exception
+  (`AttributeError` injected via a monkeypatch, simulating a genuine code
+  bug) on a real document now correctly produces a `failed` `CbmsSyncLog`
+  row with `attempt_count=1` and the real error message, and still
+  re-raises for RQ; (2) the designed retry path is unaffected — a real code
+  `102` from the live IRD sandbox still raises `RuntimeError` and is caught
+  by `except RuntimeError: raise`, passing through with no double-logging;
+  (3) all 24 pre-existing `test_cbms_submit.py` tests still pass unchanged.
+
+**Load/concurrency, live-tested 2026-09-04** — the question: is the current
+single-`api`-process, single-`worker`-process deployment resilient at
+~100-user scale?
+- **API HTTP layer**: fired 100 concurrent real logins (`POST
+  /restro/auth/login`, real argon2 password verify + DB query) at the live
+  `srota-api` container. All 100 succeeded (zero errors, zero non-200s) —
+  correctness held. But latency degraded badly under load: p50 5.8s, p99
+  8.7s for what's normally a sub-second call. Root cause confirmed, not
+  guessed: `uvicorn` runs as a **single process** (no `--workers` flag in
+  the Dockerfile `CMD`), and argon2's password verification is synchronous
+  CPU work that blocks the single event loop — so 100 concurrent logins
+  serialize almost entirely onto one core, even though the container has 4
+  available (`docker exec srota-api nproc` → 4, 0% CPU limit set). Postgres
+  itself was never close to its ceiling (peaked at 17 connections against a
+  100-connection server limit; the api's own pool is `pool_size=5 +
+  max_overflow=10 = 15`, which is what actually capped concurrent DB work).
+  **This is a real scaling gap for ~100 concurrent users** — not a
+  correctness bug, a throughput one. Fix would be adding `--workers N` (or
+  running multiple `api` replicas behind a load balancer) — not done this
+  pass, flagged for before real-scale rollout.
+- **RQ/worker pipeline**: enqueued 100 real `sync_document_job` calls
+  against real orders. A single worker process drained all 100 in ~9.6s
+  when each job short-circuits at the certification gate (the realistic
+  today-state, since `RMS_CBMS_CERTIFIED`/`IMS_CBMS_CERTIFIED` are correctly
+  `false`); a real synced job involves an actual ~1-2s network round-trip to
+  IRD (measured earlier in this section), so **100 simultaneous real
+  submissions would take roughly 100-200s to fully drain** through the
+  single worker, strictly serial (RQ's default worker processes one job at
+  a time). Nothing is lost or fails under this load — it's a queue-depth/
+  latency characteristic, not a correctness one — but if "100 users" means
+  100 near-simultaneous real bill submissions, expect a multi-minute drain
+  tail, not sub-second sync. Scaling the worker (`docker-compose up -d
+  --scale worker=N`, RQ workers are safely horizontally scalable since jobs
+  are atomically claimed) would directly address this if it becomes a real
+  bottleneck.
 
 ---
 

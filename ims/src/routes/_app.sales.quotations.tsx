@@ -1,6 +1,16 @@
 import { TablePagination } from "@/components/common/table-pagination";
 import { DateText, EmptyState, Money, PageHeader } from "@/components/common/primitives";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -19,13 +29,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useApp } from "@/context/app-store";
+import { ApiError } from "@/lib/api-client";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { normalizeTableSearch } from "@/hooks/useTableQuery";
 import { useInvoices } from "@/hooks/useInvoices";
+import { invoicesApi, type InvoiceDto } from "@/lib/invoices-api";
 import type { Invoice, InvoiceLine, PaymentMethod } from "@/data/types";
-import type { InvoiceDto } from "@/lib/invoices-api";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRightLeft, Eye, Printer, Search } from "lucide-react";
+import { ArrowRightLeft, Eye, Printer, Search, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -109,6 +120,8 @@ function QuotationsPage() {
 
   const debouncedQ = useDebouncedValue(search.q, 300);
   const [convertFor, setConvertFor] = useState<Invoice | null>(null);
+  const [voidFor, setVoidFor] = useState<Invoice | null>(null);
+  const [voiding, setVoiding] = useState(false);
 
   const { invoices: quoteDtos, meta, isLoading, refetch } = useInvoices({
     branch_id: app.branchId === "all" ? undefined : app.branchId,
@@ -198,6 +211,14 @@ function QuotationsPage() {
                           <Printer className="h-4 w-4" />
                         </Link>
                       </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setVoidFor(r.inv)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -223,6 +244,43 @@ function QuotationsPage() {
           refetch();
         }}
       />
+
+      <AlertDialog open={!!voidFor} onOpenChange={(o) => !o && setVoidFor(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Void {voidFor?.number}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the quotation permanently — it was never an issued bill (no IRD
+              number, no stock or ledger effect), so nothing needs reconciling. This can&apos;t
+              be undone; you can always create a new quotation for the same customer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={voiding}>Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={voiding}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!voidFor) return;
+                setVoiding(true);
+                try {
+                  await invoicesApi.voidQuotation(voidFor.id);
+                  toast.success("Quotation voided");
+                  setVoidFor(null);
+                  refetch();
+                } catch (err) {
+                  toast.error(err instanceof ApiError ? err.message : "Failed to void quotation");
+                } finally {
+                  setVoiding(false);
+                }
+              }}
+            >
+              {voiding ? "Voiding…" : "Void quotation"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

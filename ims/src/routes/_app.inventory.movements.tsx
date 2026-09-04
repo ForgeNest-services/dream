@@ -94,6 +94,7 @@ function dtoToMovement(m: StockMovementDto): StockMovement {
     reference: m.reference ?? undefined,
     supplierId: m.supplier_id ?? undefined,
     userId: m.user_id,
+    userName: m.user_name,
   };
 }
 
@@ -147,7 +148,7 @@ function MovementsPage() {
         balance: m.balanceAfter,
         unit_cost: m.unitCost ?? "",
         reference: m.reference ?? m.reason ?? "",
-        user: app.users.find((u) => u.id === m.userId)?.name ?? "",
+        user: m.userName ?? "",
       })),
     );
 
@@ -274,7 +275,7 @@ function MovementsPage() {
                         {m.reference ?? m.reason ?? "—"}
                       </td>
                       <td className="px-3 py-2.5 text-muted-foreground">
-                        {app.users.find((u) => u.id === m.userId)?.name ?? "—"}
+                        {m.userName ?? "—"}
                       </td>
                     </tr>
                   );

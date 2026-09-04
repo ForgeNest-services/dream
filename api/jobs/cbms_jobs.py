@@ -103,8 +103,19 @@ def sync_document_job(
     manual resync click) — re-checks the sync log and the org's current
     settings fresh on every call rather than trusting anything the enqueuer
     knew at enqueue time (credentials or the sync-enabled toggle may have
-    changed between enqueue and execution)."""
+    changed between enqueue and execution).
+
+    Any unexpected exception (a DB blip, a real bug — not the designed CBMS
+    response-code path below) is caught, best-effort logged as a `failed`
+    CbmsSyncLog row, then RE-RAISED so RQ's Retry() policy still requeues it
+    exactly as it would for any other exception. Without this, a failure
+    before the first successful log write would still be retried/eventually
+    land in RQ's FailedJobRegistry correctly (RQ doesn't need this log to
+    retry), but would show up nowhere in either app's sync-status UI, which
+    only ever reads CbmsSyncLog — see docs/compliance.md's §6 live-test note
+    (2026-09-04) for how this was found."""
     db = SessionLocal()
+    log_row = None
     try:
         log_row = CbmsSyncLogRepository.get_or_create_pending(
             db, tenant_id, source_app, document_type, document_id, None
@@ -173,5 +184,27 @@ def sync_document_job(
         # needs to fix the root cause (bad payload, stale credentials, a
         # credit note referencing an invoice IRD never accepted) and
         # trigger a resync explicitly via the sync-status UI.
+    except RuntimeError:
+        raise  # the deliberate CLASSIFICATION_RETRY signal above — already logged, just propagate.
+    except Exception as e:
+        logger.error(f"CBMS sync: unexpected error for {source_app} {document_type} {document_id}: {e}")
+        try:
+            # log_row (if it exists) may only have been flush()ed, never
+            # committed, inside get_or_create_pending's try block above — a
+            # rollback here expires/detaches it, so it can't just be reused.
+            # Always re-fetch (or create) fresh from the DB post-rollback.
+            db.rollback()
+            log_row = CbmsSyncLogRepository.get_or_create_pending(
+                db, tenant_id, source_app, document_type, document_id, None
+            )
+            CbmsSyncLogRepository.record_attempt(db, log_row, "failed", None, f"Unexpected error: {e}"[:4000])
+        except Exception as log_err:
+            # Best-effort only — if the DB is genuinely unreachable, this
+            # write will fail too. RQ still retries/records the job either
+            # way (see docstring above); this is purely for the sync-status
+            # UI's visibility, not the source of truth for whether a retry
+            # happens.
+            logger.error(f"CBMS sync: also failed to record the failure itself: {log_err}")
+        raise  # still let RQ's Retry() policy see this and requeue as normal.
     finally:
         db.close()

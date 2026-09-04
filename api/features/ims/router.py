@@ -54,6 +54,7 @@ from jobs.cbms_jobs import sync_document_job
 from features.cbms.credential_service import CBMSCredentialRepository
 from features.ims.cbms_service import build_cbms_payload
 from features.ims.service import IMSCredentialService, IMSAuthService
+from features.ims.repository import IMSCredentialRepository
 from features.ims.category_service import IMSCategoryService
 from features.ims.brand_service import IMSBrandService
 from features.ims.unit_service import IMSUnitService
@@ -75,7 +76,7 @@ from features.ims.purchase_repository import IMSPurchaseRepository
 from utils.reports_export import build_xlsx, build_pdf
 from features.auth.repository import TenantRepository
 from features.hotel_pms.audit_repository import AuditRepository
-from utils.bikram_sambat import to_bs_iso
+from utils.bikram_sambat import to_bs_iso, fiscal_year_from_ad
 
 
 router = APIRouter(prefix="/ims", tags=["ims"])
@@ -122,6 +123,7 @@ def staff_login(data: StaffLoginRequest, request: Request, db: Session = Depends
         data=StaffLoginResponse(
             token=result["token"],
             role=result["role"],
+            name=result["name"],
             tenant_id=result["tenant_id"],
             branch_id=result["branch_id"],
             expires_at=result["expires_at"],
@@ -174,6 +176,9 @@ def create_credential(
         tenant_id=user.tenant_id,
         created_by=user.id,
         role=data.role,
+        name=data.name,
+        email=data.email,
+        phone=data.phone,
         username=data.username,
         password=data.password,
         branch_id=data.branch_id,
@@ -186,12 +191,6 @@ def create_credential(
         if code == "BRANCH_REQUIRED":
             return error_response(
                 "BRANCH_REQUIRED", "This role requires a branch.", 422
-            )
-        if code == "ROLE_ALREADY_HAS_CREDENTIAL":
-            return error_response(
-                "ROLE_ALREADY_HAS_CREDENTIAL",
-                f"A credential for role '{data.role}' already exists for this branch.",
-                409,
             )
         if code == "USERNAME_TAKEN":
             return error_response(
@@ -220,6 +219,9 @@ def update_credential(
         db,
         tenant_id=user.tenant_id,
         cred_id=cred_id,
+        name=data.name,
+        email=data.email,
+        phone=data.phone,
         username=data.username,
         password=data.password,
     )
@@ -271,6 +273,21 @@ def _owner_user_id(db: Session, tenant_id: str) -> str:
     return owner.id
 
 
+def _actor_name_from_staff(db: Session, staff: dict) -> str:
+    """Resolve the acting staff member's display name — IRD Annex-5's
+    Entered_By/Printed_By. JWT carries `name` since login, avoiding a DB
+    round-trip on the hot path; falls back to a lookup for a token issued
+    before this field existed."""
+    if staff.get("name"):
+        return staff["name"]
+    cred_id = staff.get("cred_id")
+    if cred_id:
+        cred = IMSCredentialRepository.get_by_id(db, staff["tenant_id"], cred_id)
+        if cred:
+            return cred.name
+    return staff.get("role") or "staff"
+
+
 @router.get("/staff/credentials")
 def staff_list_credentials(
     staff: dict = Depends(require_ims_staff("owner")),
@@ -293,6 +310,9 @@ def staff_create_credential(
         tenant_id=staff["tenant_id"],
         created_by=_owner_user_id(db, staff["tenant_id"]),
         role=data.role,
+        name=data.name,
+        email=data.email,
+        phone=data.phone,
         username=data.username,
         password=data.password,
         branch_id=data.branch_id,
@@ -305,12 +325,6 @@ def staff_create_credential(
         if code == "BRANCH_REQUIRED":
             return error_response(
                 "BRANCH_REQUIRED", "This role requires a branch.", 422
-            )
-        if code == "ROLE_ALREADY_HAS_CREDENTIAL":
-            return error_response(
-                "ROLE_ALREADY_HAS_CREDENTIAL",
-                f"A credential for role '{data.role}' already exists for this branch.",
-                409,
             )
         if code == "USERNAME_TAKEN":
             return error_response(
@@ -338,6 +352,9 @@ def staff_update_credential(
         db,
         tenant_id=staff["tenant_id"],
         cred_id=cred_id,
+        name=data.name,
+        email=data.email,
+        phone=data.phone,
         username=data.username,
         password=data.password,
     )
@@ -595,6 +612,7 @@ def create_product(
         description=data.description,
         taxable=data.taxable,
         tax_rate=data.tax_rate,
+        hs_code=data.hs_code,
         variants=[v.model_dump() for v in data.variants],
     )
     if not result["success"]:
@@ -627,6 +645,7 @@ def update_product(
         description=data.description,
         taxable=data.taxable,
         tax_rate=data.tax_rate,
+        hs_code=data.hs_code,
         variants=[v.model_dump() for v in data.variants],
     )
     if not result["success"]:
@@ -749,8 +768,21 @@ def list_movements(
         paging["offset"],
         paging["limit"],
     )
+    # user_id is a credential id, not a display value — resolve names in one
+    # tenant-scoped query rather than per-row, and rather than storing a
+    # snapshot (unlike invoices, a movement's "who" isn't an IRD-mandated
+    # field, so a live-resolved name that can go stale/blank if the
+    # credential is later deleted is an acceptable, much smaller change).
+    names_by_cred_id = {
+        c.id: c.name for c in IMSCredentialRepository.list_for_tenant(db, staff["tenant_id"])
+    }
+    rows = []
+    for m in result["movements"]:
+        row = StockMovementData.model_validate(m).model_dump(mode="json")
+        row["user_name"] = names_by_cred_id.get(m.user_id)
+        rows.append(row)
     return success_response(
-        data=[StockMovementData.model_validate(m).model_dump(mode="json") for m in result["movements"]],
+        data=rows,
         meta=build_meta(result["total"], paging["page"], paging["per_page"]),
     )
 
@@ -1308,6 +1340,7 @@ def create_invoice(
         db,
         tenant_id=staff["tenant_id"],
         user_id=staff.get("cred_id") or "",
+        entered_by_name=_actor_name_from_staff(db, staff),
         date=data.date,
         branch_id=data.branch_id,
         customer_id=data.customer_id,
@@ -1365,6 +1398,35 @@ def convert_quotation(
     )
 
 
+@router.delete("/invoices/{invoice_id}/void-quotation")
+def void_quotation(
+    request: Request,
+    invoice_id: str,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """IRD: दफा ६.२ज's reverse-entry concept, scoped to what's actually
+    pre-issuance in IMS — a still-open quotation. A real invoice can never be
+    voided this way (see IMSInvoiceService.void_quotation and the DB-level
+    ims_invoices_delete_guard trigger, which rejects it even if this check
+    were bypassed)."""
+    if staff["role"] not in ("owner", "manager", "cashier"):
+        raise HTTPException(403, "Not allowed to void quotations")
+    client_ip = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip() or (
+        request.client.host if request.client else None
+    )
+    result = IMSInvoiceService.void_quotation(
+        db,
+        tenant_id=staff["tenant_id"],
+        invoice_id=invoice_id,
+        performed_by=staff.get("cred_id"),
+        terminal_ip=client_ip,
+    )
+    if not result["success"]:
+        return _invoice_error(result)
+    return success_response(message="Quotation voided")
+
+
 @router.post("/invoices/{invoice_id}/credit-note")
 def issue_credit_note(
     request: Request,
@@ -1382,6 +1444,7 @@ def issue_credit_note(
         db,
         tenant_id=staff["tenant_id"],
         user_id=staff.get("cred_id") or "",
+        entered_by_name=_actor_name_from_staff(db, staff),
         invoice_id=invoice_id,
         reason=data.reason,
         terminal_ip=client_ip,
@@ -1408,7 +1471,9 @@ def register_invoice_print(
     Electronic Billing Procedure 2082, clause 6.2(च): a reprint must be
     watermarked "Copy of Original (N)". Returns whether this print should
     carry that watermark."""
-    result = IMSInvoiceService.register_print(db, staff["tenant_id"], invoice_id, staff.get("cred_id"))
+    result = IMSInvoiceService.register_print(
+        db, staff["tenant_id"], invoice_id, staff.get("cred_id"), _actor_name_from_staff(db, staff)
+    )
     if not result["success"]:
         return error_response(result["error_code"], "Invoice not found", 404)
     return success_response(
@@ -1876,22 +1941,30 @@ def export_vat_register(
         None, bs_from, bs_to, 0, _EXPORT_LIMIT,
     )
     parties = {p.id: p for p in IMSPartyRepository.list_for_tenant(db, staff["tenant_id"], None, None, 0, _EXPORT_LIMIT)[0]}
-    # Standard VAT sales register layout — SN/Date/Invoice/Buyer/PAN/
-    # Taxable/VAT/Total (IRD Electronic Billing Procedure convention;
-    # cross-check against the exact prescribed Annexure format before a
-    # real submission — no authoritative template was available to build
-    # against directly, see docs/Srota_IRD_Compliance_Checklist.md).
-    columns = ["SN", "Date (BS)", "Invoice", "Buyer", "Buyer PAN", "Taxable", "VAT", "Total"]
+    # IRD Annexure-6 Sales Register (धिक्री खाता) — credit notes excluded
+    # (they belong in the Credit Notes register, not here).
+    real_invoices = [i for i in items if not i.is_credit_note]
+    columns = [
+        "Date (BS)", "Invoice No.", "Buyer", "Buyer PAN",
+        "Total Amount", "Taxable Value", "VAT",
+        "Tax-exempt Amount",
+        "Export Value", "Export Country", "Export Customs No.", "Export Customs Date",
+    ]
     rows = [
         [
-            idx, i.date_bs, i.number, parties.get(i.customer_id).name if i.customer_id in parties else "—",
+            i.date_bs, i.number,
+            parties.get(i.customer_id).name if i.customer_id in parties else "—",
             (parties.get(i.customer_id).pan if i.customer_id in parties else None) or "—",
-            i.taxable_amount, i.vat_amount, i.total_amount,
+            i.total_amount or Decimal("0"),
+            i.taxable_amount or Decimal("0"),
+            i.vat_amount or Decimal("0"),
+            max(Decimal("0"), (i.total_amount or Decimal("0")) - (i.taxable_amount or Decimal("0")) - (i.vat_amount or Decimal("0"))),
+            "—", "—", "—", "—",
         ]
-        for idx, i in enumerate(items, start=1)
+        for i in real_invoices
     ]
     tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
-    return _export_response(format, "Sales Register", columns, rows, _business_header_lines(tenant))
+    return _export_response(format, "Sales Register", columns, rows, _business_header_lines(tenant), wide=True)
 
 
 @router.get("/reports/purchases/export")
@@ -1909,22 +1982,34 @@ def export_purchase_report(
         db, staff["tenant_id"], branch_id, None, fiscal_year_id, q, bs_from, bs_to, 0, _EXPORT_LIMIT,
     )
     parties_full = {p.id: p for p in IMSPartyRepository.list_for_tenant(db, staff["tenant_id"], None, None, 0, _EXPORT_LIMIT)[0]}
-    # Standard VAT purchase register layout — SN/Date/Bill No/Supplier/PAN/
-    # Taxable/VAT/Total. VAT per purchase is the sum of its lines'
-    # vat_amount (purchase itself has no VAT breakdown column — only its
-    # lines do, see IMSPurchaseLine.vat_amount).
-    columns = ["SN", "Date (BS)", "Bill No.", "Supplier", "Supplier PAN", "Taxable", "VAT", "Total"]
+    # IRD Annexure-6 Purchase Register (खरिद खाता). Import/capital columns
+    # are always 0 for domestic-only businesses — included for IRD template
+    # completeness (CBMS Excel upload expects all columns present).
+    columns = [
+        "Date (BS)", "Bill/Customs No.", "Supplier", "Supplier PAN",
+        "Total Purchase", "Taxable Purchase Value", "VAT",
+        "Tax-exempt Purchase",
+        "Taxable Import Value", "Import VAT",
+        "Capital Purchase/Import", "Capital VAT",
+    ]
     rows = []
-    for idx, p in enumerate(items, start=1):
+    for p in items:
         party = parties_full.get(p.party_id) if p.party_id else None
         line_vat = sum((Decimal(str(line.vat_amount or 0)) for line in p.lines), Decimal("0"))
-        taxable = Decimal(str(p.items_total or 0)) - line_vat
+        taxable_value = Decimal(str(p.items_total or 0)) - line_vat
+        total = Decimal(str(p.bill_amount or 0))
+        tax_exempt = max(Decimal("0"), total - taxable_value - line_vat)
         rows.append([
-            idx, p.date_bs, p.bill_no or p.number, party.name if party else "Direct",
-            (party.pan if party else None) or "—", taxable, line_vat, p.bill_amount,
+            p.date_bs, p.bill_no or p.number,
+            party.name if party else "Direct",
+            (party.pan if party else None) or "—",
+            total, taxable_value, line_vat,
+            tax_exempt,
+            Decimal("0"), Decimal("0"),
+            Decimal("0"), Decimal("0"),
         ])
     tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
-    return _export_response(format, "Purchase Register", columns, rows, _business_header_lines(tenant))
+    return _export_response(format, "Purchase Register", columns, rows, _business_header_lines(tenant), wide=True)
 
 
 @router.get("/reports/annexure-13/export")
@@ -2051,6 +2136,139 @@ def export_tds_report(
     ]
     tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
     return _export_response(format, "TDS Report", columns, rows, _business_header_lines(tenant))
+
+
+@router.get("/reports/standard-view/export")
+def export_standard_view(
+    format: str,
+    branch_id: str | None = None,
+    fiscal_year_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """Annex-5 Standard View — all 20 mandatory fields required by IRD's
+    Electronic Billing Procedure 2082, दफा ६.१छ. Real invoices only (kind
+    'tax'/'abbreviated', excludes quotations and credit notes — see
+    export_credit_notes for those)."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can export reports")
+    all_invoices, _ = IMSInvoiceRepository.list_for_tenant(
+        db, staff["tenant_id"], branch_id, None, fiscal_year_id, None, None,
+        None, bs_from, bs_to, 0, _EXPORT_LIMIT,
+    )
+    # Build a set of IDs that have a credit note issued against them so we
+    # can report Is_bill_Active accurately per Annex-5.
+    credit_noted_ids = {
+        i.original_invoice_id
+        for i in all_invoices
+        if i.is_credit_note and i.original_invoice_id
+    }
+    invoices = [i for i in all_invoices if not i.is_credit_note]
+    columns = [
+        "SN", "Bill No.", "Date (BS)", "Fiscal Year",
+        "Buyer Name", "Buyer PAN", "Seller PAN",
+        "Gross Amount", "Discount",
+        "Taxable (VAT)", "VAT", "Tax Exempt",
+        "Total Amount",
+        "Excisable Amt", "Excise",
+        "Taxable (HST)", "HST",
+        "Amt for ESF", "ESF",
+        "Export Sales",
+        "Sync with IRD", "Is Bill Printed", "Is Bill Active",
+        "Printed Time", "Entered By", "Printed By",
+        "Is Realtime", "Payment Method",
+        "VAT Refund Amount", "Transaction ID",
+    ]
+    rows = [
+        [
+            idx,
+            i.number,
+            i.date_bs or "",
+            fiscal_year_from_ad(i.date) or "",
+            i.buyer_name or "Walk-in",
+            i.buyer_pan or "",
+            i.seller_pan or "",
+            i.gross_amount or Decimal("0"),
+            i.discount_amount or Decimal("0"),
+            i.taxable_amount or Decimal("0"),
+            i.vat_amount or Decimal("0"),
+            i.exempt_amount or Decimal("0"),
+            i.total_amount or Decimal("0"),
+            # IMS has no excise/HST/ESF/export-sales concept — N/A, not 0,
+            # to distinguish "zero value" from "not applicable".
+            "N/A", "N/A",
+            "N/A", "N/A",
+            "N/A", "N/A",
+            "N/A",
+            "Yes" if i.cbms_synced else "No",
+            "Yes" if i.is_bill_printed else "No",
+            "No" if i.id in credit_noted_ids else "Yes",
+            i.printed_time.strftime("%Y-%m-%d %H:%M:%S") if i.printed_time else "",
+            i.entered_by_name or "",
+            i.printed_by_name or "",
+            # IMS does not yet model Is_realtime/VAT_Refund/Transaction_Id —
+            # these are on RMS's RestroOrder but not IMSInvoice. N/A for now.
+            "N/A",
+            i.payment_method or "",
+            "N/A",
+            "N/A",
+        ]
+        for idx, i in enumerate(invoices, start=1)
+    ]
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(
+        format, "Standard View (Annex-5)", columns, rows, _business_header_lines(tenant), wide=True
+    )
+
+
+@router.get("/reports/credit-notes/export")
+def export_credit_notes(
+    format: str,
+    branch_id: str | None = None,
+    fiscal_year_id: str | None = None,
+    bs_from: str | None = None,
+    bs_to: str | None = None,
+    staff: dict = Depends(require_ims_staff()),
+    db: Session = Depends(get_db),
+):
+    """Credit Notes register — every credit note in the period with its
+    reference invoice number. Required for IRD /api/billreturn reconciliation."""
+    if staff["role"] not in ("owner", "manager"):
+        raise HTTPException(403, "Only owner or manager can export reports")
+    all_invoices, _ = IMSInvoiceRepository.list_for_tenant(
+        db, staff["tenant_id"], branch_id, None, fiscal_year_id, None, None,
+        None, bs_from, bs_to, 0, _EXPORT_LIMIT,
+    )
+    credit_notes = [i for i in all_invoices if i.is_credit_note]
+    bill_lookup: dict[str, str] = {
+        i.id: i.number for i in all_invoices if not i.is_credit_note
+    }
+    columns = [
+        "SN", "Credit Note No.", "Date (BS)", "Fiscal Year",
+        "Ref Invoice", "Reason",
+        "Total", "Taxable (VAT)", "VAT", "Tax Exempt",
+    ]
+    rows = [
+        [
+            idx,
+            cn.number,
+            cn.date_bs or "",
+            fiscal_year_from_ad(cn.date) or "",
+            bill_lookup.get(cn.original_invoice_id or "", cn.original_invoice_id or ""),
+            cn.note_reason or "",
+            abs(cn.total_amount or Decimal("0")),
+            abs(cn.taxable_amount or Decimal("0")),
+            abs(cn.vat_amount or Decimal("0")),
+            abs(cn.exempt_amount or Decimal("0")),
+        ]
+        for idx, cn in enumerate(credit_notes, start=1)
+    ]
+    tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
+    return _export_response(
+        format, "Credit Notes Register", columns, rows, _business_header_lines(tenant), wide=True
+    )
 
 
 @router.get("/reports/stock-summary/export")

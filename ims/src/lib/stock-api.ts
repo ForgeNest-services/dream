@@ -18,6 +18,9 @@ export interface StockMovementDto {
   reference: string | null;
   supplier_id: string | null;
   user_id: string;
+  // Resolved server-side from the credential's display name — null only if
+  // that credential has since been deleted.
+  user_name: string | null;
   created_at: string;
 }
 

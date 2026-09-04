@@ -27,6 +27,7 @@ class BranchSettingsRepository:
             vat_enabled=vat_enabled,
             vat_rate=Decimal("13"),
             qr_image_url=None,
+            default_hs_code="2106.90",  # HS: food preparations (standard for restaurants)
             created_at=now,
             updated_at=now,
         )

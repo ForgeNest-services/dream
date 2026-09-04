@@ -11,6 +11,15 @@ from utils.logger import logger
 BRANCH_SCOPED_ROLES = {RestroRole.MANAGER.value, RestroRole.WAITER.value, RestroRole.CHEF.value}
 
 
+def _is_username_conflict(err: IntegrityError) -> bool:
+    """Only the username-unique constraint means USERNAME_TAKEN — any other
+    IntegrityError (e.g. a bad tenant/branch/created_by FK) is a real
+    creation failure and shouldn't be reported to the caller as a username
+    collision. Mirrors features/ims/service.py's same fix."""
+    constraint = getattr(getattr(err.orig, "diag", None), "constraint_name", None)
+    return constraint == "restro_credentials_username_key"
+
+
 class RestroCredentialService:
     @staticmethod
     def create(
@@ -60,9 +69,12 @@ class RestroCredentialService:
             except Exception as e:
                 logger.error(f"Failed to start RMS trial for tenant {tenant_id}: {e}")
             return {"success": True, "credential": cred}
-        except IntegrityError:
+        except IntegrityError as e:
             db.rollback()
-            return {"success": False, "error_code": "USERNAME_TAKEN"}
+            if _is_username_conflict(e):
+                return {"success": False, "error_code": "USERNAME_TAKEN"}
+            logger.error(f"Restro credential creation failed: {str(e)}")
+            return {"success": False, "error_code": "CREATION_FAILED"}
         except Exception as e:
             db.rollback()
             logger.error(f"Restro credential creation failed: {str(e)}")
@@ -98,9 +110,12 @@ class RestroCredentialService:
                 extra={"tenant_id": tenant_id, "cred_id": cred_id},
             )
             return {"success": True, "credential": updated}
-        except IntegrityError:
+        except IntegrityError as e:
             db.rollback()
-            return {"success": False, "error_code": "USERNAME_TAKEN"}
+            if _is_username_conflict(e):
+                return {"success": False, "error_code": "USERNAME_TAKEN"}
+            logger.error(f"Restro credential update failed: {str(e)}")
+            return {"success": False, "error_code": "UPDATE_FAILED"}
         except Exception as e:
             db.rollback()
             logger.error(f"Restro credential update failed: {str(e)}")

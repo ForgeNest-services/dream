@@ -8,6 +8,15 @@ from features.ims.roles import IMSRole
 from features.hotel_pms.audit_repository import AuditRepository
 from utils.logger import logger
 
+
+def _is_username_conflict(err: IntegrityError) -> bool:
+    """Only the username-unique constraint means USERNAME_TAKEN — any other
+    IntegrityError (e.g. a bad tenant/branch/created_by FK) is a real
+    creation failure and shouldn't be reported to the caller as a username
+    collision."""
+    constraint = getattr(getattr(err.orig, "diag", None), "constraint_name", None)
+    return constraint == "ims_credentials_username_key"
+
 BRANCH_SCOPED_ROLES = {
     IMSRole.MANAGER.value,
     IMSRole.STOREKEEPER.value,
@@ -21,9 +30,12 @@ class IMSCredentialService:
         tenant_id: str,
         created_by: str,
         role: str,
+        name: str,
         username: str,
         password: str,
         branch_id: str | None,
+        email: str | None = None,
+        phone: str | None = None,
     ) -> dict:
         if role in BRANCH_SCOPED_ROLES:
             if not branch_id:
@@ -33,18 +45,15 @@ class IMSCredentialService:
         else:
             branch_id = None
 
-        existing = IMSCredentialRepository.get_by_tenant_branch_and_role(
-            db, tenant_id, branch_id, role
-        )
-        if existing:
-            return {"success": False, "error_code": "ROLE_ALREADY_HAS_CREDENTIAL"}
-
         try:
             cred = IMSCredentialRepository.create(
                 db,
                 tenant_id=tenant_id,
                 branch_id=branch_id,
                 role=role,
+                name=name,
+                email=email,
+                phone=phone,
                 username=username,
                 password_hash=hash_password(password),
                 created_by=created_by,
@@ -63,9 +72,12 @@ class IMSCredentialService:
             except Exception as e:
                 logger.error(f"Failed to start IMS trial for tenant {tenant_id}: {e}")
             return {"success": True, "credential": cred}
-        except IntegrityError:
+        except IntegrityError as e:
             db.rollback()
-            return {"success": False, "error_code": "USERNAME_TAKEN"}
+            if _is_username_conflict(e):
+                return {"success": False, "error_code": "USERNAME_TAKEN"}
+            logger.error(f"IMS credential creation failed: {str(e)}")
+            return {"success": False, "error_code": "CREATION_FAILED"}
         except Exception as e:
             db.rollback()
             logger.error(f"IMS credential creation failed: {str(e)}")
@@ -80,6 +92,9 @@ class IMSCredentialService:
         db: Session,
         tenant_id: str,
         cred_id: str,
+        name: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
         username: str | None = None,
         password: str | None = None,
     ) -> dict:
@@ -90,16 +105,20 @@ class IMSCredentialService:
         try:
             password_hash = hash_password(password) if password else None
             updated = IMSCredentialRepository.update(
-                db, cred, username=username, password_hash=password_hash
+                db, cred, name=name, email=email, phone=phone,
+                username=username, password_hash=password_hash
             )
             logger.info(
                 f"IMS credential updated: {updated.id}",
                 extra={"tenant_id": tenant_id, "cred_id": cred_id},
             )
             return {"success": True, "credential": updated}
-        except IntegrityError:
+        except IntegrityError as e:
             db.rollback()
-            return {"success": False, "error_code": "USERNAME_TAKEN"}
+            if _is_username_conflict(e):
+                return {"success": False, "error_code": "USERNAME_TAKEN"}
+            logger.error(f"IMS credential update failed: {str(e)}")
+            return {"success": False, "error_code": "UPDATE_FAILED"}
         except Exception as e:
             db.rollback()
             logger.error(f"IMS credential update failed: {str(e)}")
@@ -171,6 +190,7 @@ class IMSAuthService:
             role=cred.role,
             cred_id=cred.id,
             branch_id=cred.branch_id,
+            name=cred.name,
         )
         AuditRepository.write(
             db,
@@ -190,6 +210,7 @@ class IMSAuthService:
             "success": True,
             "token": token,
             "role": cred.role,
+            "name": cred.name,
             "tenant_id": cred.tenant_id,
             "branch_id": cred.branch_id,
             "expires_at": expires_at,

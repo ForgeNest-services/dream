@@ -142,6 +142,7 @@ const toProduct = (p: ProductDto): Product => ({
   description: p.description ?? undefined,
   taxable: p.taxable ?? undefined,
   taxRate: numOrUndefined(p.tax_rate),
+  hsCode: p.hs_code ?? undefined,
   createdAt: p.created_at,
 });
 const toMovement = (m: StockMovementDto): StockMovement => ({
@@ -234,13 +235,33 @@ const toInvoice = (i: InvoiceDto): Invoice => ({
       taxable: l.taxable,
       taxRate: num(l.tax_rate),
       vatAmount: num(l.vat_amount),
+      hsCode: l.hs_code,
     }),
   ),
   paymentMethod: i.payment_method as PaymentMethod,
   paidAmount: num(i.paid_amount),
   status: i.status,
   userId: i.user_id,
+  enteredByName: i.entered_by_name,
   note: i.note ?? undefined,
+  // IRD Annex-5 seller/buyer snapshot — captured at issue time, must never
+  // fall back to the live company profile once an invoice exists (the
+  // print page's own fallback to company/customer data is only meant to
+  // cover the small window before this mapper existed / a null snapshot).
+  sellerName: i.seller_name,
+  sellerAddress: i.seller_address,
+  sellerPan: i.seller_pan,
+  buyerName: i.buyer_name,
+  buyerPan: i.buyer_pan,
+  buyerAddress: i.buyer_address,
+  isReprint: i.is_reprint,
+  reprintOf: i.reprint_of,
+  reprintNumber: i.reprint_number,
+  printedByName: i.printed_by_name,
+  isCreditNote: i.is_credit_note,
+  originalInvoiceId: i.original_invoice_id,
+  noteReason: i.note_reason,
+  cbmsSynced: i.cbms_synced,
 });
 
 /** A product entered on a purchase bill — either an existing one or a brand new one. */
@@ -443,7 +464,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const u: User = {
         id: stored.username,
         username: stored.username,
-        name: stored.username,
+        name: stored.name,
         role: stored.role as User["role"],
         branchIds: stored.branchId ? [stored.branchId] : [],
         active: true,
@@ -466,19 +487,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
           message: res.error?.message,
         };
       }
-      const { token, role, branch_id, expires_at } = res.data;
+      const { token, role, name, branch_id, expires_at } = res.data;
       authStorage.save({
         token,
         role,
         tenantId: res.data.tenant_id,
         branchId: branch_id,
         username: username.trim(),
+        name: name ?? username.trim(),
         expiresAt: expires_at,
       });
       const u: User = {
         id: username.trim(),
         username: username.trim(),
-        name: username.trim(),
+        name: name ?? username.trim(),
         role: role as User["role"],
         branchIds: branch_id ? [branch_id] : [],
         active: true,
@@ -769,6 +791,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             description: p.description,
             taxable: p.taxable !== false,
             tax_rate: p.taxRate,
+            hs_code: p.hsCode,
             branch_id_for_stock: stockBranchId,
             variants: vs,
           });
@@ -827,6 +850,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             description: patch.description,
             taxable: patch.taxable !== false,
             tax_rate: patch.taxRate,
+            hs_code: patch.hsCode,
             variants: vs,
           });
         try {

@@ -57,6 +57,7 @@ class IMSProductService:
         description: str | None,
         taxable: bool,
         tax_rate: Decimal | None,
+        hs_code: str | None,
         variants: list[dict],
     ) -> dict:
         if not IMSCategoryRepository.get_by_id(db, tenant_id, category_id):
@@ -88,6 +89,7 @@ class IMSProductService:
                 description=description,
                 taxable=taxable,
                 tax_rate=tax_rate,
+                hs_code=hs_code,
             )
         except IntegrityError:
             db.rollback()
@@ -151,6 +153,7 @@ class IMSProductService:
         description: str | None,
         taxable: bool,
         tax_rate: Decimal | None,
+        hs_code: str | None,
         variants: list[dict],
     ) -> dict:
         product = IMSProductRepository.get_by_id(db, tenant_id, product_id)
@@ -185,6 +188,7 @@ class IMSProductService:
                 description=description,
                 taxable=taxable,
                 tax_rate=tax_rate,
+                hs_code=hs_code,
             )
         except IntegrityError:
             db.rollback()

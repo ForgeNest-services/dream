@@ -21,6 +21,7 @@ import { useApp } from "@/context/app-store";
 import { auditLogApi, type AuditLogEntryDto } from "@/lib/audit-log-api";
 import type { PageMeta } from "@/lib/api-client";
 import { cbmsSyncLogApi, type CbmsSyncLogEntry } from "@/lib/invoices-api";
+import { staffCredentialsApi, type StaffCredentialDto } from "@/lib/staff-credentials-api";
 import { createFileRoute } from "@tanstack/react-router";
 import { Check, Info, Lock, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -53,6 +54,18 @@ function SettingsPage() {
   const [fyStart, setFyStart] = useState("");
   const [deleteFyId, setDeleteFyId] = useState<string | null>(null);
   const [deletingFy, setDeletingFy] = useState(false);
+  // Per-branch user counts on the Branches tab — app.users is mock/seed
+  // data, never real credentials, so this is fetched separately rather than
+  // read off that (see UsersSection, which fetches this same list).
+  const [credentials, setCredentials] = useState<StaffCredentialDto[]>([]);
+  useEffect(() => {
+    staffCredentialsApi
+      .list()
+      .then((r) => setCredentials(r.data ?? []))
+      .catch(() => {
+        // Non-fatal — the branches table still renders, just without counts.
+      });
+  }, []);
 
   return (
     <div className="mx-auto max-w-[1100px] px-4 py-6">
@@ -69,7 +82,13 @@ function SettingsPage() {
           <TabsTrigger value="fiscal">Fiscal years</TabsTrigger>
           <TabsTrigger value="units">Units &amp; brands</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
-          <TabsTrigger value="ird">IRD / CBMS</TabsTrigger>
+          {/* CBMS real-time sync only applies to a VAT-registered business
+              (दफा ६.४क) — hidden for PAN-only, matching RMS's SettingsView.
+              Kept visible while branch/tenant data is still loading so it
+              doesn't flash in/out for a VAT tenant on page load. */}
+          {(!app.branchesReady || app.company.isVatRegisteredTenant) && (
+            <TabsTrigger value="ird">IRD / CBMS</TabsTrigger>
+          )}
           <TabsTrigger value="audit">Activity Log</TabsTrigger>
         </TabsList>
 
@@ -235,7 +254,7 @@ function SettingsPage() {
                     <td className="num px-3 py-2.5">{b.code}</td>
                     <td className="px-3 py-2.5 text-muted-foreground">{b.address}</td>
                     <td className="num px-3 py-2.5 text-right">
-                      {app.users.filter((u) => u.branchIds.includes(b.id)).length}
+                      {credentials.filter((c) => c.branch_id === b.id).length}
                     </td>
                   </tr>
                 ))}
@@ -304,9 +323,11 @@ function SettingsPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="ird" className="mt-4">
-          <CbmsCredentialsCard />
-        </TabsContent>
+        {(!app.branchesReady || app.company.isVatRegisteredTenant) && (
+          <TabsContent value="ird" className="mt-4">
+            <CbmsCredentialsCard />
+          </TabsContent>
+        )}
 
         <TabsContent value="audit" className="mt-4">
           <AuditLogCard />
