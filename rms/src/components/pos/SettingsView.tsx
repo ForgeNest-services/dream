@@ -414,6 +414,52 @@ function VatSettingsCard({
           />
         </div>
       )}
+      <HsCodeInput settings={settings} updateSettings={updateSettings} flashSaved={flashSaved} />
+    </div>
+  );
+}
+
+function HsCodeInput({
+  settings,
+  updateSettings,
+  flashSaved,
+}: {
+  settings: Settings;
+  updateSettings: (patch: Partial<Settings>) => Promise<void>;
+  flashSaved: () => void;
+}) {
+  const [draft, setDraft] = useState(settings.defaultHsCode ?? "");
+
+  useEffect(() => {
+    setDraft(settings.defaultHsCode ?? "");
+  }, [settings.defaultHsCode]);
+
+  const save = async () => {
+    const trimmed = draft.trim() || undefined;
+    if (trimmed === settings.defaultHsCode) return;
+    await updateSettings({ defaultHsCode: trimmed });
+    flashSaved();
+  };
+
+  return (
+    <div className="mt-4 space-y-2">
+      <Label className="text-xs">Default HS Code</Label>
+      <p className="text-[11px] text-muted-foreground">
+        Harmonized System code printed on every bill line — required by IRD Annexure 6 for all
+        businesses (VAT and PAN). Restaurants typically use{" "}
+        <span className="font-mono font-medium">2106.90</span> (prepared food). Leave blank if
+        unknown — IRD requires it, but you can set it once confirmed.
+      </p>
+      <Input
+        className="h-12 font-mono"
+        placeholder="e.g. 2106.90"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        }}
+      />
     </div>
   );
 }

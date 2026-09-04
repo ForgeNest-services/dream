@@ -2134,20 +2134,32 @@ def export_standard_view(
     export_credit_notes for those)."""
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only owner or manager can export reports")
-    invoices, _ = IMSInvoiceRepository.list_for_tenant(
+    all_invoices, _ = IMSInvoiceRepository.list_for_tenant(
         db, staff["tenant_id"], branch_id, None, fiscal_year_id, None, None,
         None, bs_from, bs_to, 0, _EXPORT_LIMIT,
     )
-    invoices = [i for i in invoices if not i.is_credit_note]
+    # Build a set of IDs that have a credit note issued against them so we
+    # can report Is_bill_Active accurately per Annex-5.
+    credit_noted_ids = {
+        i.original_invoice_id
+        for i in all_invoices
+        if i.is_credit_note and i.original_invoice_id
+    }
+    invoices = [i for i in all_invoices if not i.is_credit_note]
     columns = [
         "SN", "Bill No.", "Date (BS)", "Fiscal Year",
         "Buyer Name", "Buyer PAN", "Seller PAN",
-        "Total Sales", "Taxable (VAT)", "VAT",
+        "Gross Amount", "Discount",
+        "Taxable (VAT)", "VAT", "Tax Exempt",
+        "Total Amount",
         "Excisable Amt", "Excise",
         "Taxable (HST)", "HST",
         "Amt for ESF", "ESF",
-        "Export Sales", "Tax Exempt",
-        "Is Bill Printed", "Entered By", "Printed By",
+        "Export Sales",
+        "Sync with IRD", "Is Bill Printed", "Is Bill Active",
+        "Printed Time", "Entered By", "Printed By",
+        "Is Realtime", "Payment Method",
+        "VAT Refund Amount", "Transaction ID",
     ]
     rows = [
         [
@@ -2158,20 +2170,30 @@ def export_standard_view(
             i.buyer_name or "Walk-in",
             i.buyer_pan or "",
             i.seller_pan or "",
-            i.total_amount or Decimal("0"),
+            i.gross_amount or Decimal("0"),
+            i.discount_amount or Decimal("0"),
             i.taxable_amount or Decimal("0"),
             i.vat_amount or Decimal("0"),
-            # IMS has no excise/HST/ESF/export-sales concept — structurally
-            # N/A for a retail/inventory invoice, not zero (matches RMS's
-            # own Standard View export for the same absent fields).
+            i.exempt_amount or Decimal("0"),
+            i.total_amount or Decimal("0"),
+            # IMS has no excise/HST/ESF/export-sales concept — N/A, not 0,
+            # to distinguish "zero value" from "not applicable".
             "N/A", "N/A",
             "N/A", "N/A",
             "N/A", "N/A",
             "N/A",
-            i.exempt_amount or Decimal("0"),
+            "Yes" if i.cbms_synced else "No",
             "Yes" if i.is_bill_printed else "No",
+            "No" if i.id in credit_noted_ids else "Yes",
+            i.printed_time.strftime("%Y-%m-%d %H:%M:%S") if i.printed_time else "",
             i.entered_by_name or "",
             i.printed_by_name or "",
+            # IMS does not yet model Is_realtime/VAT_Refund/Transaction_Id —
+            # these are on RMS's RestroOrder but not IMSInvoice. N/A for now.
+            "N/A",
+            i.payment_method or "",
+            "N/A",
+            "N/A",
         ]
         for idx, i in enumerate(invoices, start=1)
     ]
