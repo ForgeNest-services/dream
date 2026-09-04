@@ -128,7 +128,7 @@ not a UI preference** (दफा ६.२ङ / Annexure ६ १.क.ई's own foo
 
 | Clause | Requirement | Status |
 |---|---|---|
-| ६.३क | Pre-formatted Sales Register, Purchase Register, Sales Return, Purchase Return, ready for CBMS Excel upload | ✅ **RMS**: Sales Register, Annexure 13, Monthly VAT Summary, Standard View (Annex-5), and Credit Notes register all exist as working export endpoints (`GET /restro/reports/{sales-register,annexure-13,monthly-vat-summary,standard-view,credit-notes}/export`), XLSX+PDF, with frontend buttons in `ReportsView.tsx`'s "IRD Reports" card — VAT registers gated to VAT-registered tenants, Standard View/Credit Notes shown to every tenant. No Purchase Register (RMS has no purchasing — correctly N/A). **Still open**: exact IRD column layout not byte-verified against Annexure ६'s Nepali headers (see §5) — built to a standard structure, flag for confirmation before real submission. IMS: not re-verified this pass. |
+| ६.३क | Pre-formatted Sales Register, Purchase Register, Sales Return, Purchase Return, ready for CBMS Excel upload | ✅ **RMS**: Sales Register, Annexure 13, Monthly VAT Summary, Standard View (Annex-5), and Credit Notes register all exist as working export endpoints (`GET /restro/reports/{sales-register,annexure-13,monthly-vat-summary,standard-view,credit-notes}/export`), XLSX+PDF, with frontend buttons in `ReportsView.tsx`'s "IRD Reports" card — VAT registers gated to VAT-registered tenants, Standard View/Credit Notes shown to every tenant. No Purchase Register (RMS has no purchasing — correctly N/A). **Column layout now matches Annexure ６ exactly** (2026-09-04): 12-column IRD template including Tax-exempt and Export columns, landscape PDF. ✅ **IMS**: Sales Register (`/reports/vat-register/export`) and Purchase Register (`/reports/purchases/export`) both updated to the same 12-column IRD template (2026-09-04). |
 | ६.३ख | **All user activity (User Activity Log)** stored in DB | ✅ — `audit_log` table, append-only (DB grants: INSERT+SELECT only, no UPDATE/DELETE — see model docstring). |
 | ६.३ग | Audit Trail Report / Activity Log viewable + filterable from the **front end** | ✅ — RMS: "Activity Log" tab in `SettingsView.tsx` (Owner/Manager only, entity/action filters, search, pagination). IMS: same pattern in `_app.settings.tsx`. |
 | ६.३घ | **Once entered, transaction data cannot be removed or modified — from front end OR back end** | ✅ — the heaviest single piece of work this session. Two different DB-level mechanisms (not app-code checks, so they hold even against a bug or a direct DB client): <br>• **IMS**: restricted Postgres role `srota_app` with column-level `REVOKE UPDATE/DELETE`, per-table allowlist of "follow-on" columns still writable (`_IMMUTABLE_TABLES` in `api/core/seed.py`). <br>• **RMS**: `BEFORE UPDATE/DELETE` Postgres triggers (`restro_orders_immutability()`, `restro_order_lines_immutability()`, `api/core/seed.py`) — freezes a row once `status` becomes `paid`/`cancelled`, needed because RMS legitimately rewrites the same columns many times while `status='draft'`. Verified adversarially, including as the Postgres superuser. |
@@ -216,12 +216,15 @@ column layouts (दफा ६.३क references these). The register layouts spe
 
 **Status — RMS**: Sales Register export exists and is UI-reachable
 (`ReportsView.tsx`'s "IRD Reports" card). Purchase Register is correctly
-N/A (RMS has no purchasing). **The exact IRD template hasn't been confirmed
-against these Annexure ६ Nepali column headers line-by-line** — built to the
-widely-used standard structure (SN, Date, Doc No, Party, PAN, Taxable, VAT,
-Total) and flagging for confirmation before real submission. IMS: not
-re-verified this pass — `docs/Srota_IRD_Compliance_Checklist.md` may still
-be accurate for it, check before assuming parity with RMS's current state.
+N/A (RMS has no purchasing). **Column layout now matches the PDF Annexure ６
+template exactly** (2026-09-04 pass): Date, Bill No., Buyer, Buyer PAN,
+Total Amount, Taxable Value, VAT, Tax-exempt Amount, Export Value, Export
+Country, Export Customs No., Export Customs Date — 12 columns, PDF rendered
+in landscape A4 (`wide=True`). Credit notes excluded from Sales Register
+(they appear only in the Credit Notes register). IMS: same column structure
+applied to both Sales Register (VAT register endpoint) and Purchase Register
+(which includes all 12 IRD columns including import/capital columns — filled
+with 0 for domestic-only businesses).
 
 **HS Code**: every Annexure ६ bill template has an एच.एस. कोड (HS Code)
 column per line item. Now implemented as a **branch-level default**

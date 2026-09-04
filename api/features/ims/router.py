@@ -1941,22 +1941,30 @@ def export_vat_register(
         None, bs_from, bs_to, 0, _EXPORT_LIMIT,
     )
     parties = {p.id: p for p in IMSPartyRepository.list_for_tenant(db, staff["tenant_id"], None, None, 0, _EXPORT_LIMIT)[0]}
-    # Standard VAT sales register layout — SN/Date/Invoice/Buyer/PAN/
-    # Taxable/VAT/Total (IRD Electronic Billing Procedure convention;
-    # cross-check against the exact prescribed Annexure format before a
-    # real submission — no authoritative template was available to build
-    # against directly, see docs/Srota_IRD_Compliance_Checklist.md).
-    columns = ["SN", "Date (BS)", "Invoice", "Buyer", "Buyer PAN", "Taxable", "VAT", "Total"]
+    # IRD Annexure-6 Sales Register (धिक्री खाता) — credit notes excluded
+    # (they belong in the Credit Notes register, not here).
+    real_invoices = [i for i in items if not i.is_credit_note]
+    columns = [
+        "Date (BS)", "Invoice No.", "Buyer", "Buyer PAN",
+        "Total Amount", "Taxable Value", "VAT",
+        "Tax-exempt Amount",
+        "Export Value", "Export Country", "Export Customs No.", "Export Customs Date",
+    ]
     rows = [
         [
-            idx, i.date_bs, i.number, parties.get(i.customer_id).name if i.customer_id in parties else "—",
+            i.date_bs, i.number,
+            parties.get(i.customer_id).name if i.customer_id in parties else "—",
             (parties.get(i.customer_id).pan if i.customer_id in parties else None) or "—",
-            i.taxable_amount, i.vat_amount, i.total_amount,
+            i.total_amount or Decimal("0"),
+            i.taxable_amount or Decimal("0"),
+            i.vat_amount or Decimal("0"),
+            max(Decimal("0"), (i.total_amount or Decimal("0")) - (i.taxable_amount or Decimal("0")) - (i.vat_amount or Decimal("0"))),
+            "—", "—", "—", "—",
         ]
-        for idx, i in enumerate(items, start=1)
+        for i in real_invoices
     ]
     tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
-    return _export_response(format, "Sales Register", columns, rows, _business_header_lines(tenant))
+    return _export_response(format, "Sales Register", columns, rows, _business_header_lines(tenant), wide=True)
 
 
 @router.get("/reports/purchases/export")
@@ -1974,22 +1982,34 @@ def export_purchase_report(
         db, staff["tenant_id"], branch_id, None, fiscal_year_id, q, bs_from, bs_to, 0, _EXPORT_LIMIT,
     )
     parties_full = {p.id: p for p in IMSPartyRepository.list_for_tenant(db, staff["tenant_id"], None, None, 0, _EXPORT_LIMIT)[0]}
-    # Standard VAT purchase register layout — SN/Date/Bill No/Supplier/PAN/
-    # Taxable/VAT/Total. VAT per purchase is the sum of its lines'
-    # vat_amount (purchase itself has no VAT breakdown column — only its
-    # lines do, see IMSPurchaseLine.vat_amount).
-    columns = ["SN", "Date (BS)", "Bill No.", "Supplier", "Supplier PAN", "Taxable", "VAT", "Total"]
+    # IRD Annexure-6 Purchase Register (खरिद खाता). Import/capital columns
+    # are always 0 for domestic-only businesses — included for IRD template
+    # completeness (CBMS Excel upload expects all columns present).
+    columns = [
+        "Date (BS)", "Bill/Customs No.", "Supplier", "Supplier PAN",
+        "Total Purchase", "Taxable Purchase Value", "VAT",
+        "Tax-exempt Purchase",
+        "Taxable Import Value", "Import VAT",
+        "Capital Purchase/Import", "Capital VAT",
+    ]
     rows = []
-    for idx, p in enumerate(items, start=1):
+    for p in items:
         party = parties_full.get(p.party_id) if p.party_id else None
         line_vat = sum((Decimal(str(line.vat_amount or 0)) for line in p.lines), Decimal("0"))
-        taxable = Decimal(str(p.items_total or 0)) - line_vat
+        taxable_value = Decimal(str(p.items_total or 0)) - line_vat
+        total = Decimal(str(p.bill_amount or 0))
+        tax_exempt = max(Decimal("0"), total - taxable_value - line_vat)
         rows.append([
-            idx, p.date_bs, p.bill_no or p.number, party.name if party else "Direct",
-            (party.pan if party else None) or "—", taxable, line_vat, p.bill_amount,
+            p.date_bs, p.bill_no or p.number,
+            party.name if party else "Direct",
+            (party.pan if party else None) or "—",
+            total, taxable_value, line_vat,
+            tax_exempt,
+            Decimal("0"), Decimal("0"),
+            Decimal("0"), Decimal("0"),
         ])
     tenant = TenantRepository.get_by_id(db, staff["tenant_id"])
-    return _export_response(format, "Purchase Register", columns, rows, _business_header_lines(tenant))
+    return _export_response(format, "Purchase Register", columns, rows, _business_header_lines(tenant), wide=True)
 
 
 @router.get("/reports/annexure-13/export")
