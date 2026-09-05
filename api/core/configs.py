@@ -32,9 +32,6 @@ class Settings:
     S3_BUCKET: str = os.getenv("S3_BUCKET", "dream-uploads")
     S3_REGION: str = os.getenv("S3_REGION", "us-east-1")
 
-    # Symmetric key for encrypting secrets at rest (e.g. a tenant's IRD CBMS
-    # Taxpayer Portal password — see core/crypto.py). Generate with:
-    # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     CBMS_ENCRYPTION_KEY: str = os.getenv("CBMS_ENCRYPTION_KEY", "")
 
     IRD_CBMS_URL: str = os.getenv("IRD_CBMS_URL", "https://cbapi.ird.gov.np/api/bill")

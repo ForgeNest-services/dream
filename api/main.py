@@ -262,15 +262,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Prod: locked to the real frontend domains (built from the same
-# *_VIRTUAL_HOST vars nginx-proxy itself reads — see core/configs.py's
-# CORS_ALLOWED_ORIGINS). Dev (ENVIRO unset or anything but "prod"): wide
-# open, matching the permissive local-dev experience this always had.
-# allow_credentials is False in both cases — auth here is a Bearer token
-# in the Authorization header, never a cookie, so CORS "credentials"
-# (cookies/HTTP auth/TLS client certs) were never actually in play; "*"
-# origin + allow_credentials=True is also invalid per the CORS spec itself
-# (browsers reject it), which the old blanket config silently violated.
+# prod: real domains only; dev: wide open
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ALLOWED_ORIGINS if settings.ENVIRO == "prod" else ["*"],
