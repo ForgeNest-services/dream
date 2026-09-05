@@ -271,6 +271,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def rate_limit_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    for k, v in getattr(request.state, "rate_limit_headers", {}).items():
+        response.headers[k] = v
+    return response
+
+
 app.include_router(auth_router)
 app.include_router(branches_router)
 app.include_router(hotel_pms_router)
@@ -288,6 +297,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         error_code="HTTP_ERROR",
         message=str(exc.detail),
         status_code=exc.status_code,
+        headers=exc.headers,
     )
 
 

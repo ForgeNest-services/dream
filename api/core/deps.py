@@ -1,5 +1,5 @@
 from functools import lru_cache
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.security import decode_token
@@ -87,7 +87,7 @@ def get_staff_token(
 
 
 def _build_staff_dep(decode_fn, role: str | None):
-    def _dep(token: str = Depends(get_staff_token)) -> dict:
+    def _dep(request: Request, token: str = Depends(get_staff_token)) -> dict:
         if not token:
             raise HTTPException(401, "Unauthorized")
 
@@ -99,12 +99,15 @@ def _build_staff_dep(decode_fn, role: str | None):
         if role and staff_role != role:
             raise HTTPException(403, "Insufficient role")
 
-        return {
+        staff = {
             "tenant_id": payload["tenant_id"],
             "role": staff_role,
             "cred_id": payload.get("cred_id"),
             "branch_id": payload.get("branch_id"),
         }
+        request.state.tenant_id = staff["tenant_id"]
+        request.state.cred_id = staff["cred_id"]
+        return staff
 
     return _dep
 
@@ -131,6 +134,8 @@ def require_ims_staff(role: str | None = None):
 
 
 def require_module_access(app_code: str):
+    """Gates an endpoint behind an active subscription (trial or paid).
+    Not currently attached to any router — add when ready to enforce billing."""
     def _dep(current: dict = Depends(require_tenant_user), db: Session = Depends(get_db)):
         from features.subscriptions.service import SubscriptionService
         tenant_id = current["user"].tenant_id
@@ -151,6 +156,8 @@ def require_tenant_scope(
     token: str = Depends(get_token_from_header),
     db: Session = Depends(get_db),
 ) -> dict:
+    """Accepts either a platform user JWT or any app-staff JWT. Returns a
+    normalized dict with tenant_id/role/source ("platform"|"staff")."""
     if not token:
         raise HTTPException(401, "Unauthorized")
 

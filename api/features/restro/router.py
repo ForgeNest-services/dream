@@ -5,6 +5,7 @@ from rq import Retry
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_restro_staff
 from core.queue import job_queue
+from core.rate_limit import rate_limit
 from jobs.cbms_jobs import sync_document_job
 from features.cbms.credential_service import CBMSCredentialRepository
 from features.restro.cbms_service import build_cbms_payload
@@ -333,7 +334,12 @@ def get_tenant_info(
 # ---------------------------------------------------------------------------
 
 @router.post("/auth/login")
-def staff_login(data: StaffLoginRequest, request: Request, db: Session = Depends(get_db)):
+def staff_login(
+    data: StaffLoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: None = rate_limit("auth"),
+):
     result = RestroAuthService.login(db, data.username, data.password, terminal_ip=_client_ip(request))
 
     if not result["success"]:
