@@ -1406,6 +1406,7 @@ def list_orders(
     limit: int | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """Simple non-paginated fetch — used by the store to keep a live cache
     of recent orders (kitchen board, delivery view, dashboard). For the
@@ -1512,6 +1513,7 @@ def create_order(
     data: CreateOrderRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     # Snapshot the staff member's display name (not login username) so the
@@ -2869,6 +2871,7 @@ def export_sales_register(
     bs_to: str | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     """IRD Annexure-6 Sales Register (धिक्री खाता) — Date, Bill No, Buyer,
     PAN, Total/Taxable/VAT/Tax-exempt, and export columns (all '—' for
