@@ -1276,6 +1276,11 @@ _ORDER_ERROR_MAP = {
         "This table already has an open bill. Open the existing order instead.",
         409,
     ),
+    "BILL_NUMBER_CONFLICT": (
+        "BILL_NUMBER_CONFLICT",
+        "Could not assign a bill number for this branch. Please contact support.",
+        409,
+    ),
     "ORDER_NOT_EDITABLE": (
         "ORDER_NOT_EDITABLE",
         "This order is closed — it can't be edited.",
@@ -1347,6 +1352,11 @@ _ORDER_ERROR_MAP = {
     "CREATION_FAILED": ("CREATION_FAILED", "Failed to create order.", 500),
     "ORDER_NOT_PAID": ("ORDER_NOT_PAID", "Only paid orders can have a credit note issued.", 409),
     "ALREADY_CREDIT_NOTE": ("ALREADY_CREDIT_NOTE", "This order is already a credit note.", 409),
+    "CREDIT_NOTE_ALREADY_ISSUED": (
+        "CREDIT_NOTE_ALREADY_ISSUED",
+        "A credit note has already been issued for this bill.",
+        409,
+    ),
     "ABBREVIATED_INVOICE_LIMIT_EXCEEDED": (
         "ABBREVIATED_INVOICE_LIMIT_EXCEEDED",
         "Abbreviated bills can't be issued above Rs 10,000 taxable value — switch to a full VAT bill.",

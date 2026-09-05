@@ -1,0 +1,62 @@
+{
+  "pan": {
+    "tenant_id": "e3a1f574-9b58-46c1-a178-29f5cf5f060b",
+    "tenant_name": "RMS Test PAN Pvt Ltd",
+    "pan": "600000101",
+    "is_vat_registered": false,
+    "branch_id": "11f27932-bb34-46e0-bd9a-afb0c294f4e5",
+    "branch_code": "PAN01",
+    "credentials": {
+      "owner": {
+        "username": "pan-owner",
+        "password": "TestPass123!",
+        "cred_id": "a17df9b3-afa5-4a38-a64d-b021eea9488e"
+      },
+      "manager": {
+        "username": "pan-manager",
+        "password": "TestPass123!",
+        "cred_id": "3dd82a0a-f5dd-4cd6-8a1d-d746c51563b0"
+      },
+      "waiter": {
+        "username": "pan-waiter",
+        "password": "TestPass123!",
+        "cred_id": "3d1e1c8a-05ae-47e4-bd2c-f99b45b639ac"
+      },
+      "chef": {
+        "username": "pan-chef",
+        "password": "TestPass123!",
+        "cred_id": "e3cd9867-ac75-4824-b05c-0747b3737ff1"
+      }
+    }
+  },
+  "vat": {
+    "tenant_id": "4add5224-38c0-46eb-a635-ea1fbf1401a6",
+    "tenant_name": "RMS Test VAT Pvt Ltd",
+    "pan": "600000102",
+    "is_vat_registered": true,
+    "branch_id": "0c6b2a77-2eec-4f1e-8206-005e063e01b4",
+    "branch_code": "VAT01",
+    "credentials": {
+      "owner": {
+        "username": "vat-owner",
+        "password": "TestPass123!",
+        "cred_id": "f73cef27-17ee-4080-8bd1-c0863f14efe6"
+      },
+      "manager": {
+        "username": "vat-manager",
+        "password": "TestPass123!",
+        "cred_id": "e9075fb1-d919-438f-a5ed-a14f7a20c2e5"
+      },
+      "waiter": {
+        "username": "vat-waiter",
+        "password": "TestPass123!",
+        "cred_id": "8110c359-2cd9-4dc7-84bf-4b5c9c1437e9"
+      },
+      "chef": {
+        "username": "vat-chef",
+        "password": "TestPass123!",
+        "cred_id": "e869440b-a481-4c0a-b13b-61aa73828d1b"
+      }
+    }
+  }
+}
