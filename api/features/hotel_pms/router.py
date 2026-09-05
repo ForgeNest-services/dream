@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_hotel_pms_staff
+from core.rate_limit import rate_limit
 from utils.helpers import success_response, error_response
 from utils.paging import parse_paging, build_meta
 from features.hotel_pms.schemas import (
@@ -47,7 +48,10 @@ router = APIRouter(prefix="/hotel-pms", tags=["hotel-pms"])
 # ---------------------------------------------------------------------------
 
 @router.post("/auth/login")
-def staff_login(data: StaffLoginRequest, db: Session = Depends(get_db)):
+def staff_login(
+    data: StaffLoginRequest, db: Session = Depends(get_db),
+    _: None = rate_limit("auth"),
+):
     result = HotelPMSAuthService.login(db, data.username, data.password)
 
     if not result["success"]:
@@ -80,6 +84,7 @@ owner_dep = [Depends(require_tenant_user)]
 def list_credentials(
     current_user: dict = Depends(require_role(["owner", "manager"])),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     user = current_user["user"]
     creds = HotelPMSCredentialService.list_for_tenant(db, user.tenant_id)
@@ -93,6 +98,7 @@ def create_credential(
     data: CreateCredentialRequest,
     current_user: dict = Depends(require_role(["owner", "manager"])),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     user = current_user["user"]
     result = HotelPMSCredentialService.create(
@@ -140,6 +146,7 @@ def update_credential(
     data: UpdateCredentialRequest,
     current_user: dict = Depends(require_role(["owner", "manager"])),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     user = current_user["user"]
     result = HotelPMSCredentialService.update(
@@ -169,6 +176,7 @@ def delete_credential(
     cred_id: str,
     current_user: dict = Depends(require_role(["owner", "manager"])),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     user = current_user["user"]
     result = HotelPMSCredentialService.delete(db, tenant_id=user.tenant_id, cred_id=cred_id)
@@ -200,6 +208,7 @@ def list_room_types(
     branch_id: str,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = RoomTypeService.list_for_branch(db, staff["tenant_id"], branch_id)
@@ -216,6 +225,7 @@ def create_room_type(
     data: CreateRoomTypeRequest,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("app_owner", "manager"):
         from fastapi import HTTPException
@@ -254,6 +264,7 @@ def update_room_type(
     data: UpdateRoomTypeRequest,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("app_owner", "manager"):
         from fastapi import HTTPException
@@ -290,6 +301,7 @@ def delete_room_type(
     room_type_id: str,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] != "app_owner":
         from fastapi import HTTPException
@@ -316,6 +328,7 @@ def list_rooms(
     per_page: int = Query(25, ge=1, le=100),
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     paging = parse_paging(page, per_page)
@@ -343,6 +356,7 @@ def create_room(
     data: CreateRoomRequest,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("app_owner", "manager"):
         from fastapi import HTTPException
@@ -388,6 +402,7 @@ def update_room(
     data: UpdateRoomRequest,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("app_owner", "manager"):
         from fastapi import HTTPException
@@ -432,6 +447,7 @@ def delete_room(
     room_id: str,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] != "app_owner":
         from fastapi import HTTPException
@@ -457,6 +473,7 @@ def list_guests(
     per_page: int = Query(25, ge=1, le=100),
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     paging = parse_paging(page, per_page)
     result = GuestService.list_paginated(
@@ -479,6 +496,7 @@ def create_guest(
     data: CreateGuestRequest,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     result = GuestService.create(
         db,
@@ -508,6 +526,7 @@ def update_guest(
     data: UpdateGuestRequest,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     result = GuestService.update(
         db,
@@ -539,6 +558,7 @@ def delete_guest(
     guest_id: str,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] != "app_owner":
         from fastapi import HTTPException
@@ -602,6 +622,7 @@ def list_bookings(
     per_page: int = Query(25, ge=1, le=100),
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     paging = parse_paging(page, per_page)
@@ -632,6 +653,7 @@ def bookings_availability(
     check_out: date = Query(..., description="YYYY-MM-DD"),
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = BookingService.available_rooms(
@@ -650,6 +672,7 @@ def create_booking(
     data: CreateBookingRequest,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = BookingService.create(
@@ -681,6 +704,7 @@ def update_booking(
     data: UpdateBookingRequest,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     payload = data.model_dump(exclude_unset=True)
@@ -705,6 +729,7 @@ def booking_check_in(
     booking_id: str,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = BookingService.check_in(db, staff["tenant_id"], branch_id, booking_id)
@@ -722,6 +747,7 @@ def booking_check_out(
     booking_id: str,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = BookingService.check_out(db, staff["tenant_id"], branch_id, booking_id)
@@ -739,6 +765,7 @@ def booking_cancel(
     booking_id: str,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = BookingService.cancel(db, staff["tenant_id"], branch_id, booking_id)
@@ -756,6 +783,7 @@ def booking_no_show(
     booking_id: str,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = BookingService.mark_no_show(db, staff["tenant_id"], branch_id, booking_id)
@@ -816,6 +844,7 @@ def generate_invoice(
     request: Request,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     result = InvoiceService.generate_from_booking(
         db,
@@ -844,6 +873,7 @@ def get_invoice(
     invoice_id: str,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     result = InvoiceService.get(db, invoice_id, staff["tenant_id"])
     if not result["success"]:
@@ -859,6 +889,7 @@ def reprint_invoice(
     request: Request,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     result = InvoiceService.reprint(
         db,
@@ -884,6 +915,7 @@ def issue_credit_note(
     request: Request,
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("app_owner", "manager"):
         from fastapi import HTTPException
@@ -916,6 +948,7 @@ def list_invoices(
     per_page: int = Query(25, ge=1, le=100),
     staff: dict = Depends(require_hotel_pms_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = InvoiceService.list_for_branch(
@@ -945,6 +978,7 @@ def list_audit_log(
     per_page: int = Query(50, ge=1, le=200),
     current_user: dict = Depends(require_role(["owner"])),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     user = current_user["user"]
     offset = (page - 1) * per_page
