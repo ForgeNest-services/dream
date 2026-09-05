@@ -2,6 +2,7 @@ from decimal import Decimal
 from datetime import datetime
 from sqlalchemy.orm import Session
 from features.ims.invoice_repository import IMSInvoiceRepository
+from shared_models import IMSInvoice
 from features.ims.product_repository import IMSProductRepository
 from features.ims.party_repository import IMSPartyRepository
 from features.ims.fiscal_year_service import IMSFiscalYearService
@@ -705,6 +706,25 @@ class IMSInvoiceService:
             return {"success": False, "error_code": "INVOICE_NOT_FOUND"}
         if original.kind not in ("tax", "abbreviated") or original.is_credit_note:
             return {"success": False, "error_code": "NOT_A_REGULAR_INVOICE"}
+        # A bill only ever gets one credit note — the check above only
+        # catches crediting a credit note itself (is_credit_note), never a
+        # SECOND credit-note call against the same original invoice, which
+        # was previously unguarded and would silently double-restore stock
+        # for every extra credit note issued (each one calls the stock
+        # restore below independently). Found via the ordered IMS test
+        # suite's real HTTP testing -- mirrors the identical real bug found
+        # and fixed in RMS's order_service.issue_credit_note this session.
+        existing_credit_note = (
+            db.query(IMSInvoice)
+            .filter(
+                IMSInvoice.tenant_id == tenant_id,
+                IMSInvoice.original_invoice_id == invoice_id,
+                IMSInvoice.is_credit_note.is_(True),
+            )
+            .first()
+        )
+        if existing_credit_note:
+            return {"success": False, "error_code": "ALREADY_CREDIT_NOTE"}
 
         fy_str = fiscal_year_from_ad(original.date) or ""
 

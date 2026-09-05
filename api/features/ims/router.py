@@ -1310,10 +1310,26 @@ def get_invoice(
     return success_response(data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"))
 
 
-def _enqueue_cbms_sync(source_app: str, document_type: str, document_id: str, tenant_id: str) -> None:
-    """1min/5min/15min backoff — only actually used for the RETRY
+def _enqueue_cbms_sync(source_app: str, document_type: str, document_id: str, tenant_id: str, db: Session) -> None:
+    """Enqueues a CBMS sync job only when the tenant actually needs one:
+    VAT-registered + CBMS credentials present. A PAN-only tenant or one
+    that never configured CBMS gets no RQ job at all — mirrors RMS's
+    identical guard (restro/router.py's own _enqueue_cbms_sync) exactly.
+    Previously missing here: every real invoice/credit-note unconditionally
+    enqueued a job that always completed as a real, wasted 'failed' row for
+    any tenant without CBMS set up — found via the ordered IMS test suite's
+    real HTTP testing (141 such rows accumulated for a single dummy tenant,
+    which in turn tripped a separate real bug in list_ims_cbms_sync_log's
+    datetime serialization, also fixed this session).
+
+    1min/5min/15min backoff — only actually used for the RETRY
     classification (transient IRD errors); synced/manual outcomes complete
     without RQ retrying at all. See jobs/cbms_jobs.py."""
+    tenant = TenantRepository.get_by_id(db, tenant_id)
+    if not tenant or not tenant.is_vat_registered:
+        return
+    if not CBMSCredentialRepository.get(db, tenant_id):
+        return
     job_queue.enqueue(
         sync_document_job,
         source_app,
@@ -1356,7 +1372,7 @@ def create_invoice(
     if not result["success"]:
         return _invoice_error(result)
     if result.get("invoice") and result["invoice"].kind in ("tax", "abbreviated"):
-        _enqueue_cbms_sync("ims", "invoice", result["invoice"].id, staff["tenant_id"])
+        _enqueue_cbms_sync("ims", "invoice", result["invoice"].id, staff["tenant_id"], db)
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation saved" if data.is_quotation else "Sale recorded",
@@ -1391,7 +1407,7 @@ def convert_quotation(
     if not result["success"]:
         return _invoice_error(result)
     if result.get("invoice") and result["invoice"].kind in ("tax", "abbreviated"):
-        _enqueue_cbms_sync("ims", "invoice", result["invoice"].id, staff["tenant_id"])
+        _enqueue_cbms_sync("ims", "invoice", result["invoice"].id, staff["tenant_id"], db)
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation converted to invoice",
@@ -1453,7 +1469,7 @@ def issue_credit_note(
         return _invoice_error(result)
     cn = result["invoice"]
     if cn and cn.original_invoice_id:
-        _enqueue_cbms_sync("ims", "credit_note", cn.id, staff["tenant_id"])
+        _enqueue_cbms_sync("ims", "credit_note", cn.id, staff["tenant_id"], db)
     return success_response(
         data=InvoiceData.model_validate(cn).model_dump(mode="json"),
         message="Credit note issued",
@@ -1590,8 +1606,21 @@ def list_ims_cbms_sync_log(
             "status": r.status,
             "cbms_response_code": r.cbms_response_code,
             "attempt_count": r.attempt_count,
-            "last_attempted_at": r.last_attempted_at,
-            "synced_at": r.synced_at,
+            # ISO strings, not raw datetime objects -- JSONResponse's plain
+            # json.dumps (unlike every other endpoint's Pydantic
+            # .model_dump(mode="json")) has no datetime encoder and raises
+            # TypeError. RMS's identical code has the same latent bug, but
+            # never actually hit it: RMS's own _enqueue_cbms_sync skips
+            # enqueueing entirely when the tenant isn't VAT-registered or
+            # has no CBMS credentials, so its sync log genuinely stays
+            # empty. IMS's _enqueue_cbms_sync has no such check -- every
+            # real invoice unconditionally enqueues a job, which always
+            # completes as a real 'failed' row (no credentials configured),
+            # so this endpoint crashed for any tenant with at least one
+            # real invoice. Found via the ordered IMS test suite's real
+            # HTTP testing.
+            "last_attempted_at": r.last_attempted_at.isoformat() if r.last_attempted_at else None,
+            "synced_at": r.synced_at.isoformat() if r.synced_at else None,
         }
         for r in items
     ]

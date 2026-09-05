@@ -1950,8 +1950,18 @@ def list_restro_cbms_sync_log(
             "status": r.status,
             "cbms_response_code": r.cbms_response_code,
             "attempt_count": r.attempt_count,
-            "last_attempted_at": r.last_attempted_at,
-            "synced_at": r.synced_at,
+            # ISO strings, not raw datetime objects -- JSONResponse's plain
+            # json.dumps has no datetime encoder and raises TypeError. Never
+            # actually hit here since this tenant's sync log stays empty
+            # (see _enqueue_cbms_sync's own credential/VAT check above),
+            # but a real VAT-registered tenant with CBMS credentials
+            # configured would hit it. Same real bug found and fixed in
+            # IMS's identical code this session (list_ims_cbms_sync_log),
+            # where it actually did crash for real (IMS's own
+            # _enqueue_cbms_sync has no such check, so its sync log always
+            # accumulates real rows).
+            "last_attempted_at": r.last_attempted_at.isoformat() if r.last_attempted_at else None,
+            "synced_at": r.synced_at.isoformat() if r.synced_at else None,
         }
         for r in items
     ]

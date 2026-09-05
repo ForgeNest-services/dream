@@ -1,0 +1,52 @@
+{
+  "pan": {
+    "tenant_id": "a14d4ff4-d657-4a32-9825-4ba4002cc1b7",
+    "tenant_name": "IMS Test PAN Pvt Ltd",
+    "pan": "600000201",
+    "is_vat_registered": false,
+    "branch_id": "8aae5371-e861-4647-a2c1-136dea4dca8c",
+    "branch_code": "IMSPAN01",
+    "credentials": {
+      "owner": {
+        "username": "ims-pan-owner",
+        "password": "TestPass123!",
+        "cred_id": "67b18f1d-e670-4372-8a19-b10a6db94136"
+      },
+      "manager": {
+        "username": "ims-pan-manager",
+        "password": "TestPass123!",
+        "cred_id": "86bf6383-3519-4f41-9d40-41fbe19d9102"
+      },
+      "storekeeper": {
+        "username": "ims-pan-storekeeper",
+        "password": "TestPass123!",
+        "cred_id": "2eb1bdc8-8a34-4ab6-97e4-d613499cf98c"
+      }
+    }
+  },
+  "vat": {
+    "tenant_id": "03619944-6ee3-4936-96de-2079fd6a95d3",
+    "tenant_name": "IMS Test VAT Pvt Ltd",
+    "pan": "600000202",
+    "is_vat_registered": true,
+    "branch_id": "c221ddd9-7833-4d92-8a32-ce6a335cc990",
+    "branch_code": "IMSVAT01",
+    "credentials": {
+      "owner": {
+        "username": "ims-vat-owner",
+        "password": "TestPass123!",
+        "cred_id": "7f270a15-8a17-47e8-b48e-f5f608f21f61"
+      },
+      "manager": {
+        "username": "ims-vat-manager",
+        "password": "TestPass123!",
+        "cred_id": "0c2d23ce-4e6e-48f2-b9a8-496f0db85a1b"
+      },
+      "storekeeper": {
+        "username": "ims-vat-storekeeper",
+        "password": "TestPass123!",
+        "cred_id": "dc854baa-e64a-43d9-8963-037b112ab1ca"
+      }
+    }
+  }
+}
