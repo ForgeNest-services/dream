@@ -70,4 +70,19 @@ class Settings:
     IMS_CBMS_CERTIFIED: bool = os.getenv("IMS_CBMS_CERTIFIED", "false").lower() == "true"
     RMS_CBMS_CERTIFIED: bool = os.getenv("RMS_CBMS_CERTIFIED", "false").lower() == "true"
 
+    # CORS allow-list for prod only (see main.py) -- built from the same
+    # *_VIRTUAL_HOST vars nginx-proxy itself reads, so there's exactly one
+    # place that names "which domains this deployment actually serves".
+    # Each var supports nginx-proxy's own comma-separated multi-host syntax
+    # (e.g. UI_VIRTUAL_HOST=srotaapps.com,www.srotaapps.com).
+    CORS_ALLOWED_ORIGINS: list[str] = sorted({
+        f"https://{host.strip()}"
+        for var in (
+            "UI_VIRTUAL_HOST", "ADMIN_VIRTUAL_HOST",
+            "RMS_VIRTUAL_HOST", "IMS_VIRTUAL_HOST",
+        )
+        for host in os.getenv(var, "").split(",")
+        if host.strip()
+    })
+
 settings = Settings()
