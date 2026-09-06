@@ -30,6 +30,7 @@ def error_response(
     message: Optional[str] = None,
     status_code: int = 400,
     details: Optional[Dict[str, Any]] = None,
+    headers: Optional[Dict[str, str]] = None,
 ) -> JSONResponse:
     """Standard error response with auto-logging."""
     message = message or DEFAULT_ERROR_MESSAGE
@@ -47,6 +48,7 @@ def error_response(
     return JSONResponse(
         status_code=status_code,
         content={"success": False, "error": error_body},
+        headers=headers,
     )
 
 

@@ -50,6 +50,7 @@ from features.ims.schemas import (
 )
 from rq import Retry
 from core.queue import job_queue
+from core.rate_limit import rate_limit
 from jobs.cbms_jobs import sync_document_job
 from features.cbms.credential_service import CBMSCredentialRepository
 from features.ims.cbms_service import build_cbms_payload
@@ -103,7 +104,10 @@ def _client_ip(request: Request) -> str | None:
 # ---------------------------------------------------------------------------
 
 @router.post("/auth/login")
-def staff_login(data: StaffLoginRequest, request: Request, db: Session = Depends(get_db)):
+def staff_login(
+    data: StaffLoginRequest, request: Request, db: Session = Depends(get_db),
+    _: None = rate_limit("auth"),
+):
     result = IMSAuthService.login(db, data.username, data.password, terminal_ip=_client_ip(request))
 
     if not result["success"]:
@@ -137,6 +141,7 @@ def staff_logout(
     request: Request,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     # IRD: Electronic Billing Procedure 2082, clause 6.3ख — no server-side
     # session to invalidate (stateless JWT, see CLAUDE.md §2.6), this just
@@ -156,6 +161,7 @@ owner_dep = [Depends(require_tenant_user)]
 def list_credentials(
     current_user: dict = Depends(require_role(["owner", "manager"])),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     user = current_user["user"]
     creds = IMSCredentialService.list_for_tenant(db, user.tenant_id)
@@ -169,6 +175,7 @@ def create_credential(
     data: CreateCredentialRequest,
     current_user: dict = Depends(require_role(["owner", "manager"])),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     user = current_user["user"]
     result = IMSCredentialService.create(
@@ -213,6 +220,7 @@ def update_credential(
     data: UpdateCredentialRequest,
     current_user: dict = Depends(require_role(["owner", "manager"])),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     user = current_user["user"]
     result = IMSCredentialService.update(
@@ -245,6 +253,7 @@ def delete_credential(
     cred_id: str,
     current_user: dict = Depends(require_role(["owner", "manager"])),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     user = current_user["user"]
     result = IMSCredentialService.delete(db, tenant_id=user.tenant_id, cred_id=cred_id)
@@ -292,6 +301,7 @@ def _actor_name_from_staff(db: Session, staff: dict) -> str:
 def staff_list_credentials(
     staff: dict = Depends(require_ims_staff("owner")),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     creds = IMSCredentialService.list_for_tenant(db, staff["tenant_id"])
     return success_response(
@@ -304,6 +314,7 @@ def staff_create_credential(
     data: CreateCredentialRequest,
     staff: dict = Depends(require_ims_staff("owner")),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     result = IMSCredentialService.create(
         db,
@@ -347,6 +358,7 @@ def staff_update_credential(
     data: UpdateCredentialRequest,
     staff: dict = Depends(require_ims_staff("owner")),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     result = IMSCredentialService.update(
         db,
@@ -378,6 +390,7 @@ def staff_delete_credential(
     cred_id: str,
     staff: dict = Depends(require_ims_staff("owner")),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     result = IMSCredentialService.delete(db, tenant_id=staff["tenant_id"], cred_id=cred_id)
 
@@ -412,6 +425,7 @@ def _category_error(code: str):
 def list_categories(
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     result = IMSCategoryService.list_for_tenant(db, staff["tenant_id"])
     return success_response(
@@ -424,6 +438,7 @@ def create_category(
     data: CreateCategoryRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can create categories")
@@ -443,6 +458,7 @@ def rename_category(
     data: UpdateCategoryRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can rename categories")
@@ -460,6 +476,7 @@ def delete_category(
     category_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can delete categories")
@@ -478,6 +495,7 @@ def delete_category(
 def list_brands(
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     brands = IMSBrandService.list_for_tenant(db, staff["tenant_id"])
     return success_response(
@@ -490,6 +508,7 @@ def create_brand(
     data: CreateBrandRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can create brands")
@@ -515,6 +534,7 @@ def create_brand(
 def list_units(
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     units = IMSUnitService.list_for_tenant(db, staff["tenant_id"])
     return success_response(
@@ -556,6 +576,7 @@ def list_products(
     per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """category_id accepts a comma-separated list of ids — the frontend
     resolves the category tree (a root + all its descendants) client-side
@@ -584,6 +605,7 @@ def get_product(
     product_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     result = IMSProductService.get(db, staff["tenant_id"], product_id)
     if not result["success"]:
@@ -596,6 +618,7 @@ def create_product(
     data: CreateProductRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager", "storekeeper"):
         raise HTTPException(403, "Not allowed to create products")
@@ -630,6 +653,7 @@ def update_product(
     data: UpdateProductRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager", "storekeeper"):
         raise HTTPException(403, "Not allowed to edit products")
@@ -661,6 +685,7 @@ def delete_product(
     product_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can delete products")
@@ -691,6 +716,7 @@ def adjust_stock(
     data: AdjustStockRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager", "storekeeper"):
         raise HTTPException(403, "Not allowed to adjust stock")
@@ -717,6 +743,7 @@ def restock(
     data: RestockRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager", "storekeeper"):
         raise HTTPException(403, "Not allowed to restock")
@@ -752,6 +779,7 @@ def list_movements(
     per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """bs_from / bs_to accept Bikram Sambat dates as "YYYY-MM-DD" strings
     and hit the (branch_id, date_bs) index — see IMSStockMovement.date_bs."""
@@ -809,6 +837,7 @@ def list_media(
     q: str | None = None,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     items = IMSMediaService.list_for_tenant(db, staff["tenant_id"], q)
     return success_response(data=[MediaData.model_validate(m).model_dump(mode="json") for m in items])
@@ -820,6 +849,7 @@ async def upload_media(
     file: UploadFile = File(...),
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager", "storekeeper"):
         raise HTTPException(403, "Not allowed to upload images")
@@ -846,6 +876,7 @@ def delete_media(
     media_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can delete images")
@@ -882,6 +913,7 @@ def _fiscal_year_error(code: str):
 def list_fiscal_years(
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     years = IMSFiscalYearService.list_for_tenant(db, staff["tenant_id"])
     return success_response(
@@ -893,6 +925,7 @@ def list_fiscal_years(
 def get_active_fiscal_year(
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     result = IMSFiscalYearService.get_active(db, staff["tenant_id"])
     if not result["success"]:
@@ -907,6 +940,7 @@ def create_fiscal_year(
     data: CreateFiscalYearRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] != "owner":
         raise HTTPException(403, "Only the Owner can add fiscal years")
@@ -925,6 +959,7 @@ def activate_fiscal_year(
     fy_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] != "owner":
         raise HTTPException(403, "Only the Owner can switch the active fiscal year")
@@ -942,6 +977,7 @@ def delete_fiscal_year(
     fy_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] != "owner":
         raise HTTPException(403, "Only the Owner can delete fiscal years")
@@ -979,6 +1015,7 @@ def list_parties(
     per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     paging = parse_paging(page, per_page)
     result = IMSPartyService.list_for_tenant(
@@ -995,6 +1032,7 @@ def create_party(
     data: CreatePartyRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     result = IMSPartyService.create(
         db,
@@ -1023,6 +1061,7 @@ def update_party(
     data: UpdatePartyRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     result = IMSPartyService.update(
         db,
@@ -1051,6 +1090,7 @@ def delete_party(
     party_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can delete parties")
@@ -1065,6 +1105,7 @@ def get_party_ledger(
     party_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     result = IMSLedgerService.list_for_party(db, staff["tenant_id"], party_id)
     if not result["success"]:
@@ -1078,6 +1119,7 @@ def get_party_ledger(
 def list_all_ledger_entries(
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """Full tenant ledger — lets the frontend compute every party's balance
     client-side in one request instead of N calls, matching how partyBalance
@@ -1093,6 +1135,7 @@ def record_payment(
     data: RecordPaymentRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     result = IMSLedgerService.record_payment(
         db,
@@ -1145,6 +1188,7 @@ def list_purchases(
     per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """bs_from / bs_to accept Bikram Sambat dates as "YYYY-MM-DD" strings
     and hit the (branch_id, date_bs) index — see IMSPurchase.date_bs."""
@@ -1172,6 +1216,7 @@ def create_purchase(
     data: CreatePurchaseRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager", "storekeeper"):
         raise HTTPException(403, "Not allowed to record purchases")
@@ -1204,6 +1249,7 @@ def get_cost_history(
     variant_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     result = IMSPurchaseService.cost_history_for_variant(db, staff["tenant_id"], variant_id)
     if not result["success"]:
@@ -1272,6 +1318,7 @@ def list_invoices(
     per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """bs_from / bs_to accept Bikram Sambat dates as "YYYY-MM-DD" strings
     and hit the (branch_id, date_bs) index — see IMSInvoice.date_bs.
@@ -1303,6 +1350,7 @@ def get_invoice(
     invoice_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     result = IMSInvoiceService.get(db, staff["tenant_id"], invoice_id)
     if not result["success"]:
@@ -1310,10 +1358,26 @@ def get_invoice(
     return success_response(data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"))
 
 
-def _enqueue_cbms_sync(source_app: str, document_type: str, document_id: str, tenant_id: str) -> None:
-    """1min/5min/15min backoff — only actually used for the RETRY
+def _enqueue_cbms_sync(source_app: str, document_type: str, document_id: str, tenant_id: str, db: Session) -> None:
+    """Enqueues a CBMS sync job only when the tenant actually needs one:
+    VAT-registered + CBMS credentials present. A PAN-only tenant or one
+    that never configured CBMS gets no RQ job at all — mirrors RMS's
+    identical guard (restro/router.py's own _enqueue_cbms_sync) exactly.
+    Previously missing here: every real invoice/credit-note unconditionally
+    enqueued a job that always completed as a real, wasted 'failed' row for
+    any tenant without CBMS set up — found via the ordered IMS test suite's
+    real HTTP testing (141 such rows accumulated for a single dummy tenant,
+    which in turn tripped a separate real bug in list_ims_cbms_sync_log's
+    datetime serialization, also fixed this session).
+
+    1min/5min/15min backoff — only actually used for the RETRY
     classification (transient IRD errors); synced/manual outcomes complete
     without RQ retrying at all. See jobs/cbms_jobs.py."""
+    tenant = TenantRepository.get_by_id(db, tenant_id)
+    if not tenant or not tenant.is_vat_registered:
+        return
+    if not CBMSCredentialRepository.get(db, tenant_id):
+        return
     job_queue.enqueue(
         sync_document_job,
         source_app,
@@ -1330,6 +1394,7 @@ def create_invoice(
     data: CreateInvoiceRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager", "cashier"):
         raise HTTPException(403, "Not allowed to record sales")
@@ -1356,7 +1421,7 @@ def create_invoice(
     if not result["success"]:
         return _invoice_error(result)
     if result.get("invoice") and result["invoice"].kind in ("tax", "abbreviated"):
-        _enqueue_cbms_sync("ims", "invoice", result["invoice"].id, staff["tenant_id"])
+        _enqueue_cbms_sync("ims", "invoice", result["invoice"].id, staff["tenant_id"], db)
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation saved" if data.is_quotation else "Sale recorded",
@@ -1371,6 +1436,7 @@ def convert_quotation(
     data: ConvertQuotationRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager", "cashier"):
         raise HTTPException(403, "Not allowed to convert quotations")
@@ -1391,7 +1457,7 @@ def convert_quotation(
     if not result["success"]:
         return _invoice_error(result)
     if result.get("invoice") and result["invoice"].kind in ("tax", "abbreviated"):
-        _enqueue_cbms_sync("ims", "invoice", result["invoice"].id, staff["tenant_id"])
+        _enqueue_cbms_sync("ims", "invoice", result["invoice"].id, staff["tenant_id"], db)
     return success_response(
         data=InvoiceData.model_validate(result["invoice"]).model_dump(mode="json"),
         message="Quotation converted to invoice",
@@ -1404,6 +1470,7 @@ def void_quotation(
     invoice_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     """IRD: दफा ६.२ज's reverse-entry concept, scoped to what's actually
     pre-issuance in IMS — a still-open quotation. A real invoice can never be
@@ -1434,6 +1501,7 @@ def issue_credit_note(
     data: IMSCreditNoteRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only owner or manager can issue credit notes")
@@ -1453,7 +1521,7 @@ def issue_credit_note(
         return _invoice_error(result)
     cn = result["invoice"]
     if cn and cn.original_invoice_id:
-        _enqueue_cbms_sync("ims", "credit_note", cn.id, staff["tenant_id"])
+        _enqueue_cbms_sync("ims", "credit_note", cn.id, staff["tenant_id"], db)
     return success_response(
         data=InvoiceData.model_validate(cn).model_dump(mode="json"),
         message="Credit note issued",
@@ -1466,6 +1534,7 @@ def register_invoice_print(
     invoice_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     """Call right before actually printing/showing an issued invoice —
     Electronic Billing Procedure 2082, clause 6.2(च): a reprint must be
@@ -1490,6 +1559,7 @@ def record_invoice_payment(
     data: RecordInvoicePaymentRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     """Settle more of an invoice that was saved unpaid/partial at checkout.
     Never edits line items or the original totals — only adds a payment on
@@ -1515,6 +1585,7 @@ def get_cbms_payload(
     invoice_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """Preview-only — builds the payload without submitting it. Per the
     checklist's self-test item: confirm field construction even without a
@@ -1537,6 +1608,7 @@ def sync_to_cbms(
     invoice_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     """Manual resync — runs the same job body inline (not enqueued) so the
     caller gets an immediate result, matching the sync-status UI's
@@ -1570,6 +1642,7 @@ def list_ims_cbms_sync_log(
     per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """App-scoped view of the shared CbmsSyncLog, filtered to source_app
     'ims' — staff hold an app JWT, not the platform JWT the shared
@@ -1590,8 +1663,21 @@ def list_ims_cbms_sync_log(
             "status": r.status,
             "cbms_response_code": r.cbms_response_code,
             "attempt_count": r.attempt_count,
-            "last_attempted_at": r.last_attempted_at,
-            "synced_at": r.synced_at,
+            # ISO strings, not raw datetime objects -- JSONResponse's plain
+            # json.dumps (unlike every other endpoint's Pydantic
+            # .model_dump(mode="json")) has no datetime encoder and raises
+            # TypeError. RMS's identical code has the same latent bug, but
+            # never actually hit it: RMS's own _enqueue_cbms_sync skips
+            # enqueueing entirely when the tenant isn't VAT-registered or
+            # has no CBMS credentials, so its sync log genuinely stays
+            # empty. IMS's _enqueue_cbms_sync has no such check -- every
+            # real invoice unconditionally enqueues a job, which always
+            # completes as a real 'failed' row (no credentials configured),
+            # so this endpoint crashed for any tenant with at least one
+            # real invoice. Found via the ordered IMS test suite's real
+            # HTTP testing.
+            "last_attempted_at": r.last_attempted_at.isoformat() if r.last_attempted_at else None,
+            "synced_at": r.synced_at.isoformat() if r.synced_at else None,
         }
         for r in items
     ]
@@ -1603,6 +1689,7 @@ def resync_ims_document(
     log_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only owner or manager can resync CBMS documents")
@@ -1645,6 +1732,7 @@ def get_branch_settings(
     branch_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = IMSBranchSettingsService.get_or_create(db, staff["tenant_id"], branch_id)
@@ -1661,6 +1749,7 @@ def update_branch_settings(
     data: UpdateBranchSettingsRequest,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can change settings")
@@ -1687,6 +1776,7 @@ def clear_branch_qr(
     branch_id: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     """Dedicated endpoint for the "Remove QR" button. Same as PATCH with
     clear_qr=true but a plain DELETE reads more clearly in the UI code."""
@@ -1735,6 +1825,7 @@ def report_stock_summary(
     per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     paging = parse_paging(page, per_page)
     result = IMSReportsService.stock_summary(
@@ -1776,6 +1867,7 @@ def report_margin(
     per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     paging = parse_paging(page, per_page)
     result = IMSReportsService.margin(
@@ -1815,6 +1907,7 @@ def report_party_statement(
     per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     if kind not in ("customer", "supplier"):
         return error_response("INVALID_KIND", "kind must be 'customer' or 'supplier'.", 422)
@@ -1908,6 +2001,7 @@ def export_sales_report(
     bs_to: str | None = None,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     items, _ = IMSInvoiceRepository.list_for_tenant(
         db, staff["tenant_id"], branch_id, None, fiscal_year_id, status, None,
@@ -1935,6 +2029,7 @@ def export_vat_register(
     bs_to: str | None = None,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     items, _ = IMSInvoiceRepository.list_for_tenant(
         db, staff["tenant_id"], branch_id, None, fiscal_year_id, None, None,
@@ -1977,6 +2072,7 @@ def export_purchase_report(
     bs_to: str | None = None,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     items, _ = IMSPurchaseRepository.list_for_tenant(
         db, staff["tenant_id"], branch_id, None, fiscal_year_id, q, bs_from, bs_to, 0, _EXPORT_LIMIT,
@@ -2021,6 +2117,7 @@ def export_annexure_13(
     bs_to: str | None = None,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     """अनुसूची १३ (Annexure 13) — combined sales + purchase VAT summary IRD
     expects alongside the monthly return. Built to the standard
@@ -2062,6 +2159,7 @@ def export_monthly_vat_summary(
     bs_to: str | None = None,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     """मासिक (monthly) VAT summary return — one row per BS month in range,
     output VAT (sales) minus input VAT (purchases) = net payable. Standard
@@ -2113,6 +2211,7 @@ def export_tds_report(
     bs_to: str | None = None,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     """TDS (Tax Deducted at Source) report on the purchase/supplier side.
     IMS doesn't track a per-purchase TDS rate/amount yet (no such field
@@ -2147,6 +2246,7 @@ def export_standard_view(
     bs_to: str | None = None,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     """Annex-5 Standard View — all 20 mandatory fields required by IRD's
     Electronic Billing Procedure 2082, दफा ६.१छ. Real invoices only (kind
@@ -2232,6 +2332,7 @@ def export_credit_notes(
     bs_to: str | None = None,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     """Credit Notes register — every credit note in the period with its
     reference invoice number. Required for IRD /api/billreturn reconciliation."""
@@ -2280,6 +2381,7 @@ def export_stock_summary(
     low_stock_only: bool = False,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     result = IMSReportsService.stock_summary(
         db, staff["tenant_id"], branch_id, category_id, q, low_stock_only, 0, _EXPORT_LIMIT,
@@ -2310,6 +2412,7 @@ def export_margin_report(
     bs_to: str | None = None,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     result = IMSReportsService.margin(
         db, staff["tenant_id"], branch_id, category_id, bs_from, bs_to, 0, _EXPORT_LIMIT,
@@ -2333,6 +2436,7 @@ def export_party_statement(
     bs_to: str | None = None,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     if kind not in ("customer", "supplier"):
         return error_response("INVALID_KIND", "kind must be 'customer' or 'supplier'.", 422)
@@ -2355,6 +2459,7 @@ def export_party_ledger(
     format: str,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     """Full ledger for ONE party with a running balance — distinct from
     /reports/party-statement/export, which is one row per party (totals
@@ -2398,6 +2503,7 @@ def get_dashboard(
     bs_to: str | None = None,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     result = IMSDashboardService.get(db, staff["tenant_id"], branch_id, bs_from, bs_to)
     data = DashboardData(**{k: v for k, v in result.items() if k != "success"})
@@ -2424,6 +2530,7 @@ def list_audit_log(
     per_page: int = 25,
     staff: dict = Depends(require_ims_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can view the activity log")

@@ -5,6 +5,7 @@ from rq import Retry
 from core.database import get_db
 from core.deps import require_tenant_user, require_role, require_restro_staff
 from core.queue import job_queue
+from core.rate_limit import rate_limit
 from jobs.cbms_jobs import sync_document_job
 from features.cbms.credential_service import CBMSCredentialRepository
 from features.restro.cbms_service import build_cbms_payload
@@ -136,6 +137,7 @@ def get_branch_settings(
     branch_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = BranchSettingsService.get_or_create(db, staff["tenant_id"], branch_id)
@@ -152,6 +154,7 @@ def update_branch_settings(
     data: UpdateBranchSettingsRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can change settings")
@@ -180,6 +183,7 @@ def clear_branch_qr(
     branch_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     """Dedicated endpoint for the "Remove QR" button. Same as PATCH with
     clear_qr=true but a plain DELETE reads more clearly in the UI code."""
@@ -220,6 +224,7 @@ def list_expenses(
     bs_to: str | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = ExpenseService.list_for_branch(
@@ -238,6 +243,7 @@ def create_expense(
     data: CreateExpenseRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     actor_name, cred_id = _actor_from_staff(db, staff)
@@ -268,6 +274,7 @@ def update_expense(
     data: UpdateExpenseRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can edit expenses")
@@ -297,6 +304,7 @@ def delete_expense(
     expense_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can delete expenses")
@@ -311,6 +319,7 @@ def delete_expense(
 def get_tenant_info(
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     tenant = db.query(Tenant).filter(Tenant.id == staff["tenant_id"]).first()
     if not tenant:
@@ -333,7 +342,12 @@ def get_tenant_info(
 # ---------------------------------------------------------------------------
 
 @router.post("/auth/login")
-def staff_login(data: StaffLoginRequest, request: Request, db: Session = Depends(get_db)):
+def staff_login(
+    data: StaffLoginRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: None = rate_limit("auth"),
+):
     result = RestroAuthService.login(db, data.username, data.password, terminal_ip=_client_ip(request))
 
     if not result["success"]:
@@ -367,6 +381,7 @@ def staff_logout(
     request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     # IRD: Electronic Billing Procedure 2082, clause 6.3ख — no server-side
     # session to invalidate (stateless JWT, see CLAUDE.md §2.6), this just
@@ -386,6 +401,7 @@ owner_dep = [Depends(require_tenant_user)]
 def list_credentials(
     current_user: dict = Depends(require_role(["owner", "manager"])),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     user = current_user["user"]
     creds = RestroCredentialService.list_for_tenant(db, user.tenant_id)
@@ -399,6 +415,7 @@ def create_credential(
     data: CreateCredentialRequest,
     current_user: dict = Depends(require_role(["owner", "manager"])),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     user = current_user["user"]
     result = RestroCredentialService.create(
@@ -439,6 +456,7 @@ def update_credential(
     data: UpdateCredentialRequest,
     current_user: dict = Depends(require_role(["owner", "manager"])),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     user = current_user["user"]
     result = RestroCredentialService.update(
@@ -471,6 +489,7 @@ def delete_credential(
     cred_id: str,
     current_user: dict = Depends(require_role(["owner", "manager"])),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     user = current_user["user"]
     result = RestroCredentialService.delete(db, tenant_id=user.tenant_id, cred_id=cred_id)
@@ -503,6 +522,7 @@ def _owner_user_id(db: Session, tenant_id: str) -> str:
 def staff_list_credentials(
     staff: dict = Depends(require_restro_staff("owner")),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     creds = RestroCredentialService.list_for_tenant(db, staff["tenant_id"])
     return success_response(
@@ -515,6 +535,7 @@ def staff_create_credential(
     data: CreateCredentialRequest,
     staff: dict = Depends(require_restro_staff("owner")),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     result = RestroCredentialService.create(
         db,
@@ -554,6 +575,7 @@ def staff_update_credential(
     data: UpdateCredentialRequest,
     staff: dict = Depends(require_restro_staff("owner")),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     result = RestroCredentialService.update(
         db,
@@ -585,6 +607,7 @@ def staff_delete_credential(
     cred_id: str,
     staff: dict = Depends(require_restro_staff("owner")),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     result = RestroCredentialService.delete(db, tenant_id=staff["tenant_id"], cred_id=cred_id)
 
@@ -603,6 +626,7 @@ def list_categories(
     branch_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = CategoryService.list_for_branch(db, staff["tenant_id"], branch_id)
@@ -619,6 +643,7 @@ def create_category(
     data: CreateCategoryRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can create categories")
@@ -654,6 +679,7 @@ def update_category(
     data: UpdateCategoryRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can edit categories")
@@ -687,6 +713,7 @@ def delete_category(
     category_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can delete categories")
@@ -785,6 +812,7 @@ def list_menu_items(
     q: str | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """`q` is a case-insensitive substring match on the item name. Kept
     optional so existing callers that only pass category_id still work."""
@@ -805,6 +833,7 @@ def create_menu_item(
     data: CreateMenuItemRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can create menu items")
@@ -841,6 +870,7 @@ def update_menu_item(
     data: UpdateMenuItemRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can edit menu items")
@@ -880,6 +910,7 @@ def set_menu_item_sold_out(
     data: SetSoldOutRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     # Any staff role can flip sold-out — it's an operational floor decision,
     # not a menu-editing one.
@@ -903,6 +934,7 @@ def delete_menu_item(
     item_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can delete menu items")
@@ -940,6 +972,7 @@ def list_zones(
     branch_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = ZoneService.list_for_branch(db, staff["tenant_id"], branch_id)
@@ -956,6 +989,7 @@ def create_zone(
     data: CreateZoneRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can create zones")
@@ -983,6 +1017,7 @@ def update_zone(
     data: UpdateZoneRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can edit zones")
@@ -1008,6 +1043,7 @@ def delete_zone(
     zone_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can delete zones")
@@ -1067,6 +1103,7 @@ def list_tables(
     zone_id: str | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = TableService.list_for_branch(db, staff["tenant_id"], branch_id, zone_id)
@@ -1083,6 +1120,7 @@ def create_table(
     data: CreateTableRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can create tables")
@@ -1110,6 +1148,7 @@ def update_table(
     data: UpdateTableRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can edit tables")
@@ -1137,6 +1176,7 @@ def delete_table(
     table_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can delete tables")
@@ -1154,6 +1194,7 @@ def reserve_table(
     data: ReserveTableRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     # Any staff role — reserving a table is a floor operation.
     _assert_branch_scope(staff, branch_id)
@@ -1182,6 +1223,7 @@ def clear_table_reservation(
     table_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = TableService.clear_reservation(
@@ -1201,6 +1243,7 @@ def merge_tables(
     data: MergeTablesRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = TableService.merge(
@@ -1220,6 +1263,7 @@ def unmerge_table(
     table_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = TableService.unmerge(
@@ -1274,6 +1318,11 @@ _ORDER_ERROR_MAP = {
     "TABLE_ALREADY_HAS_DRAFT": (
         "TABLE_ALREADY_HAS_DRAFT",
         "This table already has an open bill. Open the existing order instead.",
+        409,
+    ),
+    "BILL_NUMBER_CONFLICT": (
+        "BILL_NUMBER_CONFLICT",
+        "Could not assign a bill number for this branch. Please contact support.",
         409,
     ),
     "ORDER_NOT_EDITABLE": (
@@ -1347,6 +1396,11 @@ _ORDER_ERROR_MAP = {
     "CREATION_FAILED": ("CREATION_FAILED", "Failed to create order.", 500),
     "ORDER_NOT_PAID": ("ORDER_NOT_PAID", "Only paid orders can have a credit note issued.", 409),
     "ALREADY_CREDIT_NOTE": ("ALREADY_CREDIT_NOTE", "This order is already a credit note.", 409),
+    "CREDIT_NOTE_ALREADY_ISSUED": (
+        "CREDIT_NOTE_ALREADY_ISSUED",
+        "A credit note has already been issued for this bill.",
+        409,
+    ),
     "ABBREVIATED_INVOICE_LIMIT_EXCEEDED": (
         "ABBREVIATED_INVOICE_LIMIT_EXCEEDED",
         "Abbreviated bills can't be issued above Rs 10,000 taxable value — switch to a full VAT bill.",
@@ -1390,6 +1444,7 @@ def list_orders(
     limit: int | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """Simple non-paginated fetch — used by the store to keep a live cache
     of recent orders (kitchen board, delivery view, dashboard). For the
@@ -1425,6 +1480,7 @@ def list_orders_paginated(
     per_page: int = 25,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """Paginated bills-history endpoint. `bs_from` / `bs_to` accept BS dates
     as "YYYY-MM-DD" strings and hit the (branch_id, placed_at_bs) index.
@@ -1461,6 +1517,7 @@ def get_draft_order_for_table(
     table_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.get_draft_for_table(
@@ -1481,6 +1538,7 @@ def get_order(
     order_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.get(db, staff["tenant_id"], branch_id, order_id)
@@ -1496,6 +1554,7 @@ def create_order(
     data: CreateOrderRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     # Snapshot the staff member's display name (not login username) so the
@@ -1532,6 +1591,7 @@ def add_order_line(
     data: AddOrderLineRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.add_line(
@@ -1562,6 +1622,7 @@ def update_order_line(
     request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.update_line(
@@ -1591,6 +1652,7 @@ def void_order_line(
     request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.void_line(
@@ -1616,6 +1678,7 @@ def delete_order_line(
     line_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.delete_line(
@@ -1637,6 +1700,7 @@ def send_order_to_kitchen(
     order_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.send_to_kitchen(
@@ -1663,6 +1727,7 @@ def set_kitchen_status(
     data: SetKitchenStatusRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.set_kitchen_status(
@@ -1686,6 +1751,7 @@ def set_order_discount(
     request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.set_discount(
@@ -1711,6 +1777,7 @@ def set_order_customer(
     data: SetOrderCustomerRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.set_customer(
@@ -1754,6 +1821,7 @@ def mark_order_paid(
     request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     client_ip = _client_ip(request)
@@ -1784,6 +1852,7 @@ def cancel_order(
     request: Request,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = OrderService.cancel(
@@ -1808,6 +1877,7 @@ def issue_order_credit_note(
     data: RMSCreditNoteRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only owner or manager can issue credit notes")
@@ -1838,6 +1908,7 @@ def register_order_print(
     order_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     """Call right before actually printing/showing a paid bill — see
     OrderService.register_print. Returns whether this print should carry the
@@ -1866,6 +1937,7 @@ def get_order_cbms_payload(
     order_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """Preview-only — builds the payload without submitting it. Per the
     checklist's self-test item: confirm field construction even without a
@@ -1890,6 +1962,7 @@ def sync_order_to_cbms(
     order_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     """Manual resync — runs the same job body inline (not enqueued) so the
     caller gets an immediate result, matching the sync-status UI's
@@ -1921,6 +1994,7 @@ def list_restro_cbms_sync_log(
     per_page: int = 25,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """App-scoped view of the shared CbmsSyncLog, filtered to source_app
     'restro' — staff hold an app JWT, not the platform JWT the shared
@@ -1940,8 +2014,18 @@ def list_restro_cbms_sync_log(
             "status": r.status,
             "cbms_response_code": r.cbms_response_code,
             "attempt_count": r.attempt_count,
-            "last_attempted_at": r.last_attempted_at,
-            "synced_at": r.synced_at,
+            # ISO strings, not raw datetime objects -- JSONResponse's plain
+            # json.dumps has no datetime encoder and raises TypeError. Never
+            # actually hit here since this tenant's sync log stays empty
+            # (see _enqueue_cbms_sync's own credential/VAT check above),
+            # but a real VAT-registered tenant with CBMS credentials
+            # configured would hit it. Same real bug found and fixed in
+            # IMS's identical code this session (list_ims_cbms_sync_log),
+            # where it actually did crash for real (IMS's own
+            # _enqueue_cbms_sync has no such check, so its sync log always
+            # accumulates real rows).
+            "last_attempted_at": r.last_attempted_at.isoformat() if r.last_attempted_at else None,
+            "synced_at": r.synced_at.isoformat() if r.synced_at else None,
         }
         for r in items
     ]
@@ -1953,6 +2037,7 @@ def resync_restro_document(
     log_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only owner or manager can resync CBMS documents")
@@ -1976,6 +2061,7 @@ def set_order_delivery_status(
     data: SetDeliveryStatusRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     # Delivery is an owner/manager workflow — waiters and chefs don't get
     # nav access to the Delivery page in the UI, but gate it here too so a
@@ -2038,6 +2124,7 @@ def list_inventory(
     branch_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = InventoryService.list_for_branch(db, staff["tenant_id"], branch_id)
@@ -2054,6 +2141,7 @@ def create_inventory_item(
     data: CreateInventoryItemRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can create inventory items")
@@ -2087,6 +2175,7 @@ def update_inventory_item(
     data: UpdateInventoryItemRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can edit inventory items")
@@ -2115,6 +2204,7 @@ def delete_inventory_item(
     item_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can delete inventory items")
@@ -2132,6 +2222,7 @@ def restock_inventory_item(
     data: RestockRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     actor_name, cred_id = _actor_from_staff(db, staff)
@@ -2164,6 +2255,7 @@ def adjust_inventory_item(
     data: AdjustStockRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     _assert_branch_scope(staff, branch_id)
     actor_name, cred_id = _actor_from_staff(db, staff)
@@ -2195,6 +2287,7 @@ def list_inventory_movements(
     item_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = InventoryService.list_movements(
@@ -2231,6 +2324,7 @@ def list_employees(
     branch_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     # Any staff role can READ — waiters may want to see who's on shift. Only
     # owner/manager can create/edit/delete below.
@@ -2249,6 +2343,7 @@ def create_employee(
     data: CreateEmployeeRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can add employees")
@@ -2280,6 +2375,7 @@ def update_employee(
     data: UpdateEmployeeRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can edit employees")
@@ -2313,6 +2409,7 @@ def delete_employee(
     employee_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can delete employees")
@@ -2361,6 +2458,7 @@ def list_customers(
     q: str | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     _assert_branch_scope(staff, branch_id)
     result = CustomerService.list_for_branch(db, staff["tenant_id"], branch_id, q)
@@ -2380,6 +2478,7 @@ def create_customer(
     data: CreateCustomerRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     # Any staff (incl. waiter) can create — they may need to add a fresh
     # customer inline while closing an order as khata.
@@ -2419,6 +2518,7 @@ def update_customer(
     data: UpdateCustomerRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can edit customers")
@@ -2451,6 +2551,7 @@ def delete_customer(
     customer_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can delete customers")
@@ -2467,6 +2568,7 @@ def khata_history(
     customer_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """Full khata log for a customer: every khata order (debits) + every
     settlement (credits) + a live balance snapshot. Any staff can read.
@@ -2514,6 +2616,7 @@ def customer_history(
     customer_id: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """All orders attached to a customer — cash, qr, khata, draft, cancelled.
     Superset of /khata-history. Backs the customer-detail view so a manager
@@ -2572,6 +2675,7 @@ def create_khata_settlement(
     data: CreateKhataSettlementRequest,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("writes"),
 ):
     """Record a partial or full payment against a customer's khata balance.
     Owner/Manager only — this is the cash-drawer moment."""
@@ -2692,6 +2796,7 @@ def reports_dashboard(
     bs: str | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """One-shot bundle for the RMS dashboard landing screen. `bs` defaults to
     today (server clock in NPT) — pass a BS date to view a historical day."""
@@ -2719,6 +2824,7 @@ def reports_daily_summary(
     bs: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """Single-BS-day P&L. `bs` is a "YYYY-MM-DD" BS date string."""
     _assert_branch_scope(staff, branch_id)
@@ -2735,6 +2841,7 @@ def reports_range_summary(
     bs_to: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """Multi-day P&L. Backs the ReportsView + DailySalesView (range mode)."""
     _assert_branch_scope(staff, branch_id)
@@ -2751,6 +2858,7 @@ def reports_sales_trend(
     bs_to: str,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """Per-day rows for a line chart. Fills zero-days so the X-axis is
     continuous."""
@@ -2769,6 +2877,7 @@ def reports_top_items(
     limit: int = 10,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     """Ranked items list for the ReportsView items tab. Grouped by
     (name, variant_name) so different variants of the same item show
@@ -2843,6 +2952,7 @@ def export_sales_register(
     bs_to: str | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     """IRD Annexure-6 Sales Register (धिक्री खाता) — Date, Bill No, Buyer,
     PAN, Total/Taxable/VAT/Tax-exempt, and export columns (all '—' for
@@ -2885,6 +2995,7 @@ def export_restro_annexure_13(
     bs_to: str | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     """अनुसूची १३ (Annexure 13) — output VAT summary (RMS has no purchase
     side, so this is sales-only, unlike IMS's combined version). Standard
@@ -2915,6 +3026,7 @@ def export_restro_monthly_vat_summary(
     bs_to: str | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     """मासिक (monthly) VAT summary — one row per BS month, sales-only (no
     purchase side in RMS). Standard structure; cross-check against IRD's
@@ -2950,6 +3062,7 @@ def export_restro_standard_view(
     bs_to: str | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     """Annex-5 Standard View — all 20 mandatory fields required by IRD's
     Electronic Billing Procedure 2082. Bills only (no credit notes)."""
@@ -3012,6 +3125,7 @@ def export_restro_credit_notes(
     bs_to: str | None = None,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("exports"),
 ):
     """Credit Notes register — all paid credit notes in the period with their
     reference bill numbers. Required for IRD /api/billreturn reconciliation."""
@@ -3076,6 +3190,7 @@ def list_restro_audit_log(
     per_page: int = 25,
     staff: dict = Depends(require_restro_staff()),
     db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
 ):
     if staff["role"] not in ("owner", "manager"):
         raise HTTPException(403, "Only Owner or Manager can view the activity log")
@@ -3098,7 +3213,10 @@ def list_restro_audit_log(
 
 
 @router.get("/public/branches/{branch_id}/menu")
-def public_menu(branch_id: str, db: Session = Depends(get_db)):
+def public_menu(
+    branch_id: str, db: Session = Depends(get_db),
+    _: None = rate_limit("reads"),
+):
     result = get_public_menu(db, branch_id)
     if result is None:
         return error_response("BRANCH_NOT_FOUND", "Branch not found.", 404)

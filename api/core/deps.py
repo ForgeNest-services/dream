@@ -1,4 +1,5 @@
-from fastapi import Depends, Header, HTTPException
+from functools import lru_cache
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.security import decode_token
@@ -85,66 +86,56 @@ def get_staff_token(
     return authorization[7:]
 
 
-def _make_staff_dep(decode_fn):
-    """Builds a require_<app>_staff dependency factory around an app's own
-    decode_staff_token. Each app calls this with its own decode function so
-    the module boundary stays a real, independent trust check (not just a
-    shared string comparison) — if one app's staff auth needs to diverge
-    later, only that app's wrapper changes."""
+def _build_staff_dep(decode_fn, role: str | None):
+    def _dep(request: Request, token: str = Depends(get_staff_token)) -> dict:
+        if not token:
+            raise HTTPException(401, "Unauthorized")
 
-    def require_staff(role: str | None = None):
-        def _dep(token: str = Depends(get_staff_token)) -> dict:
-            if not token:
-                raise HTTPException(401, "Unauthorized")
+        payload = decode_fn(token)
+        if not payload:
+            raise HTTPException(401, "Invalid or expired token")
 
-            payload = decode_fn(token)
-            if not payload:
-                raise HTTPException(401, "Invalid or expired token")
+        staff_role = payload["role"]
+        if role and staff_role != role:
+            raise HTTPException(403, "Insufficient role")
 
-            staff_role = payload["role"]
-            if role and staff_role != role:
-                raise HTTPException(403, "Insufficient role")
+        staff = {
+            "tenant_id": payload["tenant_id"],
+            "role": staff_role,
+            "cred_id": payload.get("cred_id"),
+            "branch_id": payload.get("branch_id"),
+        }
+        request.state.tenant_id = staff["tenant_id"]
+        request.state.cred_id = staff["cred_id"]
+        return staff
 
-            return {
-                "tenant_id": payload["tenant_id"],
-                "role": staff_role,
-                "cred_id": payload.get("cred_id"),
-                "branch_id": payload.get("branch_id"),
-            }
-
-        return _dep
-
-    return require_staff
+    return _dep
 
 
+@lru_cache(maxsize=None)
 def require_hotel_pms_staff(role: str | None = None):
     from features.hotel_pms.auth import decode_staff_token
 
-    return _make_staff_dep(decode_staff_token)(role)
+    return _build_staff_dep(decode_staff_token, role)
 
 
+@lru_cache(maxsize=None)
 def require_restro_staff(role: str | None = None):
     from features.restro.auth import decode_staff_token
 
-    return _make_staff_dep(decode_staff_token)(role)
+    return _build_staff_dep(decode_staff_token, role)
 
 
+@lru_cache(maxsize=None)
 def require_ims_staff(role: str | None = None):
     from features.ims.auth import decode_staff_token
 
-    return _make_staff_dep(decode_staff_token)(role)
+    return _build_staff_dep(decode_staff_token, role)
 
 
 def require_module_access(app_code: str):
-    """Dependency factory that gates an endpoint behind an active subscription
-    (trial or paid). Attach to any owner-level router to enforce billing.
-
-    Usage:
-        @router.get("/...", dependencies=[Depends(require_module_access("srota_pms"))])
-
-    Currently intentionally NOT attached to any router — add when ready to
-    enforce billing. The gate is built; flipping it on is a one-liner.
-    """
+    """Gates an endpoint behind an active subscription (trial or paid).
+    Not currently attached to any router — add when ready to enforce billing."""
     def _dep(current: dict = Depends(require_tenant_user), db: Session = Depends(get_db)):
         from features.subscriptions.service import SubscriptionService
         tenant_id = current["user"].tenant_id
@@ -165,12 +156,8 @@ def require_tenant_scope(
     token: str = Depends(get_token_from_header),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Accepts EITHER a platform user JWT (owner/manager with tenant) OR any
-    app-staff JWT (hotel_pms, restro, ...). Returns a normalized dict with
-    `tenant_id`, `source` ("platform"|"staff"), and optionally `branch_id` for
-    branch-scoped staff. Use this on endpoints that any authenticated tenant
-    user should see (e.g. shared /branches list).
-    """
+    """Accepts either a platform user JWT or any app-staff JWT. Returns a
+    normalized dict with tenant_id/role/source ("platform"|"staff")."""
     if not token:
         raise HTTPException(401, "Unauthorized")
 
@@ -178,7 +165,6 @@ def require_tenant_scope(
     if not payload:
         raise HTTPException(401, "Invalid or expired token")
 
-    # Platform user path: has user_id and (via lookup) a tenant_id
     if "user_id" in payload:
         user = UserRepository.get_by_id(db, payload.get("user_id"))
         if not user or not user.tenant_id:
@@ -189,7 +175,6 @@ def require_tenant_scope(
             "source": "platform",
         }
 
-    # App-staff path: has cred_id, module, tenant_id embedded
     if payload.get("cred_id") and payload.get("tenant_id"):
         return {
             "tenant_id": payload["tenant_id"],

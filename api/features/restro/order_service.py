@@ -238,8 +238,23 @@ class OrderService:
                 extra={"tenant_id": tenant_id, "branch_id": branch_id, "type": type},
             )
             return {"success": True, "order": order}
-        except IntegrityError:
+        except IntegrityError as ie:
             db.rollback()
+            constraint = getattr(getattr(ie, "orig", None), "diag", None)
+            constraint_name = getattr(constraint, "constraint_name", "") or ""
+            if constraint_name == "uq_restro_order_bill_number":
+                # restro_invoice_serials' counter for this branch/fiscal-year
+                # disagrees with the max bill_number actually in use (e.g. a
+                # row seeded/restored without its serial counter kept in
+                # sync) -- a data-integrity problem, not a real double-open.
+                # Mislabeling this as TABLE_ALREADY_HAS_DRAFT (as this branch
+                # used to) hid the true cause and silently returned a wrong,
+                # unactionable error to every future order on the branch.
+                logger.error(
+                    f"Bill number collision creating order: {ie.orig}",
+                    extra={"tenant_id": tenant_id, "branch_id": branch_id},
+                )
+                return {"success": False, "error_code": "BILL_NUMBER_CONFLICT"}
             # Partial unique on (table_id) WHERE status='draft' AND type='dine-in'
             # caught a race with another simultaneous open.
             return {"success": False, "error_code": "TABLE_ALREADY_HAS_DRAFT"}
@@ -892,6 +907,22 @@ class OrderService:
             return {"success": False, "error_code": "ORDER_NOT_PAID"}
         if original.is_credit_note:
             return {"success": False, "error_code": "ALREADY_CREDIT_NOTE"}
+        # A bill only ever gets one credit note — a second issue_credit_note
+        # call against the same original order (as opposed to against the
+        # credit note row itself, caught above) was previously unguarded,
+        # letting the same paid bill be credited an unlimited number of
+        # times. Found via the ordered RMS test suite's real HTTP testing.
+        existing_credit_note = (
+            db.query(RestroOrder)
+            .filter(
+                RestroOrder.tenant_id == tenant_id,
+                RestroOrder.original_order_id == order_id,
+                RestroOrder.is_credit_note.is_(True),
+            )
+            .first()
+        )
+        if existing_credit_note:
+            return {"success": False, "error_code": "CREDIT_NOTE_ALREADY_ISSUED"}
 
         now = datetime.now(timezone.utc)
         fy = fiscal_year_from_ad(now) or ""

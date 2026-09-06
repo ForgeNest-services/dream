@@ -722,7 +722,22 @@ _IMMUTABLE_TABLES: dict[str, set[str]] = {
     },
     "ims_invoice_lines": {"tax_rate", "vat_amount"},
     "ims_stock_movements": set(),
-    "ims_ledger_entries": set(),
+    # debit/credit: party_service.py's IMSPartyService.update() corrects a
+    # party's "Opening balance" ledger row in place (via
+    # IMSLedgerRepository.update/.delete) whenever the party's own
+    # opening_balance field changes -- the ONE ledger entry treated as
+    # correctable rather than append-only, so its recorded amount can
+    # never silently drift from the party record. Confirmed via a full
+    # grep of every IMSLedgerRepository.update/.delete call site: both are
+    # exercised ONLY on the row matched by description=='Opening balance'
+    # (get_opening_balance_entry), never a payment or any other kind of
+    # entry -- DELETE has no column scope in Postgres, but the code path
+    # itself is the real guard here, same division of labor as
+    # ims_invoices' DELETE (guarded by a trigger, not a grant). Found via
+    # the ordered IMS test suite's real HTTP testing -- every PATCH
+    # .../parties/{id} that touched opening_balance previously raised an
+    # unhandled InsufficientPrivilege 500.
+    "ims_ledger_entries": {"debit", "credit"},
     "audit_log": set(),
 }
 
@@ -916,6 +931,32 @@ def ensure_app_role() -> None:
         # column/row-level DELETE grant, so the trigger is what does the real
         # narrowing here, same division of labor as RMS's immutability trigger.
         db.execute(text(f'GRANT DELETE ON public."ims_invoices" TO "{user}"'))
+        # ims_invoice_lines: void_quotation's db.delete(invoice) cascades to
+        # this table via the ORM relationship's cascade="all, delete-orphan"
+        # (shared_models/ims_invoice.py) -- Postgres still checks the
+        # deleting role's own privilege on the CHILD table for a cascaded
+        # delete, so without this grant every void-quotation call on a
+        # quotation with at least one line (i.e. every real one; empty
+        # quotations are rejected as NO_ITEMS) raised a real, unhandled
+        # InsufficientPrivilege 500. No separate row-level guard is needed
+        # here the way ims_invoices needs its own trigger: the ONLY place
+        # in the codebase that ever deletes an ims_invoice_lines row is this
+        # one cascade, and it only ever fires after the parent invoice has
+        # already cleared IMSInvoiceService.void_quotation's kind=='quotation'
+        # check (and would be independently rejected by
+        # ims_invoices_delete_guard even if that check were ever bypassed).
+        # Found via the ordered IMS test suite's real HTTP testing.
+        db.execute(text(f'GRANT DELETE ON public."ims_invoice_lines" TO "{user}"'))
+        # ims_ledger_entries: DELETE re-granted at the table level for the
+        # same reason UPDATE (debit, credit) is above -- IMSPartyService
+        # .update() calls IMSLedgerRepository.delete on the opening-balance
+        # row when a party's opening_balance is cleared to zero. Same
+        # reasoning as ims_invoices: no column/row-level DELETE grant
+        # exists in Postgres, but the ONLY call site for this delete
+        # (confirmed via grep) always targets the row matched by
+        # description=='Opening balance', never a payment or any other
+        # ledger entry.
+        db.execute(text(f'GRANT DELETE ON public."ims_ledger_entries" TO "{user}"'))
         db.commit()
         logger.info(
             f"App role '{user}' ready — UPDATE/DELETE revoked on "

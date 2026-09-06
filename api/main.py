@@ -32,6 +32,7 @@ from core.seed import (
     ensure_ims_invoices_delete_trigger,
 )
 from core.storage import ensure_bucket
+from core.configs import settings
 import shared_models
 from features.auth import router as auth_router
 from features.hotel_pms import router as hotel_pms_router
@@ -261,13 +262,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# prod: real domains only; dev: wide open
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=settings.CORS_ALLOWED_ORIGINS if settings.ENVIRO == "prod" else ["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def rate_limit_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    for k, v in getattr(request.state, "rate_limit_headers", {}).items():
+        response.headers[k] = v
+    return response
+
 
 app.include_router(auth_router)
 app.include_router(branches_router)
@@ -286,6 +297,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         error_code="HTTP_ERROR",
         message=str(exc.detail),
         status_code=exc.status_code,
+        headers=exc.headers,
     )
 
 
