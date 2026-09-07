@@ -636,6 +636,7 @@ export function OrderScreen(props: OrderScreenProps) {
               isReprint={printBillReprint}
               printCount={printBillCount}
               slipNumbers={printBillSlipNumbers}
+              showVatBreakdown={settings.vatEnabled ? vatBillOn : undefined}
             />
           </PrintDialog>
         </>

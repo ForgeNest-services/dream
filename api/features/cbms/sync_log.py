@@ -101,4 +101,8 @@ class CbmsSyncLogRepository:
         failed = sum(1 for r in rows if r.status == "failed")
         synced_ats = [r.synced_at for r in rows if r.synced_at]
         last_synced_at = max(synced_ats) if synced_ats else None
-        return {"pending": pending, "failed": failed, "last_synced_at": last_synced_at}
+        return {
+            "pending": pending,
+            "failed": failed,
+            "last_synced_at": last_synced_at.isoformat() if last_synced_at else None,
+        }

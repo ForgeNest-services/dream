@@ -148,6 +148,7 @@ export function BillReceipt({
   isReprint = false,
   printCount,
   slipNumbers,
+  showVatBreakdown,
 }: {
   order: Order;
   tableLabel: string;
@@ -167,6 +168,14 @@ export function BillReceipt({
    *  (caller fetched fresh at print time); falls back to whatever the
    *  cached order object already carries otherwise. */
   slipNumbers?: number[];
+  /** Pre-payment preview only: order.kind is null until mark-paid actually
+   *  runs, so a "Print Bill" click from inside the payment dialog has no
+   *  persisted decision to read yet — pass the live VAT-bill toggle value
+   *  here so the preview matches what mark-paid is about to save, instead
+   *  of silently falling back to the branch default. Ignored once the
+   *  order is paid (order.kind takes over — see the row visibility check
+   *  below). */
+  showVatBreakdown?: boolean;
 }) {
   const { tenant } = usePos();
   const displayTs = order.placedAt;
@@ -242,9 +251,12 @@ export function BillReceipt({
       {row("Subtotal", NPR(totals.subtotal))}
       {totals.discount > 0 && row("Discount", `-${NPR(totals.discount)}`)}
       {/* order.kind is the persisted, per-bill decision from mark-paid time
-          (the "VAT bill" toggle) — falls back to the live branch setting
-          only for a bill printed before that's been set (e.g. preview). */}
-      {(order.kind ? order.kind === "tax" : settings.vatEnabled) && tenant?.is_vat_registered && (
+          (the "VAT bill" toggle). Not set yet for a pre-payment preview —
+          showVatBreakdown carries the live toggle value in that case,
+          falling back to the branch default only if neither is available. */}
+      {(order.kind
+        ? order.kind === "tax"
+        : showVatBreakdown ?? settings.vatEnabled) && tenant?.is_vat_registered && (
         <>
           {row("Taxable amount", NPR(totals.taxable))}
           {row(`VAT ${settings.vatRate}%`, NPR(totals.vat))}
