@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/common/primitives";
+import { useApp } from "@/context/app-store";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   BadgePercent,
@@ -54,18 +55,21 @@ const REPORTS = [
     icon: BadgePercent,
     title: "VAT sales register",
     description: "IRD-format VAT register: buyer PAN, taxable amount and VAT per invoice.",
+    vatOnly: true,
   },
   {
     to: "/reports/annexure-13" as const,
     icon: ClipboardList,
     title: "Annexure 13",
     description: "अनुसूची १३ — output/input VAT summary and net payable for the period.",
+    vatOnly: true,
   },
   {
     to: "/reports/monthly-vat-summary" as const,
     icon: Landmark,
     title: "Monthly VAT summary",
     description: "मासिक — one row per BS month: taxable amounts and net VAT payable.",
+    vatOnly: true,
   },
   {
     to: "/reports/tds" as const,
@@ -112,11 +116,19 @@ const REPORTS = [
 ];
 
 function ReportsLandingPage() {
+  const app = useApp();
+  // A PAN-only tenant has no VAT to report — these three reports would
+  // only ever show zero/N/A rows for it (see isVatRegisteredTenant's
+  // definition in data/types.ts).
+  const reports = app.company.isVatRegisteredTenant
+    ? REPORTS
+    : REPORTS.filter((r) => !r.vatOnly);
+
   return (
     <div className="mx-auto max-w-[1760px] px-4 py-6">
       <PageHeader title="Reports" subtitle="Detailed, filterable reports — export to XLSX or PDF from any of them." />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {REPORTS.map((r) => (
+        {reports.map((r) => (
           // Each report route has its own (heterogeneous) search schema, so
           // there's no single search value valid for every `to` in this
           // union — navigating with none lets the target route's own
