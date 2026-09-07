@@ -278,6 +278,12 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    # allow_headers only governs request headers -- without this, JS can't
+    # read Content-Disposition on a cross-origin fetch() response, so every
+    # report/label export silently falls back to its generic default
+    # filename (report.pdf, labels.pdf, ...) regardless of what the backend
+    # actually sent.
+    expose_headers=["Content-Disposition"],
 )
 
 
