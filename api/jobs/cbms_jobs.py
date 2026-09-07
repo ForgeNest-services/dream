@@ -82,12 +82,16 @@ def _mark_document_synced(db, source_app: str, document_id: str) -> None:
     """Stamps the source document's own cbms_synced/cbms_synced_at columns
     (kept for quick "synced?" checks in each app's own UI/list views) — the
     CbmsSyncLog row is the authoritative history, this is a denormalized
-    convenience flag on the document itself."""
+    convenience flag on the document itself.
+
+    RMS's restro_orders also carries is_realtime (Annex-5's own column) —
+    IMS has no equivalent field, so that part only applies there."""
     from sqlalchemy import text
 
     table = "ims_invoices" if source_app == "ims" else "restro_orders"
+    extra = ", is_realtime = TRUE" if source_app == "restro" else ""
     db.execute(
-        text(f"UPDATE public.{table} SET cbms_synced = TRUE, cbms_synced_at = NOW() WHERE id = :id"),
+        text(f"UPDATE public.{table} SET cbms_synced = TRUE, cbms_synced_at = NOW(){extra} WHERE id = :id"),
         {"id": document_id},
     )
     db.commit()

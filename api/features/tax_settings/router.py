@@ -92,8 +92,8 @@ def list_sync_log(
             "status": r.status,
             "cbms_response_code": r.cbms_response_code,
             "attempt_count": r.attempt_count,
-            "last_attempted_at": r.last_attempted_at,
-            "synced_at": r.synced_at,
+            "last_attempted_at": r.last_attempted_at.isoformat() if r.last_attempted_at else None,
+            "synced_at": r.synced_at.isoformat() if r.synced_at else None,
         }
         for r in items
     ]

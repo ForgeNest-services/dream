@@ -2093,7 +2093,13 @@ def export_purchase_report(
         party = parties_full.get(p.party_id) if p.party_id else None
         line_vat = sum((Decimal(str(line.vat_amount or 0)) for line in p.lines), Decimal("0"))
         taxable_value = Decimal(str(p.items_total or 0)) - line_vat
-        total = Decimal(str(p.bill_amount or 0))
+        # bill_amount is 0 for a "Direct" (no party / not ledger-tracked)
+        # purchase (see purchase_service.py's `tracking` gate) — that's a
+        # real UI choice about ledger posting, not a statement that nothing
+        # was actually spent. items_total (the real line total) is the
+        # correct fallback so this report never claims a Rs 0 purchase next
+        # to a real, non-zero taxable/VAT breakdown.
+        total = Decimal(str(p.bill_amount or 0)) or Decimal(str(p.items_total or 0))
         tax_exempt = max(Decimal("0"), total - taxable_value - line_vat)
         rows.append([
             p.date_bs, p.bill_no or p.number,

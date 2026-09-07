@@ -231,6 +231,7 @@ function InvoiceDetailPage() {
     ["owner", "manager"].includes(app.effectiveRole ?? "");
 
   const canSyncCbms =
+    app.company.isVatRegisteredTenant === true &&
     invoice.kind !== "quotation" &&
     !invoice.cbmsSynced &&
     ["owner", "manager"].includes(app.effectiveRole ?? "");
@@ -336,7 +337,9 @@ function InvoiceDetailPage() {
               <th className="px-3 py-2.5 text-right font-medium">Qty</th>
               <th className="px-3 py-2.5 text-right font-medium">Rate</th>
               <th className="px-3 py-2.5 text-right font-medium">Discount</th>
-              <th className="px-3 py-2.5 text-right font-medium">VAT</th>
+              {app.company.isVatRegisteredTenant && (
+                <th className="px-3 py-2.5 text-right font-medium">VAT</th>
+              )}
               <th className="px-3 py-2.5 text-right font-medium">Amount</th>
             </tr>
           </thead>
@@ -364,13 +367,15 @@ function InvoiceDetailPage() {
                   <td className="px-3 py-2.5 text-right">
                     <Money value={line.discount} />
                   </td>
-                  <td className="px-3 py-2.5 text-right">
-                    {line.taxable === false ? (
-                      <span className="text-xs text-muted-foreground">Exempt</span>
-                    ) : (
-                      <Money value={line.vatAmount ?? 0} />
-                    )}
-                  </td>
+                  {app.company.isVatRegisteredTenant && (
+                    <td className="px-3 py-2.5 text-right">
+                      {line.taxable === false ? (
+                        <span className="text-xs text-muted-foreground">Exempt</span>
+                      ) : (
+                        <Money value={line.vatAmount ?? 0} />
+                      )}
+                    </td>
+                  )}
                   <td className="px-3 py-2.5 text-right">
                     <Money value={gross + (line.vatAmount ?? 0)} />
                   </td>
@@ -382,20 +387,24 @@ function InvoiceDetailPage() {
 
         <div className="border-t p-4">
           <div className="ml-auto max-w-xs space-y-1.5 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Taxable</span>
-              <Money value={totals.taxable} />
-            </div>
-            {totals.exempt > 0 && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Exempt</span>
-                <Money value={totals.exempt} />
-              </div>
+            {app.company.isVatRegisteredTenant && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Taxable</span>
+                  <Money value={totals.taxable} />
+                </div>
+                {totals.exempt > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Exempt</span>
+                    <Money value={totals.exempt} />
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">VAT</span>
+                  <Money value={totals.vat} />
+                </div>
+              </>
             )}
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">VAT</span>
-              <Money value={totals.vat} />
-            </div>
             <div className="flex justify-between border-t pt-1.5 font-medium">
               <span>Total</span>
               <Money value={totals.total} />
@@ -432,7 +441,7 @@ function InvoiceDetailPage() {
         </div>
       )}
 
-      {!invoice.cbmsSynced && invoice.kind !== "quotation" && (
+      {app.company.isVatRegisteredTenant === true && !invoice.cbmsSynced && invoice.kind !== "quotation" && (
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
           This invoice has not yet been synced to the IRD CBMS system.
         </div>

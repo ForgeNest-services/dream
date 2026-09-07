@@ -29,8 +29,8 @@ class TaxSettingsService:
                 "ird_username": row.ird_username,
                 "ird_password_set": bool(row.ird_password),
                 "cbms_sync_enabled": row.cbms_sync_enabled,
-                "consent_acknowledged_at": row.consent_acknowledged_at,
-                "credentials_updated_at": row.credentials_updated_at,
+                "consent_acknowledged_at": row.consent_acknowledged_at.isoformat() if row.consent_acknowledged_at else None,
+                "credentials_updated_at": row.credentials_updated_at.isoformat() if row.credentials_updated_at else None,
             },
             "sync_summary": sync_summary,
         }

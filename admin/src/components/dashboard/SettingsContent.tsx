@@ -17,6 +17,7 @@ import { FormInput } from '@/components/ui/FormInput';
 import { Button } from '@/components/ui/Button';
 import { Switch } from '@/components/ui/Switch';
 import { colors, spacing } from '@/lib/design-tokens';
+import { authApi } from '@/services/auth-api';
 import { taxSettingsApi, type TaxSettingsResponse } from '@/services/tax-settings-api';
 import type { ApiError } from '@/types/auth';
 
@@ -24,15 +25,15 @@ const MAX_LOGO_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
 
 export function SettingsContent() {
-  const { tenant } = useAuth();
+  const { tenant, setTenant } = useAuth();
   const { update, isLoading } = useUpdateTaxInfo();
 
   const [pan, setPan] = useState(tenant?.pan ?? '');
   const [isVatRegistered, setIsVatRegistered] = useState(tenant?.is_vat_registered ?? false);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleLogoPick = (file: File | undefined) => {
+  const handleLogoPick = async (file: File | undefined) => {
     if (!file) return;
     if (!ACCEPTED_LOGO_TYPES.includes(file.type)) {
       toast.error('Use a PNG, JPG, WEBP or SVG image.');
@@ -42,18 +43,36 @@ export function SettingsContent() {
       toast.error('Image must be under 5MB.');
       return;
     }
-    setLogoPreview((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(file);
-    });
+    setLogoUploading(true);
+    try {
+      const res = await authApi.updateLogo(file);
+      if (res.data?.tenant) {
+        setTenant(res.data.tenant);
+        toast.success('Logo updated');
+      }
+    } catch (err) {
+      const apiErr = err as ApiError;
+      toast.error(apiErr?.message || 'Failed to upload logo');
+    } finally {
+      setLogoUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
-  const clearLogo = () => {
-    setLogoPreview((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return null;
-    });
-    if (fileInputRef.current) fileInputRef.current.value = '';
+  const clearLogo = async () => {
+    setLogoUploading(true);
+    try {
+      const res = await authApi.removeLogo();
+      if (res.data?.tenant) {
+        setTenant(res.data.tenant);
+        toast.success('Logo removed');
+      }
+    } catch (err) {
+      const apiErr = err as ApiError;
+      toast.error(apiErr?.message || 'Failed to remove logo');
+    } finally {
+      setLogoUploading(false);
+    }
   };
 
   useEffect(() => {
@@ -131,9 +150,9 @@ export function SettingsContent() {
               position: 'relative',
             }}
           >
-            {logoPreview ? (
+            {tenant?.logo_url ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={logoPreview} alt="Business logo preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              <img src={tenant.logo_url} alt="Business logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             ) : (
               <MdOutlineImage size={28} color={colors.neutral[400]} />
             )}
@@ -143,6 +162,7 @@ export function SettingsContent() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
+                disabled={logoUploading}
                 style={{
                   padding: `${spacing.sm} ${spacing.lg}`,
                   borderRadius: '24px',
@@ -151,15 +171,17 @@ export function SettingsContent() {
                   color: colors.neutral[800],
                   fontSize: '13px',
                   fontWeight: '600',
-                  cursor: 'pointer',
+                  cursor: logoUploading ? 'not-allowed' : 'pointer',
+                  opacity: logoUploading ? 0.6 : 1,
                 }}
               >
-                {logoPreview ? 'Replace image' : 'Upload image'}
+                {logoUploading ? 'Uploading…' : tenant?.logo_url ? 'Replace image' : 'Upload image'}
               </button>
-              {logoPreview && (
+              {tenant?.logo_url && (
                 <button
                   type="button"
                   onClick={clearLogo}
+                  disabled={logoUploading}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -171,7 +193,8 @@ export function SettingsContent() {
                     color: colors.status.error,
                     fontSize: '13px',
                     fontWeight: '600',
-                    cursor: 'pointer',
+                    cursor: logoUploading ? 'not-allowed' : 'pointer',
+                    opacity: logoUploading ? 0.6 : 1,
                   }}
                 >
                   <MdOutlineClose size={15} />
@@ -183,29 +206,13 @@ export function SettingsContent() {
               ref={fileInputRef}
               type="file"
               accept={ACCEPTED_LOGO_TYPES.join(',')}
-              onChange={(e) => handleLogoPick(e.target.files?.[0])}
+              onChange={(e) => void handleLogoPick(e.target.files?.[0])}
               style={{ display: 'none' }}
             />
             <p style={{ fontSize: '12px', color: colors.neutral[500], margin: 0, maxWidth: '360px' }}>
               PNG, JPG, WEBP or SVG, up to 5MB. Shown on invoices and receipts across every app.
             </p>
           </div>
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: spacing.sm,
-            padding: `${spacing.sm} ${spacing.md}`,
-            borderRadius: '12px',
-            backgroundColor: colors.neutral[50],
-          }}
-        >
-          <MdOutlineImage size={16} color={colors.neutral[500]} style={{ flexShrink: 0 }} />
-          <p style={{ fontSize: '12px', color: colors.neutral[600], margin: 0, lineHeight: '1.5' }}>
-            Preview only for now — saving isn't wired up yet.
-          </p>
         </div>
       </section>
 

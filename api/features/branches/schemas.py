@@ -35,6 +35,7 @@ class TenantInfoData(BaseModel):
     business_address: str | None
     business_phone: str | None
     business_email: str | None
+    logo_url: str | None
 
 
 class CreateBranchRequest(BaseModel):

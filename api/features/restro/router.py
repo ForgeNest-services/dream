@@ -333,6 +333,7 @@ def get_tenant_info(
             business_email=tenant.business_email,
             business_phone=tenant.business_phone,
             business_address=tenant.business_address,
+            logo_url=tenant.logo_url,
         ).model_dump(mode="json")
     )
 

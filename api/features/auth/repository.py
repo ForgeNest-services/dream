@@ -60,6 +60,13 @@ class TenantRepository:
         db.refresh(tenant)
         return tenant
 
+    @staticmethod
+    def update_logo(db: Session, tenant: Tenant, logo_url: str | None) -> Tenant:
+        tenant.logo_url = logo_url
+        db.commit()
+        db.refresh(tenant)
+        return tenant
+
 
 class UserRepository:
     @staticmethod

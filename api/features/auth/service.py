@@ -180,6 +180,51 @@ class AuthService:
             logger.error(f"Tax info update failed: {str(e)}")
             return {"success": False, "error_code": "UPDATE_FAILED"}
 
+    MAX_LOGO_BYTES = 5 * 1024 * 1024
+    ALLOWED_LOGO_TYPES = {"image/png", "image/jpeg", "image/webp", "image/svg+xml"}
+
+    @staticmethod
+    def update_logo(
+        db: Session,
+        tenant_id: str,
+        filename: str,
+        content: bytes,
+        content_type: str,
+    ) -> dict:
+        from core.storage import upload_file, delete_file, key_from_url
+
+        if content_type not in AuthService.ALLOWED_LOGO_TYPES:
+            return {"success": False, "error_code": "UNSUPPORTED_FILE_TYPE"}
+        if len(content) > AuthService.MAX_LOGO_BYTES:
+            return {"success": False, "error_code": "FILE_TOO_LARGE"}
+
+        tenant = TenantRepository.get_by_id(db, tenant_id)
+        if not tenant:
+            return {"success": False, "error_code": "TENANT_NOT_FOUND"}
+
+        old_key = key_from_url(tenant.logo_url) if tenant.logo_url else None
+        url = upload_file(f"tenants/{tenant_id}/logo", filename, content, content_type)
+        updated = TenantRepository.update_logo(db, tenant, url)
+        if old_key:
+            delete_file(old_key)
+        logger.info(f"Tenant logo updated: {tenant_id}")
+        return {"success": True, "tenant": TenantData.model_validate(updated)}
+
+    @staticmethod
+    def remove_logo(db: Session, tenant_id: str) -> dict:
+        from core.storage import delete_file, key_from_url
+
+        tenant = TenantRepository.get_by_id(db, tenant_id)
+        if not tenant:
+            return {"success": False, "error_code": "TENANT_NOT_FOUND"}
+
+        key = key_from_url(tenant.logo_url) if tenant.logo_url else None
+        updated = TenantRepository.update_logo(db, tenant, None)
+        if key:
+            delete_file(key)
+        logger.info(f"Tenant logo removed: {tenant_id}")
+        return {"success": True, "tenant": TenantData.model_validate(updated)}
+
     @staticmethod
     def login(db: Session, data: LoginRequest, terminal_ip: str | None = None) -> dict:
         admin = PlatformAdminRepository.get_by_email(db, data.email)

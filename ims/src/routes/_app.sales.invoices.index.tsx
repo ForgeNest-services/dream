@@ -229,8 +229,12 @@ function InvoicesPage() {
                 <th className="px-3 py-2.5 text-left font-medium">Invoice</th>
                 <th className="px-3 py-2.5 text-left font-medium">Date</th>
                 <th className="px-3 py-2.5 text-left font-medium">Customer</th>
-                <th className="px-3 py-2.5 text-right font-medium">Taxable</th>
-                <th className="px-3 py-2.5 text-right font-medium">VAT</th>
+                {app.company.isVatRegisteredTenant && (
+                  <>
+                    <th className="px-3 py-2.5 text-right font-medium">Taxable</th>
+                    <th className="px-3 py-2.5 text-right font-medium">VAT</th>
+                  </>
+                )}
                 <th className="px-3 py-2.5 text-right font-medium">Total</th>
                 <th className="px-3 py-2.5 text-right font-medium">Due</th>
                 <th className="px-3 py-2.5 text-left font-medium">Status</th>
@@ -270,12 +274,16 @@ function InvoicesPage() {
                       <DateText value={r.inv.date} />
                     </td>
                     <td className="px-3 py-2.5">{cust?.name ?? "—"}</td>
-                    <td className="px-3 py-2.5 text-right">
-                      <Money value={r.taxable} />
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      <Money value={r.vat} />
-                    </td>
+                    {app.company.isVatRegisteredTenant && (
+                      <>
+                        <td className="px-3 py-2.5 text-right">
+                          <Money value={r.taxable} />
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <Money value={r.vat} />
+                        </td>
+                      </>
+                    )}
                     <td className="px-3 py-2.5 text-right">
                       <Money value={r.total} />
                     </td>

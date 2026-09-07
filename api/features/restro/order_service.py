@@ -680,9 +680,8 @@ class OrderService:
             )
         else:
             order.vat_refund_amount = None
-        # is_realtime: True only when the bill is pushed to CBMS at issuance.
-        # Actual CBMS push is deferred — always False for now. The branch
-        # setting cbms_realtime_enabled controls it once the push is wired.
+        # is_realtime: True once CBMS actually confirms sync (jobs/cbms_jobs.py's
+        # _mark_document_synced), not merely enqueued — starts False here.
         order.is_realtime = False
 
         # Auto-finish the kitchen ticket. Paying = the customer got the food,

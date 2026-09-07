@@ -527,6 +527,25 @@ def ensure_tenants_free_app_schema() -> None:
         db.close()
 
 
+def ensure_tenants_logo_schema() -> None:
+    """tenants.logo_url — added after tenants already existed in every
+    deployed DB, so create_all can't add it. Shown on invoices/receipts
+    across every app (see api/core/storage.py's shared S3 upload)."""
+    db = AdminSessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.tenants "
+            "ADD COLUMN IF NOT EXISTS logo_url VARCHAR(500)"
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to add tenants logo_url column: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
 def ensure_subscription_payments_group_schema() -> None:
     """Back-fills subscription_payments.group_id (bundle purchases share one
     group_id across N per-app rows — see SubscriptionPayment's docstring)

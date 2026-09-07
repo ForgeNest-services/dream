@@ -106,34 +106,56 @@ def build_pdf(
             elements.append(Paragraph(line, business_style))
     elements.append(Paragraph(title, title_style))
 
-    # A wide report (many columns, e.g. the 20-field Annex-5 Standard View)
+    # A wide report (many columns, e.g. the 30-field Annex-5 Standard View)
     # needs a smaller font or every column collides with its neighbor —
     # plain-string table cells never wrap, they just overflow into the next
-    # cell. Scale font size down as column count grows, and wrap header text
-    # via Paragraph so a multi-word header ("Excisable Amt") breaks onto a
-    # second line instead of overflowing.
-    font_size = 9.5 if len(columns) <= 10 else (8 if len(columns) <= 16 else 6.5)
+    # cell (reportlab's Table only wraps Paragraph flowables, not raw
+    # strings). Scale font size down as column count grows, and wrap BOTH
+    # header and data cells via Paragraph so long values break onto a
+    # second line inside their own cell instead of overflowing into the
+    # next one.
+    font_size = 9.5 if len(columns) <= 10 else (8 if len(columns) <= 16 else (6.5 if len(columns) <= 22 else 5.5))
     header_style = ParagraphStyle(
         "TableHeader", parent=styles["Normal"], fontSize=font_size, leading=font_size + 2,
         textColor=colors.white, fontName="Helvetica-Bold", alignment=TA_CENTER,
     )
+    cell_style = ParagraphStyle(
+        "TableCell", parent=styles["Normal"], fontSize=font_size, leading=font_size + 2,
+    )
+    cell_style_right = ParagraphStyle(
+        "TableCellRight", parent=cell_style, alignment=2,  # TA_RIGHT
+    )
+    numeric_cols = {i for i, c in enumerate(columns) if _is_numeric_column(c)}
     header_row = [Paragraph(str(h), header_style) for h in columns]
     table_data = [header_row] + [
-        [str(v) if not isinstance(v, Decimal) else f"{v:,.2f}" for v in row] for row in rows
+        [
+            Paragraph(
+                str(v) if not isinstance(v, Decimal) else f"{v:,.2f}",
+                cell_style_right if i in numeric_cols else cell_style,
+            )
+            for i, v in enumerate(row)
+        ]
+        for row in rows
     ]
 
     # Column widths default to content-width in reportlab, which routinely
     # leaves the table narrower than the page — the exact "empty margin on
     # the right" the printed output showed. Instead, weight each column by
     # its longest cell (header or data) and scale those weights to fill the
-    # full printable width, so the table always spans edge-to-edge.
+    # full printable width, so the table always spans edge-to-edge. Weights
+    # come from the RAW values, not table_data — table_data now holds
+    # Paragraph objects (needed so a long cell wraps instead of overflowing
+    # into its neighbor), and str(Paragraph(...)) is not its rendered text.
     available_width = pagesize[0] - 2 * margin
+    raw_str_rows = [
+        [str(v) if not isinstance(v, Decimal) else f"{v:,.2f}" for v in row] for row in rows
+    ]
     weights = [
-        max([len(str(h))] + [len(str(row[i])) for row in table_data[1:]])
+        max([len(str(h))] + [len(r[i]) for r in raw_str_rows])
         for i, h in enumerate(columns)
     ]
     total_weight = sum(weights) or 1
-    min_col_width = (10 if len(columns) > 16 else 12 if len(columns) > 10 else 15) * mm
+    min_col_width = (9 if len(columns) > 22 else 10 if len(columns) > 16 else 12 if len(columns) > 10 else 15) * mm
     col_widths = [max(min_col_width, available_width * w / total_weight) for w in weights]
     # Rescale down if the minimum-width floor pushed the total over budget.
     scale = available_width / sum(col_widths)
@@ -141,7 +163,6 @@ def build_pdf(
         col_widths = [w * scale for w in col_widths]
 
     table = Table(table_data, colWidths=col_widths, repeatRows=1)
-    numeric_cols = {i for i, c in enumerate(columns) if _is_numeric_column(c)}
     style = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -155,8 +176,6 @@ def build_pdf(
         ("LEFTPADDING", (0, 0), (-1, -1), 3 if len(columns) > 16 else 6),
         ("RIGHTPADDING", (0, 0), (-1, -1), 3 if len(columns) > 16 else 6),
     ]
-    for col_idx in numeric_cols:
-        style.append(("ALIGN", (col_idx, 1), (col_idx, -1), "RIGHT"))
     table.setStyle(TableStyle(style))
     elements.append(table)
 

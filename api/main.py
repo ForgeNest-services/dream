@@ -22,6 +22,7 @@ from core.seed import (
     ensure_ims_branch_settings_qr_schema,
     backfill_branch_settings_vat_mismatch,
     ensure_tenants_free_app_schema,
+    ensure_tenants_logo_schema,
     ensure_subscription_payments_group_schema,
     ensure_ird_schema,
     ensure_org_tax_settings_schema,
@@ -171,6 +172,14 @@ async def lifespan(app: FastAPI):
         raise
 
     try:
+        logger.info("Ensuring tenants.logo_url column...")
+        ensure_tenants_logo_schema()
+        logger.info("tenants logo_url column ensured")
+    except Exception as e:
+        logger.error(f"Failed to add tenants logo_url column: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
         logger.info("Backfilling subscription_payments group schema...")
         ensure_subscription_payments_group_schema()
         logger.info("subscription_payments group schema backfill completed")
@@ -269,6 +278,12 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    # allow_headers only governs request headers -- without this, JS can't
+    # read Content-Disposition on a cross-origin fetch() response, so every
+    # report/label export silently falls back to its generic default
+    # filename (report.pdf, labels.pdf, ...) regardless of what the backend
+    # actually sent.
+    expose_headers=["Content-Disposition"],
 )
 
 

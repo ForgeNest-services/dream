@@ -76,6 +76,7 @@ class TenantData(BaseModel):
     business_address: str | None = None
     business_phone: str | None = None
     business_email: str | None = None
+    logo_url: str | None = None
 
 
 class TokenData(BaseModel):

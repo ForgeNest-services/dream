@@ -740,6 +740,7 @@ class RestroTenantInfo(BaseModel):
     business_email: str | None
     business_phone: str | None
     business_address: str | None
+    logo_url: str | None
 
 
 class SetDeliveryStatusRequest(BaseModel):

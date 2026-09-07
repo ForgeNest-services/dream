@@ -124,6 +124,32 @@ export const authApi = {
     }
   },
 
+  updateLogo: async (file: File): Promise<ApiResponse<{ tenant: Tenant }>> => {
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const response = await axiosClient.put<ApiResponse<{ tenant: Tenant }>>(
+        '/auth/business-logo',
+        form,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'updateLogo');
+    }
+  },
+
+  removeLogo: async (): Promise<ApiResponse<{ tenant: Tenant }>> => {
+    try {
+      const response = await axiosClient.delete<ApiResponse<{ tenant: Tenant }>>(
+        '/auth/business-logo'
+      );
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error, 'removeLogo');
+    }
+  },
+
   googleCallback: async (data: GoogleCallbackRequest): Promise<ApiResponse<GoogleCallbackResponse>> => {
     try {
       const response = await axiosClient.post<ApiResponse<GoogleCallbackResponse>>(
