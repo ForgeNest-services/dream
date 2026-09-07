@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { Calendar, Download, FileSpreadsheet, Filter, ClipboardList } from "lucide-react";
+import { Calendar, Download, FileSpreadsheet, Filter, ClipboardList, ReceiptText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -45,6 +45,7 @@ const TABS: { id: ReportsSearch["tab"]; label: string }[] = [
   { id: "category", label: "Category wise" },
   { id: "items", label: "Menu wise" },
   { id: "activity", label: "Activity Log" },
+  { id: "ird", label: "IRD Reports" },
 ];
 
 // Quick preset ranges — click, done. `todayBs` is the anchor, ranges are
@@ -287,7 +288,7 @@ export function ReportsView() {
           })}
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className={`grid gap-3 sm:grid-cols-2 ${search.tab === "orders" ? "xl:grid-cols-4" : ""}`}>
           <div className="space-y-1.5">
             <Label className="text-xs">From (BS)</Label>
             <BsDatePicker value={fromBs} onChange={(v) => patchSearch({ bs_from: v })} />
@@ -296,127 +297,135 @@ export function ReportsView() {
             <Label className="text-xs">To (BS)</Label>
             <BsDatePicker value={toBs} onChange={(v) => patchSearch({ bs_to: v })} />
           </div>
-          <div className="space-y-1.5">
-            <Label className="flex items-center gap-1 text-xs">
-              <Filter className="size-3" />
-              Status (bills tab)
-            </Label>
-            <Select
-              value={search.status}
-              onValueChange={(v) => patchSearch({ status: v as ReportsSearch["status"] })}
-            >
-              <SelectTrigger className="h-11">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="paid">Closed</SelectItem>
-                <SelectItem value="draft">Running</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="flex items-center gap-1 text-xs">
-              <Filter className="size-3" />
-              Order type (bills tab)
-            </Label>
-            <Select
-              value={search.type}
-              onValueChange={(v) => patchSearch({ type: v as ReportsSearch["type"] })}
-            >
-              <SelectTrigger className="h-11">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="dine-in">Dine-in</SelectItem>
-                <SelectItem value="delivery">Delivery</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </div>
-
-      {/* KPI band — 3 rows: revenue block (highlighted), volume block, P&L block */}
-      <div className="grid gap-3 xl:grid-cols-3">
-        <KpiCard
-          label="Sales (gross)"
-          value={NPR(salesGross)}
-          sub={`${paidCount} closed bill${paidCount === 1 ? "" : "s"}`}
-          tone="primary"
-          large
-        />
-        <KpiCard
-          label="Expenses"
-          value={NPR(expensesTotal)}
-          sub={
-            summary && summary.expenses_by_category.length > 0
-              ? `${summary.expenses_by_category.length} categor${summary.expenses_by_category.length === 1 ? "y" : "ies"}`
-              : "No expenses in range"
-          }
-        />
-        <KpiCard
-          label="Net (sales − expenses)"
-          value={NPR(net)}
-          sub={net < 0 ? "Operating at a loss" : "Operating profit"}
-          tone={net < 0 ? "danger" : "primary"}
-          large
-        />
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <KpiCard label="Items sold" value={String(itemsSold)} sub="Non-voided lines" />
-        <KpiCard
-          label="Running bills"
-          value={String(summary?.orders.draft ?? 0)}
-          sub="Not yet closed"
-        />
-        <KpiCard
-          label="Cancelled"
-          value={String(summary?.orders.cancelled ?? 0)}
-          sub="Voided bills"
-        />
-      </div>
-
-      {/* Payment methods — always visible, gives at-a-glance cash-flow split */}
-      {summary && (
-        <div className="pos-card p-4">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="font-display text-lg">Payments received</h3>
-            <span className="text-xs text-muted-foreground">Cash / QR / Khata split</span>
-          </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-3">
-            {(["cash", "qr", "khata"] as const).map((m) => {
-              const b = summary.by_payment[m];
-              return (
-                <div
-                  key={m}
-                  className="rounded-xl border border-border/70 p-3"
+          {search.tab === "orders" && (
+            <>
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1 text-xs">
+                  <Filter className="size-3" />
+                  Status
+                </Label>
+                <Select
+                  value={search.status}
+                  onValueChange={(v) => patchSearch({ status: v as ReportsSearch["status"] })}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      {m}
-                    </p>
-                    <span className="text-xs text-muted-foreground">
-                      {b.count} bill{b.count === 1 ? "" : "s"}
-                    </span>
-                  </div>
-                  <p className="mt-1.5 font-display text-lg font-semibold">
-                    {NPR(asNum(b.amount))}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
+                  <SelectTrigger className="h-11">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="paid">Closed</SelectItem>
+                    <SelectItem value="draft">Running</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1 text-xs">
+                  <Filter className="size-3" />
+                  Order type
+                </Label>
+                <Select
+                  value={search.type}
+                  onValueChange={(v) => patchSearch({ type: v as ReportsSearch["type"] })}
+                >
+                  <SelectTrigger className="h-11">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="dine-in">Dine-in</SelectItem>
+                    <SelectItem value="delivery">Delivery</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
         </div>
-      )}
+      </div>
 
-      {/* Expenses breakdown — only when there's data, keeps the page compact */}
-      {summary && summary.expenses_by_category.length > 0 && (
-        <div className="pos-card p-4">
-          <h3 className="font-display text-lg">Expenses by category</h3>
-          <ExpenseBars items={summary.expenses_by_category} total={expensesTotal} />
-        </div>
+      {search.tab !== "ird" && (
+        <>
+          {/* KPI band — 3 rows: revenue block (highlighted), volume block, P&L block */}
+          <div className="grid gap-3 xl:grid-cols-3">
+            <KpiCard
+              label="Sales (gross)"
+              value={NPR(salesGross)}
+              sub={`${paidCount} closed bill${paidCount === 1 ? "" : "s"}`}
+              tone="primary"
+              large
+            />
+            <KpiCard
+              label="Expenses"
+              value={NPR(expensesTotal)}
+              sub={
+                summary && summary.expenses_by_category.length > 0
+                  ? `${summary.expenses_by_category.length} categor${summary.expenses_by_category.length === 1 ? "y" : "ies"}`
+                  : "No expenses in range"
+              }
+            />
+            <KpiCard
+              label="Net (sales − expenses)"
+              value={NPR(net)}
+              sub={net < 0 ? "Operating at a loss" : "Operating profit"}
+              tone={net < 0 ? "danger" : "primary"}
+              large
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <KpiCard label="Items sold" value={String(itemsSold)} sub="Non-voided lines" />
+            <KpiCard
+              label="Running bills"
+              value={String(summary?.orders.draft ?? 0)}
+              sub="Not yet closed"
+            />
+            <KpiCard
+              label="Cancelled"
+              value={String(summary?.orders.cancelled ?? 0)}
+              sub="Voided bills"
+            />
+          </div>
+
+          {/* Payment methods — always visible, gives at-a-glance cash-flow split */}
+          {summary && (
+            <div className="pos-card p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-display text-lg">Payments received</h3>
+                <span className="text-xs text-muted-foreground">Cash / QR / Khata split</span>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {(["cash", "qr", "khata"] as const).map((m) => {
+                  const b = summary.by_payment[m];
+                  return (
+                    <div
+                      key={m}
+                      className="rounded-xl border border-border/70 p-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          {m}
+                        </p>
+                        <span className="text-xs text-muted-foreground">
+                          {b.count} bill{b.count === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      <p className="mt-1.5 font-display text-lg font-semibold">
+                        {NPR(asNum(b.amount))}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Expenses breakdown — only when there's data, keeps the page compact */}
+          {summary && summary.expenses_by_category.length > 0 && (
+            <div className="pos-card p-4">
+              <h3 className="font-display text-lg">Expenses by category</h3>
+              <ExpenseBars items={summary.expenses_by_category} total={expensesTotal} />
+            </div>
+          )}
+        </>
       )}
 
       {/* Tabs — active state uses primary colour for high contrast against
@@ -439,44 +448,53 @@ export function ReportsView() {
         </div>
       </div>
 
-      <div className="pos-card overflow-x-auto p-4 sm:p-5">
-        {search.tab === "orders" && (
-          <BillsTable
-            orders={orders}
-            loading={ordersLoading}
-            settings={settings}
-            billTotalFromDto={billTotalFromDto}
-            orderLabel={orderLabel}
+      {search.tab === "ird" ? (
+        actualRole === "owner" || actualRole === "manager" ? (
+          <IrdExportsCard
+            branchId={branchId ?? ""}
+            bsFrom={fromBs}
+            bsTo={toBs}
+            vatRegistered={!!tenant?.is_vat_registered}
           />
-        )}
+        ) : (
+          <div className="pos-card flex flex-col items-center gap-3 py-16 text-muted-foreground">
+            <ReceiptText className="size-10 opacity-30" />
+            <p className="text-sm">IRD reports are visible to Owner and Manager only.</p>
+          </div>
+        )
+      ) : (
+        <>
+          <div className="pos-card overflow-x-auto p-4 sm:p-5">
+            {search.tab === "orders" && (
+              <BillsTable
+                orders={orders}
+                loading={ordersLoading}
+                settings={settings}
+                billTotalFromDto={billTotalFromDto}
+                orderLabel={orderLabel}
+              />
+            )}
 
-        {search.tab === "category" && (
-          <CategoryTable summary={summary} loading={summaryLoading} />
-        )}
+            {search.tab === "category" && (
+              <CategoryTable summary={summary} loading={summaryLoading} />
+            )}
 
-        {search.tab === "items" && (
-          <ItemsTable items={items} loading={itemsLoading} />
-        )}
+            {search.tab === "items" && (
+              <ItemsTable items={items} loading={itemsLoading} />
+            )}
 
-        {search.tab === "activity" && (
-          <ActivityLogTab role={actualRole} />
-        )}
-      </div>
+            {search.tab === "activity" && (
+              <ActivityLogTab role={actualRole} />
+            )}
+          </div>
 
-      {search.tab === "orders" && meta && meta.total > orders.length && (
-        <p className="pos-card p-3 text-center text-xs text-muted-foreground">
-          Showing {orders.length} of {meta.total} bills — narrow the date range or
-          filters for a more focused view.
-        </p>
-      )}
-
-      {(actualRole === "owner" || actualRole === "manager") && (
-        <IrdExportsCard
-          branchId={branchId ?? ""}
-          bsFrom={fromBs}
-          bsTo={toBs}
-          vatRegistered={!!tenant?.is_vat_registered}
-        />
+          {search.tab === "orders" && meta && meta.total > orders.length && (
+            <p className="pos-card p-3 text-center text-xs text-muted-foreground">
+              Showing {orders.length} of {meta.total} bills — narrow the date range or
+              filters for a more focused view.
+            </p>
+          )}
+        </>
       )}
     </div>
   );
@@ -721,7 +739,7 @@ function IrdExportsCard({
   // Credit Notes register apply to every bill regardless of VAT status, so
   // they're always offered. The other three are VAT-register formats and
   // only make sense for a VAT-registered tenant.
-  const registers: {
+  const everyBill: {
     key: string;
     label: string;
     description: string;
@@ -739,76 +757,86 @@ function IrdExportsCard({
       description: "Credit notes issued in the period with their reference bill",
       fn: (fmt) => irdExportsApi.creditNotes(branchId, bsFrom, bsTo, fmt),
     },
-    ...(vatRegistered
-      ? [
-          {
-            key: "sales-register",
-            label: "Sales Register",
-            description: "Per-bill VAT breakdown — Bill No., Buyer, PAN, Taxable, VAT, Total",
-            fn: (fmt: IrdExportFormat) => irdExportsApi.salesRegister(branchId, bsFrom, bsTo, fmt),
-          },
-          {
-            key: "annexure-13",
-            label: "Annexure 13",
-            description: "अनुसूची १३ — output VAT summary totals for the selected period",
-            fn: (fmt: IrdExportFormat) => irdExportsApi.annexure13(branchId, bsFrom, bsTo, fmt),
-          },
-          {
-            key: "monthly-vat",
-            label: "Monthly VAT Summary",
-            description: "मासिक — one row per BS month: taxable amount and output VAT",
-            fn: (fmt: IrdExportFormat) =>
-              irdExportsApi.monthlyVatSummary(branchId, bsFrom, bsTo, fmt),
-          },
-        ]
-      : []),
+  ];
+  const vatOnly: typeof everyBill = [
+    {
+      key: "sales-register",
+      label: "Sales Register",
+      description: "Per-bill VAT breakdown — Bill No., Buyer, PAN, Taxable, VAT, Total",
+      fn: (fmt: IrdExportFormat) => irdExportsApi.salesRegister(branchId, bsFrom, bsTo, fmt),
+    },
+    {
+      key: "annexure-13",
+      label: "Annexure 13",
+      description: "अनुसूची १३ — output VAT summary totals for the selected period",
+      fn: (fmt: IrdExportFormat) => irdExportsApi.annexure13(branchId, bsFrom, bsTo, fmt),
+    },
+    {
+      key: "monthly-vat",
+      label: "Monthly VAT Summary",
+      description: "मासिक — one row per BS month: taxable amount and output VAT",
+      fn: (fmt: IrdExportFormat) => irdExportsApi.monthlyVatSummary(branchId, bsFrom, bsTo, fmt),
+    },
   ];
 
-  return (
-    <div className="pos-card p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="font-display text-lg">IRD Reports</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Downloads use the selected date range above.
-            {!vatRegistered && " VAT registers hidden — this business is PAN-only."}
-          </p>
-        </div>
+  const registerRow = (r: (typeof everyBill)[number]) => (
+    <div
+      key={r.key}
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 px-4 py-3"
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{r.label}</p>
+        <p className="text-xs text-muted-foreground">{r.description}</p>
       </div>
-      <div className="mt-4 space-y-3">
-        {registers.map((r) => (
-          <div
-            key={r.key}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 px-4 py-3"
-          >
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{r.label}</p>
-              <p className="text-xs text-muted-foreground">{r.description}</p>
-            </div>
-            <div className="flex shrink-0 gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5"
-                disabled={!!downloading}
-                onClick={() => download(r.label, r.key, r.fn, "xlsx")}
-              >
-                <FileSpreadsheet className="size-3.5" />
-                {downloading === `${r.key}-xlsx` ? "…" : "XLSX"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5"
-                disabled={!!downloading}
-                onClick={() => download(r.label, r.key, r.fn, "pdf")}
-              >
-                <Download className="size-3.5" />
-                {downloading === `${r.key}-pdf` ? "…" : "PDF"}
-              </Button>
-            </div>
-          </div>
-        ))}
+      <div className="flex shrink-0 gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1.5"
+          disabled={!!downloading}
+          onClick={() => download(r.label, r.key, r.fn, "xlsx")}
+        >
+          <FileSpreadsheet className="size-3.5" />
+          {downloading === `${r.key}-xlsx` ? "…" : "XLSX"}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1.5"
+          disabled={!!downloading}
+          onClick={() => download(r.label, r.key, r.fn, "pdf")}
+        >
+          <Download className="size-3.5" />
+          {downloading === `${r.key}-pdf` ? "…" : "PDF"}
+        </Button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="pos-card p-5">
+        <div className="flex items-center gap-2.5">
+          <ReceiptText className="size-5 text-primary" />
+          <h3 className="font-display text-lg">Every bill</h3>
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Applies regardless of VAT registration — downloads use the date range above.
+        </p>
+        <div className="mt-4 space-y-3">{everyBill.map(registerRow)}</div>
+      </div>
+
+      <div className="pos-card p-5">
+        <div className="flex items-center gap-2.5">
+          <FileSpreadsheet className="size-5 text-primary" />
+          <h3 className="font-display text-lg">VAT registers</h3>
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {vatRegistered
+            ? "Output VAT summaries for the selected period."
+            : "Hidden — this business is PAN-only, no VAT to report."}
+        </p>
+        {vatRegistered && <div className="mt-4 space-y-3">{vatOnly.map(registerRow)}</div>}
       </div>
     </div>
   );
