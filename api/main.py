@@ -22,6 +22,7 @@ from core.seed import (
     ensure_ims_branch_settings_qr_schema,
     backfill_branch_settings_vat_mismatch,
     ensure_tenants_free_app_schema,
+    ensure_tenants_logo_schema,
     ensure_subscription_payments_group_schema,
     ensure_ird_schema,
     ensure_org_tax_settings_schema,
@@ -168,6 +169,14 @@ async def lifespan(app: FastAPI):
         logger.info("tenants free_app_code cleanup completed")
     except Exception as e:
         logger.error(f"Failed to clean up tenants free_app_code column: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Ensuring tenants.logo_url column...")
+        ensure_tenants_logo_schema()
+        logger.info("tenants logo_url column ensured")
+    except Exception as e:
+        logger.error(f"Failed to add tenants logo_url column: {type(e).__name__}: {str(e)}")
         raise
 
     try:

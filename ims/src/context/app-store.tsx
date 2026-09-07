@@ -96,6 +96,7 @@ const toCompanyPatch = (t: TenantInfoDto) => ({
   address: t.business_address ?? "",
   phone: t.business_phone ?? "",
   email: t.business_email ?? "",
+  logoUrl: t.logo_url ?? undefined,
 });
 const toCategory = (c: CategoryDto): Category => ({
   id: c.id,

@@ -35,6 +35,7 @@ export function PosHeader() {
     branches,
     canSwitchBranch,
     setBranchId,
+    tenant,
   } = usePos();
   if (!session) return null;
   const today = new Date();
@@ -120,9 +121,18 @@ export function PosHeader() {
                 variant="ghost"
                 className="h-11 gap-2 rounded-xl bg-navy-soft/60 px-3 text-navy-foreground hover:bg-navy-soft hover:text-navy-foreground"
               >
-                <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
-                  {(session.name || session.username).slice(0, 2).toUpperCase()}
-                </span>
+                {tenant?.logo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={tenant.logo_url}
+                    alt=""
+                    className="size-7 shrink-0 rounded-full object-cover"
+                  />
+                ) : (
+                  <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
+                    {(session.name || session.username).slice(0, 2).toUpperCase()}
+                  </span>
+                )}
                 <span className="hidden text-left sm:block">
                   <span className="block text-sm font-semibold leading-none">{session.name || session.username}</span>
                   <span className="block text-[11px] uppercase tracking-wider text-amber">

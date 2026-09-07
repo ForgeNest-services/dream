@@ -826,18 +826,18 @@ function IrdExportsCard({
         <div className="mt-4 space-y-3">{everyBill.map(registerRow)}</div>
       </div>
 
-      <div className="pos-card p-5">
-        <div className="flex items-center gap-2.5">
-          <FileSpreadsheet className="size-5 text-primary" />
-          <h3 className="font-display text-lg">VAT registers</h3>
+      {vatRegistered && (
+        <div className="pos-card p-5">
+          <div className="flex items-center gap-2.5">
+            <FileSpreadsheet className="size-5 text-primary" />
+            <h3 className="font-display text-lg">VAT registers</h3>
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Output VAT summaries for the selected period.
+          </p>
+          <div className="mt-4 space-y-3">{vatOnly.map(registerRow)}</div>
         </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {vatRegistered
-            ? "Output VAT summaries for the selected period."
-            : "Hidden — this business is PAN-only, no VAT to report."}
-        </p>
-        {vatRegistered && <div className="mt-4 space-y-3">{vatOnly.map(registerRow)}</div>}
-      </div>
+      )}
     </div>
   );
 }

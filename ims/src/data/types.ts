@@ -273,6 +273,7 @@ export interface CompanyProfile {
   vatRate: number;
   invoicePrefix: string;
   qrImageUrl?: string | undefined;
+  logoUrl?: string | undefined;
 }
 
 export type DateSystem = "BS" | "AD";

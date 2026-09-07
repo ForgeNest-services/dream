@@ -16,6 +16,7 @@ class Tenant(Base):
     business_address = Column(String(500), nullable=True)
     business_phone = Column(String(20), nullable=True, unique=True)
     business_email = Column(String(255), nullable=True, unique=True)
+    logo_url = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")

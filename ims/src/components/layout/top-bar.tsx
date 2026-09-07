@@ -222,9 +222,18 @@ export function TopBar({ onOpenCommand }: { onOpenCommand: () => void }) {
               size="sm"
               className="shrink-0 gap-2 px-1.5 text-ink-foreground hover:bg-sidebar-accent hover:text-ink-foreground"
             >
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
-                {app.currentUser?.name.slice(0, 2).toUpperCase()}
-              </span>
+              {app.company.logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={app.company.logoUrl}
+                  alt=""
+                  className="h-6 w-6 shrink-0 rounded-full object-cover"
+                />
+              ) : (
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
+                  {app.currentUser?.name.slice(0, 2).toUpperCase()}
+                </span>
+              )}
               <span className="hidden min-w-0 text-left leading-tight 2xl:block">
                 <span className="block truncate text-xs">{app.currentUser?.name}</span>
                 <span className="block text-[10px] opacity-60">

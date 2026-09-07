@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, UploadFile, File
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.deps import get_current_user, require_role, require_tenant_user, require_platform_user
@@ -172,6 +172,51 @@ def update_business_tax_info(
     return success_response(
         data={"tenant": result["tenant"].model_dump()},
         message="Tax info updated",
+    )
+
+
+@router.put("/business-logo")
+async def update_business_logo(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_tenant_user),
+    db: Session = Depends(get_db),
+):
+    """Owner-only — shared business logo, shown on invoices/receipts across
+    every app (mirrors business-tax-info's single-shared-record pattern)."""
+    user = current_user["user"]
+    content = await file.read()
+    result = AuthService.update_logo(
+        db,
+        tenant_id=user.tenant_id,
+        filename=file.filename or "logo",
+        content=content,
+        content_type=file.content_type or "",
+    )
+    if not result["success"]:
+        code = result["error_code"]
+        if code == "UNSUPPORTED_FILE_TYPE":
+            return error_response(code, "Use a PNG, JPG, WEBP or SVG image.", 400)
+        if code == "FILE_TOO_LARGE":
+            return error_response(code, "Image must be under 5MB.", 400)
+        return error_response(code, "Failed to update business logo.", 400)
+    return success_response(
+        data={"tenant": result["tenant"].model_dump()},
+        message="Logo updated",
+    )
+
+
+@router.delete("/business-logo")
+def remove_business_logo(
+    current_user: dict = Depends(require_tenant_user),
+    db: Session = Depends(get_db),
+):
+    user = current_user["user"]
+    result = AuthService.remove_logo(db, user.tenant_id)
+    if not result["success"]:
+        return error_response(result["error_code"], "Failed to remove business logo.", 400)
+    return success_response(
+        data={"tenant": result["tenant"].model_dump()},
+        message="Logo removed",
     )
 
 
@@ -353,6 +398,7 @@ def get_current_user_info(
                 "business_address": tenant.business_address,
                 "business_phone": tenant.business_phone,
                 "business_email": tenant.business_email,
+                "logo_url": tenant.logo_url,
             }
 
     return success_response(data=response_data)
