@@ -205,7 +205,7 @@ function PrintInvoicePage() {
           <p className="mt-1 text-xs uppercase tracking-widest">{reprintLabel}</p>
         </div>
 
-        <div className="grid gap-2 border-y border-black/30 py-2 text-xs sm:grid-cols-2">
+        <div className={`grid gap-2 border-y border-black/30 py-2 text-xs ${isThermal ? "" : "sm:grid-cols-2"}`}>
           <div>
             <p>
               <span className="font-medium">Buyer:</span> {buyerName ?? "Walk-in customer"}
@@ -218,7 +218,7 @@ function PrintInvoicePage() {
             ) : null}
             {cust?.phone ? <p>Tel: {cust.phone}</p> : null}
           </div>
-          <div className="sm:text-right">
+          <div className={isThermal ? "mt-1" : "sm:text-right"}>
             <p>
               <span className="font-medium">No.:</span> {inv.number}
             </p>
@@ -228,9 +228,17 @@ function PrintInvoicePage() {
             <p>
               <span className="font-medium">Date (AD):</span> {formatAd(date, "long")}
             </p>
-            <p>
-              <span className="font-medium">Branch:</span> {branch?.name}
-            </p>
+            {isThermal ? (
+              <p>
+                <span className="font-medium">Branch:</span>
+                <br />
+                {branch?.name}
+              </p>
+            ) : (
+              <p>
+                <span className="font-medium">Branch:</span> {branch?.name}
+              </p>
+            )}
             {inv.enteredByName && (
               <p>
                 <span className="font-medium">Entered by:</span> {inv.enteredByName}
@@ -239,39 +247,61 @@ function PrintInvoicePage() {
           </div>
         </div>
 
-        <table className="mt-3 w-full border-collapse text-xs">
-          <thead>
-            <tr className="border-y border-black/70">
-              <th className="px-1 py-1.5 text-left">S.N.</th>
-              <th className="px-1 py-1.5 text-left">Particulars / विवरण</th>
-              <th className="px-1 py-1.5 text-left">HS Code</th>
-              <th className="px-1 py-1.5 text-right">Qty</th>
-              <th className="px-1 py-1.5 text-right">Rate</th>
-              <th className="px-1 py-1.5 text-right">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
+        {isThermal ? (
+          <div className="mt-3 border-y border-black/70 py-1">
             {inv.lines.map((l, idx) => (
-              <tr key={l.id} className="border-b border-black/20">
-                <td className="px-1 py-1.5">{idx + 1}</td>
-                <td className="px-1 py-1.5">
-                  {l.description}
+              <div key={l.id} className="mb-1.5 border-b border-black/20 pb-1.5 last:mb-0 last:border-0 last:pb-0">
+                <p>
+                  {idx + 1}. {l.description}
                   {hasVat && l.taxable === false ? (
                     <span className="ml-1 text-[9px] uppercase text-black/60">(non-taxable)</span>
                   ) : null}
-                </td>
-                <td className="px-1 py-1.5">{l.hsCode || "—"}</td>
-                <td className="px-1 py-1.5 text-right">
-                  {l.qty} {app.unitSymbol(l.unitId)}
-                </td>
-                <td className="px-1 py-1.5 text-right">{formatMoney(l.rate, app.currency)}</td>
-                <td className="px-1 py-1.5 text-right">
-                  {formatMoney(lineGross(l), app.currency)}
-                </td>
-              </tr>
+                </p>
+                {l.hsCode && <p className="text-[10px] text-black/60">HS: {l.hsCode}</p>}
+                <div className="flex justify-between">
+                  <span>
+                    {l.qty} {app.unitSymbol(l.unitId)} × {formatMoney(l.rate, app.currency)}
+                  </span>
+                  <span>{formatMoney(lineGross(l), app.currency)}</span>
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        ) : (
+          <table className="mt-3 w-full border-collapse text-xs">
+            <thead>
+              <tr className="border-y border-black/70">
+                <th className="px-1 py-1.5 text-left">S.N.</th>
+                <th className="px-1 py-1.5 text-left">Particulars / विवरण</th>
+                <th className="px-1 py-1.5 text-left">HS Code</th>
+                <th className="px-1 py-1.5 text-right">Qty</th>
+                <th className="px-1 py-1.5 text-right">Rate</th>
+                <th className="px-1 py-1.5 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inv.lines.map((l, idx) => (
+                <tr key={l.id} className="border-b border-black/20">
+                  <td className="px-1 py-1.5">{idx + 1}</td>
+                  <td className="px-1 py-1.5">
+                    {l.description}
+                    {hasVat && l.taxable === false ? (
+                      <span className="ml-1 text-[9px] uppercase text-black/60">(non-taxable)</span>
+                    ) : null}
+                  </td>
+                  <td className="px-1 py-1.5">{l.hsCode || "—"}</td>
+                  <td className="px-1 py-1.5 text-right">
+                    {l.qty} {app.unitSymbol(l.unitId)}
+                  </td>
+                  <td className="px-1 py-1.5 text-right">{formatMoney(l.rate, app.currency)}</td>
+                  <td className="px-1 py-1.5 text-right">
+                    {formatMoney(lineGross(l), app.currency)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
 
         <div className={`mt-3 flex ${isThermal ? "" : "justify-end"}`}>
           <dl className={`space-y-1 text-xs ${isThermal ? "w-full" : "w-full max-w-xs"}`}>

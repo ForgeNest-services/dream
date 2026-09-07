@@ -27,7 +27,7 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { normalizeTableSearch } from "@/hooks/useTableQuery";
 import { useProducts } from "@/hooks/useProducts";
 import type { Product } from "@/data/types";
-import type { ProductDto } from "@/lib/products-api";
+import { productsApi, type ProductDto } from "@/lib/products-api";
 import { downloadCsv } from "@/lib/csv";
 import { priceWithVat } from "@/lib/format";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -185,27 +185,63 @@ function ProductsPage() {
 
   const rows = products.map(dtoToProduct);
 
-  const exportCsv = () =>
-    downloadCsv(
-      "products",
-      rows.flatMap((p) => {
-        const taxable = app.company.vatRegistered && p.taxable !== false;
-        const rate = taxable ? (p.taxRate ?? app.company.vatRate) : 0;
-        return app.variantsOf(p.id).map((v) => ({
-          product: p.name,
-          sku: p.sku,
-          category: app.categoryPath(p.categoryId),
-          brand: app.brands.find((b) => b.id === p.brandId)?.name ?? "",
-          variant: v.name,
-          model: v.modelNo,
-          barcode: v.barcode,
-          unit: app.unitSymbol(v.unitId),
-          cost: v.costPrice,
-          price: priceWithVat(v.sellingPrice, rate, taxable),
-          stock: app.stockOf(v),
-        }));
-      }),
-    );
+  const [exporting, setExporting] = useState(false);
+
+  // Exports every product matching the current filters, not just the page
+  // currently on screen — pages through the backend at MAX_PER_PAGE (100)
+  // until meta.total_pages is covered, independent of the on-screen perPage.
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const all: ProductDto[] = [];
+      let page = 1;
+      let totalPages = 1;
+      do {
+        const res = await productsApi.list({
+          q: effectiveQ || undefined,
+          category_id: categoryIdParam,
+          brand_id: search.brandId === "all" ? undefined : search.brandId,
+          stock_status: search.stockFilter === "all" ? "" : (search.stockFilter as "in-stock" | "low" | "out"),
+          page,
+          per_page: 100,
+        });
+        all.push(...(res.data ?? []));
+        totalPages = res.meta?.total_pages ?? 1;
+        page += 1;
+      } while (page <= totalPages);
+
+      const stockOfDto = (v: ProductDto["variants"][number]) =>
+        app.branchId === "all"
+          ? v.stock.reduce((s, row) => s + Number(row.qty), 0)
+          : Number(v.stock.find((row) => row.branch_id === app.branchId)?.qty ?? 0);
+
+      downloadCsv(
+        "products",
+        all.flatMap((dto) => {
+          const p = dtoToProduct(dto);
+          const taxable = app.company.vatRegistered && p.taxable !== false;
+          const rate = taxable ? (p.taxRate ?? app.company.vatRate) : 0;
+          return dto.variants.map((v) => ({
+            product: p.name,
+            sku: p.sku,
+            category: app.categoryPath(p.categoryId),
+            brand: app.brands.find((b) => b.id === p.brandId)?.name ?? "",
+            variant: v.name,
+            model: v.model_no ?? "",
+            barcode: v.barcode ?? "",
+            unit: app.unitSymbol(v.unit_id),
+            cost: v.cost_price,
+            price: priceWithVat(Number(v.selling_price), rate, taxable),
+            stock: stockOfDto(v),
+          }));
+        }),
+      );
+    } catch {
+      toast.error("Failed to export products");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const canEdit = app.can("product.edit");
   // Backend only allows owner/manager to delete a product — storekeeper can
@@ -219,8 +255,8 @@ function ProductsPage() {
         subtitle={`${meta?.total ?? rows.length} products`}
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={exportCsv}>
-              <Download className="mr-1.5 h-4 w-4" /> CSV
+            <Button variant="outline" size="sm" disabled={exporting} onClick={() => void exportCsv()}>
+              <Download className="mr-1.5 h-4 w-4" /> {exporting ? "Exporting…" : "CSV"}
             </Button>
             {app.can("stock.restock") ? (
               <Button

@@ -302,7 +302,7 @@ function PosPage() {
               className="pl-9"
             />
             {results.length > 0 && (
-              <div className="absolute left-3 right-3 top-[54px] z-20 overflow-hidden rounded-lg border bg-popover shadow-md">
+              <div className="absolute left-3 right-3 top-[54px] z-20 max-h-80 overflow-y-auto rounded-lg border bg-popover shadow-md">
                 {results.map((v) => {
                   const p = app.products.find((x) => x.id === v.productId);
                   const stock = v.stock[branchId] ?? 0;
@@ -344,18 +344,19 @@ function PosPage() {
               description="Search a product above or scan its barcode to start a sale."
             />
           ) : (
-            <table className="w-full text-sm">
-              <thead className="border-b text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium">Item</th>
-                  <th className="px-3 py-2 text-center font-medium">Qty</th>
-                  <th className="px-3 py-2 text-right font-medium">Rate</th>
-                  <th className="px-3 py-2 text-right font-medium">Disc</th>
-                  <th className="px-3 py-2 text-right font-medium">Amount</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
+            <div className="max-h-[480px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10 border-b bg-card text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">Item</th>
+                    <th className="px-3 py-2 text-center font-medium">Qty</th>
+                    <th className="px-3 py-2 text-right font-medium">Rate</th>
+                    <th className="px-3 py-2 text-right font-medium">Disc</th>
+                    <th className="px-3 py-2 text-right font-medium">Amount</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
                 {lines.map((l) => (
                   <tr key={l.id} className="border-b last:border-0">
                     <td className="px-3 py-2">
@@ -441,8 +442,9 @@ function PosPage() {
                     </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 
