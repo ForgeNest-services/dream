@@ -306,6 +306,7 @@ class PartyData(BaseModel):
     email: str | None
     address: str | None
     pan: str | None
+    is_walk_in: bool
     is_vat_registered: bool | None
     credit_limit: Decimal | None
     opening_balance: Decimal

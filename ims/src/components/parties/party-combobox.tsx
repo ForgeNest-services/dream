@@ -25,6 +25,7 @@ function dtoToParty(p: {
   email: string | null;
   address: string | null;
   pan: string | null;
+  is_walk_in: boolean;
   is_vat_registered: boolean | null;
   credit_limit: number | string | null;
   opening_balance: number | string;
@@ -38,6 +39,7 @@ function dtoToParty(p: {
     email: p.email ?? undefined,
     address: p.address ?? "",
     pan: p.pan ?? undefined,
+    isWalkIn: p.is_walk_in ?? false,
     isVatRegistered: p.is_vat_registered ?? undefined,
     creditLimit: p.credit_limit == null ? undefined : num(p.credit_limit),
     openingBalance: num(p.opening_balance),

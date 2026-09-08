@@ -30,6 +30,8 @@ services:
   postgres:
     build: ./backup/wal-archive
     container_name: srota-postgres
+    ports:
+      - "5433:5432"
     restart: unless-stopped
     env_file:
       - .env

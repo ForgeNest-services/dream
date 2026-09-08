@@ -174,6 +174,7 @@ export interface Party {
   email?: string | undefined;
   address: string;
   pan?: string | undefined;
+  isWalkIn: boolean;
   isVatRegistered?: boolean | undefined;
   creditLimit?: number | undefined;
   openingBalance: number;

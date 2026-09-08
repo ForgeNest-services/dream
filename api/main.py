@@ -20,6 +20,7 @@ from core.seed import (
     ensure_ims_variant_expiry_schema,
     ensure_ims_fiscal_year_link_schema,
     ensure_ims_branch_settings_qr_schema,
+    ensure_ims_walk_in_customer,
     backfill_branch_settings_vat_mismatch,
     ensure_tenants_free_app_schema,
     ensure_tenants_logo_schema,
@@ -153,6 +154,14 @@ async def lifespan(app: FastAPI):
         logger.info("ims_branch_settings QR schema backfill completed")
     except Exception as e:
         logger.error(f"Failed to backfill ims_branch_settings QR schema: {type(e).__name__}: {str(e)}")
+        raise
+
+    try:
+        logger.info("Seeding walk-in customer for IMS tenants...")
+        ensure_ims_walk_in_customer()
+        logger.info("IMS walk-in customer seed completed")
+    except Exception as e:
+        logger.error(f"Failed to seed IMS walk-in customer: {type(e).__name__}: {str(e)}")
         raise
 
     try:

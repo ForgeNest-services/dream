@@ -71,6 +71,26 @@ class IMSCredentialService:
                 SubscriptionService.start_trial_if_needed(db, tenant_id, "srota_ims")
             except Exception as e:
                 logger.error(f"Failed to start IMS trial for tenant {tenant_id}: {e}")
+            # Seed a Walk-in Customer for this tenant if none exists yet.
+            try:
+                from features.ims.party_repository import IMSPartyRepository
+                from shared_models.ims_party import IMSParty
+                exists = (
+                    db.query(IMSParty)
+                    .filter(IMSParty.tenant_id == tenant_id, IMSParty.is_walk_in == True)
+                    .first()
+                )
+                if not exists:
+                    IMSPartyRepository.create(
+                        db,
+                        tenant_id=tenant_id,
+                        name="Walk-in Customer",
+                        kind="customer",
+                        is_walk_in=True,
+                        opening_balance=0,
+                    )
+            except Exception as e:
+                logger.error(f"Failed to seed walk-in customer for tenant {tenant_id}: {e}")
             return {"success": True, "credential": cred}
         except IntegrityError as e:
             db.rollback()

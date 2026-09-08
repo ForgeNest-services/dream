@@ -394,6 +394,62 @@ def ensure_ims_branch_settings_qr_schema() -> None:
         db.close()
 
 
+def ensure_ims_walk_in_customer() -> None:
+    """Add is_walk_in column to ims_parties (if not present) and seed one
+    Walk-in Customer record per IMS tenant. Safe to re-run — the column ADD
+    is IF NOT EXISTS and the INSERT skips tenants that already have a
+    walk-in party."""
+    db = AdminSessionLocal()
+    try:
+        db.execute(text(
+            "ALTER TABLE public.ims_parties "
+            "ADD COLUMN IF NOT EXISTS is_walk_in BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
+        db.commit()
+
+        # All distinct tenant_ids that already have any ims_party row, minus
+        # those that already have a walk-in record.
+        rows = db.execute(text(
+            "SELECT DISTINCT tenant_id FROM public.ims_parties "
+            "WHERE tenant_id NOT IN ("
+            "  SELECT tenant_id FROM public.ims_parties WHERE is_walk_in = TRUE"
+            ")"
+        )).fetchall()
+
+        import uuid as _uuid
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            db.execute(text(
+                "INSERT INTO public.ims_parties "
+                "(id, tenant_id, name, kind, is_walk_in, opening_balance, created_at, updated_at) "
+                "VALUES (:id, :tenant_id, 'Walk-in Customer', 'customer', TRUE, 0, :now, :now)"
+            ), {"id": str(_uuid.uuid4()), "tenant_id": row.tenant_id, "now": now})
+        db.commit()
+
+        # Also seed for tenants that have IMS credentials but no parties yet.
+        rows2 = db.execute(text(
+            "SELECT DISTINCT tenant_id FROM public.ims_credentials "
+            "WHERE tenant_id NOT IN ("
+            "  SELECT tenant_id FROM public.ims_parties WHERE is_walk_in = TRUE"
+            ")"
+        )).fetchall()
+        for row in rows2:
+            db.execute(text(
+                "INSERT INTO public.ims_parties "
+                "(id, tenant_id, name, kind, is_walk_in, opening_balance, created_at, updated_at) "
+                "VALUES (:id, :tenant_id, 'Walk-in Customer', 'customer', TRUE, 0, :now, :now)"
+            ), {"id": str(_uuid.uuid4()), "tenant_id": row.tenant_id, "now": now})
+        db.commit()
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to ensure ims walk-in customer: {type(e).__name__}: {str(e)}")
+        raise
+    finally:
+        db.close()
+
+
 def ensure_restro_bill_code_schema() -> None:
     """Back-fill the bill_code column onto restro_orders — the printed/
     displayed bill number ("RMS-<branch code>-83/84-00005"). IRD: Electronic

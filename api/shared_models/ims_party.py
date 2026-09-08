@@ -20,6 +20,7 @@ class IMSParty(Base):
     email = Column(String(200), nullable=True)
     address = Column(String(500), nullable=True)
     pan = Column(String(30), nullable=True)
+    is_walk_in = Column(Boolean, nullable=False, default=False)
     is_vat_registered = Column(Boolean, nullable=True)
     credit_limit = Column(Numeric(12, 2), nullable=True)
     opening_balance = Column(Numeric(12, 2), nullable=False, default=0)

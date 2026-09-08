@@ -71,6 +71,7 @@ function dtoToParty(p: {
   email: string | null;
   address: string | null;
   pan: string | null;
+  is_walk_in: boolean;
   is_vat_registered: boolean | null;
   credit_limit: number | string | null;
   opening_balance: number | string;
@@ -84,6 +85,7 @@ function dtoToParty(p: {
     email: p.email ?? undefined,
     address: p.address ?? "",
     pan: p.pan ?? undefined,
+    isWalkIn: p.is_walk_in ?? false,
     isVatRegistered: p.is_vat_registered ?? undefined,
     // Backend Decimal fields serialize as JSON strings — coerce or
     // arithmetic on these silently does string concatenation.
@@ -218,15 +220,17 @@ function CustomersPage() {
                       <Button variant="ghost" size="sm" onClick={() => setLedgerFor(r.party)}>
                         <BookOpen className="mr-1.5 h-3.5 w-3.5" /> Ledger
                       </Button>
-                      {app.can("payment.record") && (
+                      {app.can("payment.record") && !r.party.isWalkIn && (
                         <Button variant="outline" size="sm" onClick={() => setPayFor(r.party)}>
                           <Wallet className="mr-1.5 h-3.5 w-3.5" /> Payment
                         </Button>
                       )}
-                      <Button variant="ghost" size="sm" onClick={() => setEditFor(r.party)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      {canDelete && (
+                      {!r.party.isWalkIn && (
+                        <Button variant="ghost" size="sm" onClick={() => setEditFor(r.party)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {canDelete && !r.party.isWalkIn && (
                         <Button
                           variant="ghost"
                           size="sm"

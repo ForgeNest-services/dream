@@ -173,6 +173,7 @@ const toParty = (p: PartyDto): Party => ({
   email: p.email ?? undefined,
   address: p.address ?? "",
   pan: p.pan ?? undefined,
+  isWalkIn: p.is_walk_in ?? false,
   isVatRegistered: p.is_vat_registered ?? undefined,
   creditLimit: numOrUndefined(p.credit_limit),
   openingBalance: num(p.opening_balance),

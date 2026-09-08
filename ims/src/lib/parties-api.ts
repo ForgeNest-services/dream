@@ -12,6 +12,7 @@ export interface PartyDto {
   email: string | null;
   address: string | null;
   pan: string | null;
+  is_walk_in: boolean;
   is_vat_registered: boolean | null;
   credit_limit: number | string | null;
   opening_balance: number | string;

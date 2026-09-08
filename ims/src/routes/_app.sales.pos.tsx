@@ -89,6 +89,13 @@ function PosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app.branchesReady, app.company.vatRegistered]);
 
+  useEffect(() => {
+    if (!app.branchesReady || customerId) return;
+    const walkIn = app.parties.find((p) => p.kind === "customer" && p.isWalkIn);
+    if (walkIn) setCustomerId(walkIn.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.branchesReady]);
+
   const branchId = app.branchId === "all" ? (app.branches[0]?.id ?? "") : app.branchId;
   const customers = app.parties.filter((p) => p.kind === "customer");
   const isQuotation = mode === "quotation";
