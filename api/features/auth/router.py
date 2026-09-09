@@ -13,13 +13,20 @@ from features.auth.schemas import (
     CreateTeamMemberRequest,
     VerifyOTPRequest,
     ResendOTPRequest,
+    ForgotPasswordRequest,
+    VerifyResetOTPRequest,
+    ResetPasswordRequest,
     BusinessRegisterRequest,
     UpdateTaxInfoRequest,
     RefreshTokenRequest,
 )
 from features.auth.service import AuthService
 from features.auth.repository import UserRepository
-from jobs.email_jobs import send_team_invitation_email, send_otp_verification_email
+from jobs.email_jobs import (
+    send_team_invitation_email,
+    send_otp_verification_email,
+    send_password_reset_otp_email,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -270,6 +277,72 @@ def resend_verification_otp(data: ResendOTPRequest, db: Session = Depends(get_db
         data={"otp_expires_in": 300},
         message="Verification email sent",
     )
+
+
+@router.post("/forgot-password")
+def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    result = AuthService.forgot_password(db, data.email)
+
+    if not result["success"]:
+        code = result["error_code"]
+        if code == "USER_NOT_FOUND":
+            return error_response("USER_NOT_FOUND", "No account found with this email.", 404)
+        if code == "GOOGLE_ACCOUNT":
+            return error_response(
+                "GOOGLE_ACCOUNT",
+                "This account signs in with Google — there's no password to reset.",
+                400,
+            )
+        return error_response("FORGOT_PASSWORD_FAILED", "Failed to send reset code.", 500)
+
+    user = result["user"]
+    job_queue.enqueue(
+        send_password_reset_otp_email,
+        recipient_email=user.email,
+        recipient_name=user.full_name,
+        otp_code=result["otp_code"],
+        expiry_minutes=5,
+    )
+
+    return success_response(
+        data={"otp_expires_in": 300},
+        message="A reset code has been sent to your email.",
+    )
+
+
+@router.post("/reset-password/verify-otp")
+def verify_reset_otp(data: VerifyResetOTPRequest, db: Session = Depends(get_db)):
+    result = AuthService.verify_reset_otp(db, data.email, data.otp_code)
+
+    if not result["success"]:
+        code = result["error_code"]
+        if code == "USER_NOT_FOUND":
+            return error_response("USER_NOT_FOUND", "No account found with this email.", 404)
+        if code == "INVALID_OTP":
+            return error_response("INVALID_OTP", "Invalid or expired code.", 401)
+        return error_response("VERIFICATION_FAILED", "Failed to verify code.", 500)
+
+    return success_response(
+        data={"reset_token": result["reset_token"]},
+        message="Code verified.",
+    )
+
+
+@router.post("/reset-password")
+def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
+    result = AuthService.reset_password(db, data.reset_token, data.new_password)
+
+    if not result["success"]:
+        code = result["error_code"]
+        if code == "INVALID_RESET_TOKEN":
+            return error_response(
+                "INVALID_RESET_TOKEN", "This reset link has expired. Start over.", 401
+            )
+        if code == "USER_NOT_FOUND":
+            return error_response("USER_NOT_FOUND", "Account not found.", 404)
+        return error_response("RESET_FAILED", "Failed to reset password.", 500)
+
+    return success_response(message="Password reset. Please sign in with your new password.")
 
 
 @router.post("/login")

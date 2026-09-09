@@ -49,7 +49,7 @@ export function SettingsView() {
         <TabsTrigger value="restaurant">Restaurant</TabsTrigger>
         <TabsTrigger value="tax">Tax</TabsTrigger>
         <TabsTrigger value="payments">Payments</TabsTrigger>
-        {(tenantLoading || tenant?.is_vat_registered) && (
+        {(tenantLoading || tenant?.cbms_configured) && (
           <TabsTrigger value="ird">IRD / CBMS</TabsTrigger>
         )}
         {(actualRole === "owner" || actualRole === "manager") && (
@@ -267,14 +267,15 @@ export function SettingsView() {
       </TabsContent>
 
       {/* ── IRD / CBMS ── */}
-      {/* CBMS real-time sync only applies to VAT-registered businesses (दफा
-          ६.४क) — a PAN-only tenant has nothing to sync, so the whole tab
-          (trigger above + content here) is hidden rather than shown
-          disabled, matching the same gate on the admin credentials card.
-          Kept visible while tenant is still loading (see the trigger's own
-          condition above) so it doesn't flash in/out for a VAT tenant on
+      {/* CBMS real-time sync only applies once admin has actually saved IRD
+          credentials AND enabled sync for this org (tenant.cbms_configured
+          — see RestroTenantInfo) — a VAT-registered tenant that hasn't set
+          this up yet has no sync history to show, so the whole tab (trigger
+          above + content here) is hidden rather than showing an empty/
+          confusing panel. Kept visible while tenant is still loading (see
+          the trigger's own condition above) so it doesn't flash in/out on
           every page load. */}
-      {(tenantLoading || tenant?.is_vat_registered) && (
+      {(tenantLoading || tenant?.cbms_configured) && (
         <TabsContent value="ird" className="mt-4 space-y-4">
           <CbmsRealtimeCard
             tenant={tenant}

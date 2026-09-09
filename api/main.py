@@ -45,6 +45,8 @@ from features.branches.router import router as branches_router
 from features.uploads import router as uploads_router
 from features.subscriptions.router import router as subscriptions_router
 from features.tax_settings.router import router as tax_settings_router
+from features.queries import router as queries_router
+from features.subscribers import router as subscribers_router
 
 
 @asynccontextmanager
@@ -313,6 +315,8 @@ app.include_router(apps_router)
 app.include_router(uploads_router)
 app.include_router(subscriptions_router)
 app.include_router(tax_settings_router)
+app.include_router(queries_router)
+app.include_router(subscribers_router)
 
 
 @app.exception_handler(StarletteHTTPException)

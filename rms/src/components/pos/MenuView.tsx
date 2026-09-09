@@ -107,10 +107,12 @@ function ConfirmDeleteDialog({
 export function MenuView() {
   const {
     categories,
+    categoriesLoading,
     addCategory,
     renameCategory,
     deleteCategory,
     menu,
+    menuLoading,
     saveMenuItem,
     deleteMenuItem,
     toggleSoldOut,
@@ -148,6 +150,12 @@ export function MenuView() {
               <span className="ml-1.5 text-xs opacity-70">({menu.length})</span>
             </button>
           </li>
+          {categories.length === 0 && categoriesLoading && (
+            <li className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
+              <Loader2 className="size-3.5 shrink-0 animate-spin" />
+              Setting up your categories…
+            </li>
+          )}
           {categories.map((c) => (
             <li key={c.id} className="flex items-center gap-1">
               <button
@@ -275,12 +283,26 @@ export function MenuView() {
               </div>
             </article>
           ))}
-          {items.length === 0 && (
-            <p className="pos-card col-span-full p-8 text-sm text-muted-foreground">
-              {isAll
-                ? "No menu items yet. Pick a category and click Add Item to get started."
-                : "No items in this category yet."}
-            </p>
+          {/* A fresh branch's menu/categories seed server-side on first
+              access and can take a moment to arrive — while either is still
+              loading and nothing has rendered yet, show that instead of a
+              premature "no items yet", which otherwise flashes on first
+              login. */}
+          {items.length === 0 && (menuLoading || categoriesLoading) ? (
+            <div className="pos-card col-span-full flex flex-col items-center gap-2 p-10 text-sm text-muted-foreground">
+              <Loader2 className="size-5 animate-spin" />
+              {categoriesLoading
+                ? "Setting up your menu from the branch template…"
+                : "Hang tight, your menu is on its way…"}
+            </div>
+          ) : (
+            items.length === 0 && (
+              <p className="pos-card col-span-full p-8 text-sm text-muted-foreground">
+                {isAll
+                  ? "No menu items yet. Pick a category and click Add Item to get started."
+                  : "No items in this category yet."}
+              </p>
+            )
           )}
         </div>
       </section>

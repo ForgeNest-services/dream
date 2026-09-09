@@ -12,6 +12,8 @@ import {
   MdSettings,
   MdShield,
   MdChevronLeft,
+  MdOutlineMailOutline,
+  MdOutlineNotifications,
 } from 'react-icons/md';
 import { colors, spacing, radius, layout } from '@/lib/design-tokens';
 import { useSidebar } from './SidebarContext';
@@ -20,9 +22,13 @@ const navigationItems = [
   { label: 'Dashboard', href: '/dashboard', icon: MdDashboard, roles: ['owner', 'manager'] },
   { label: 'Apps', href: '/dashboard/apps', icon: MdApps, roles: ['owner', 'manager'] },
   { label: 'Branches', href: '/dashboard/branches', icon: MdOutlineBusiness, roles: ['owner', 'manager'] },
-  { label: 'Team Members', href: '/dashboard/team', icon: MdPeople, roles: ['owner'] },
+  // Team Members: commented out for launch, not needed yet. Page/API stay
+  // intact — see app/dashboard/team/page.tsx's redirect.
+  // { label: 'Team Members', href: '/dashboard/team', icon: MdPeople, roles: ['owner'] },
   { label: 'Settings', href: '/dashboard/settings', icon: MdSettings, roles: ['owner'] },
   { label: 'Admin Panel', href: '/dashboard/admin', icon: MdShield, roles: ['superadmin'] },
+  { label: 'Queries', href: '/dashboard/queries', icon: MdOutlineMailOutline, roles: ['superadmin'] },
+  { label: 'Subscribers', href: '/dashboard/subscribers', icon: MdOutlineNotifications, roles: ['superadmin'] },
 ];
 
 export function Sidebar() {

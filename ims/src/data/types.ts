@@ -275,6 +275,11 @@ export interface CompanyProfile {
   invoicePrefix: string;
   qrImageUrl?: string | undefined;
   logoUrl?: string | undefined;
+  /** True only once admin has saved IRD credentials AND enabled sync for
+   * this org (Tenant lookup via GET /branches's meta.tenant.cbms_configured).
+   * Gates whether the Settings page's IRD/CBMS tab shows at all — undefined
+   * until the real tenant info has loaded. */
+  cbmsConfigured?: boolean | undefined;
 }
 
 export type DateSystem = "BS" | "AD";

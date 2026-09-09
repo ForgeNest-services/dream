@@ -105,6 +105,13 @@ class UserRepository:
     def get_by_id(db: Session, user_id: str) -> User:
         return db.query(User).filter(User.id == user_id).first()
 
+    @staticmethod
+    def update_password(db: Session, user: User, password_hash: str) -> User:
+        user.password_hash = password_hash
+        db.commit()
+        db.refresh(user)
+        return user
+
 
 class PlatformAdminRepository:
     @staticmethod

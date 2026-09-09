@@ -334,6 +334,7 @@ def get_tenant_info(
             business_phone=tenant.business_phone,
             business_address=tenant.business_address,
             logo_url=tenant.logo_url,
+            cbms_configured=CBMSCredentialRepository.get(db, tenant.id) is not None,
         ).model_dump(mode="json")
     )
 

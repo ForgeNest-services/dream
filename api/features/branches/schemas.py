@@ -36,6 +36,12 @@ class TenantInfoData(BaseModel):
     business_phone: str | None
     business_email: str | None
     logo_url: str | None
+    # True only once admin has actually saved IRD credentials AND flipped
+    # the org-level sync toggle on — not a real Tenant column, so callers
+    # must set it explicitly after model_validate(tenant) (see
+    # CBMSCredentialRepository.get, api/features/restro/router.py's
+    # matching field on RestroTenantInfo).
+    cbms_configured: bool = False
 
 
 class CreateBranchRequest(BaseModel):

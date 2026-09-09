@@ -1,5 +1,8 @@
+from datetime import timedelta
+from uuid import uuid4
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from core.redis import redis_conn
 from core.security import (
     hash_password,
     verify_password,
@@ -510,6 +513,79 @@ class AuthService:
             "otp_sent": True,
             "otp_code": otp,
         }
+
+    @staticmethod
+    def forgot_password(db: Session, email: str) -> dict:
+        user = UserRepository.get_by_email(db, email)
+        if not user:
+            logger.warning(f"Forgot-password failed: user not found - {email}")
+            return {"success": False, "error_code": "USER_NOT_FOUND"}
+
+        # Google-only account (see google_callback/google_signup: password_hash
+        # is never set for these) has no password to reset — sending an OTP
+        # would just dead-end the user at a step they can't complete.
+        if not user.password_hash:
+            return {"success": False, "error_code": "GOOGLE_ACCOUNT"}
+
+        otp = generate_otp()
+        store_otp(user.id, otp, purpose="password_reset", ttl=OTP_TTL_SECONDS)
+        logger.info(f"Password reset OTP sent for {email}")
+
+        return {
+            "success": True,
+            "otp_sent": True,
+            "otp_code": otp,
+            "user": user,
+        }
+
+    @staticmethod
+    def verify_reset_otp(db: Session, email: str, otp_code: str) -> dict:
+        user = UserRepository.get_by_email(db, email)
+        if not user:
+            return {"success": False, "error_code": "USER_NOT_FOUND"}
+
+        if not verify_otp(user.id, otp_code, purpose="password_reset"):
+            logger.warning(f"Invalid password-reset OTP for {email}")
+            return {"success": False, "error_code": "INVALID_OTP"}
+
+        # Short-lived, single-purpose token — can't be used as a login/access
+        # token (decode_token callers all key off user_id/is_superadmin,
+        # never "purpose", so this only means anything to reset_password
+        # below) and expires well before a real session token would. jti
+        # makes it single-use: a JWT is stateless and would otherwise be
+        # replayable for its whole 10-minute lifetime (confirmed live during
+        # this feature's own testing — the same token successfully reset the
+        # password twice before this was added) — reset_password below
+        # claims the jti in Redis atomically on first use.
+        jti = str(uuid4())
+        reset_token = create_access_token(
+            {"user_id": user.id, "purpose": "password_reset", "jti": jti},
+            expires_delta=timedelta(minutes=10),
+        )
+        logger.info(f"Password reset OTP verified for {email}")
+        return {"success": True, "reset_token": reset_token}
+
+    @staticmethod
+    def reset_password(db: Session, reset_token: str, new_password: str) -> dict:
+        payload = decode_token(reset_token)
+        jti = payload.get("jti") if payload else None
+        if not payload or payload.get("purpose") != "password_reset" or not payload.get("user_id") or not jti:
+            return {"success": False, "error_code": "INVALID_RESET_TOKEN"}
+
+        # SETNX-style claim: only the first caller to present this jti gets
+        # `True` back; ttl just bounds how long a claimed-but-unused key
+        # lingers (the token itself is already expired well before this).
+        claimed = redis_conn.set(f"reset_token_used:{jti}", "1", nx=True, ex=900)
+        if not claimed:
+            return {"success": False, "error_code": "INVALID_RESET_TOKEN"}
+
+        user = UserRepository.get_by_id(db, payload["user_id"])
+        if not user:
+            return {"success": False, "error_code": "USER_NOT_FOUND"}
+
+        UserRepository.update_password(db, user, hash_password(new_password))
+        logger.info(f"Password reset completed for {user.email}")
+        return {"success": True}
 
     @staticmethod
     def create_team_member(

@@ -5,6 +5,9 @@ import {
   LoginRequest,
   VerifyOTPRequest,
   ResendOTPRequest,
+  ForgotPasswordRequest,
+  VerifyResetOTPRequest,
+  ResetPasswordRequest,
   BusinessRegisterRequest,
   UpdateTaxInfoRequest,
   GoogleCallbackRequest,
@@ -88,6 +91,41 @@ export const authApi = {
   resendOtp: async (data: ResendOTPRequest): Promise<ApiResponse> => {
     try {
       const response = await axiosClient.post<ApiResponse>('/auth/resend-verification-otp', data);
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error);
+    }
+  },
+
+  forgotPassword: async (data: ForgotPasswordRequest): Promise<ApiResponse<{ otp_expires_in: number }>> => {
+    try {
+      const response = await axiosClient.post<ApiResponse<{ otp_expires_in: number }>>(
+        '/auth/forgot-password',
+        data
+      );
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error);
+    }
+  },
+
+  verifyResetOtp: async (
+    data: VerifyResetOTPRequest
+  ): Promise<ApiResponse<{ reset_token: string }>> => {
+    try {
+      const response = await axiosClient.post<ApiResponse<{ reset_token: string }>>(
+        '/auth/reset-password/verify-otp',
+        data
+      );
+      return response.data;
+    } catch (error) {
+      throw normalizeError(error);
+    }
+  },
+
+  resetPassword: async (data: ResetPasswordRequest): Promise<ApiResponse> => {
+    try {
+      const response = await axiosClient.post<ApiResponse>('/auth/reset-password', data);
       return response.data;
     } catch (error) {
       throw normalizeError(error);
