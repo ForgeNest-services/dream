@@ -182,7 +182,20 @@
   }
 
   // ---------------------------------------------------------------------
-  // Newsletter form — front-end only feedback for now
+  // API base — this site is served from srotaapps.com while the API lives
+  // on api.srotaapps.com, so every call below is a genuine cross-origin
+  // fetch (already allowed — UI_VIRTUAL_HOST is in the API's
+  // CORS_ALLOWED_ORIGINS list, see api/core/configs.py).
+  // ---------------------------------------------------------------------
+  var API_BASE =
+    location.hostname === "localhost" || location.hostname === "127.0.0.1"
+      ? "http://localhost:8006/api"
+      : "https://api.srotaapps.com/api";
+  var CONTACT_API_URL = API_BASE + "/queries";
+  var SUBSCRIBERS_API_URL = API_BASE + "/subscribers";
+
+  // ---------------------------------------------------------------------
+  // Newsletter form — POSTs to the real public /subscribers endpoint
   // ---------------------------------------------------------------------
   function initNewsletterForm() {
     var form = document.getElementById("newsletter-form");
@@ -195,30 +208,41 @@
       if (!button || !input || !input.value) return;
 
       var originalText = button.textContent;
-      button.textContent = "You're on the list";
+      button.textContent = "Joining…";
       button.disabled = true;
       input.disabled = true;
 
-      setTimeout(function () {
-        button.textContent = originalText;
-        button.disabled = false;
-        input.disabled = false;
-        input.value = "";
-      }, 2600);
+      fetch(SUBSCRIBERS_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: input.value }),
+      })
+        .then(function (res) {
+          return res.json().then(function (body) {
+            return { ok: res.ok, body: body };
+          });
+        })
+        .then(function (result) {
+          button.textContent =
+            result.ok && result.body.success ? "You're on the list" : "Something went wrong";
+        })
+        .catch(function () {
+          button.textContent = "Something went wrong";
+        })
+        .finally(function () {
+          setTimeout(function () {
+            button.textContent = originalText;
+            button.disabled = false;
+            input.disabled = false;
+            input.value = "";
+          }, 2600);
+        });
     });
   }
 
   // ---------------------------------------------------------------------
-  // Contact form — POSTs to the real public /queries endpoint. Same-origin
-  // in prod would be simplest, but this site is served from srotaapps.com
-  // while the API lives on api.srotaapps.com, so this is a genuine
-  // cross-origin fetch (already allowed — UI_VIRTUAL_HOST is in the API's
-  // CORS_ALLOWED_ORIGINS list, see api/core/configs.py).
+  // Contact form — POSTs to the real public /queries endpoint
   // ---------------------------------------------------------------------
-  var CONTACT_API_URL =
-    location.hostname === "localhost" || location.hostname === "127.0.0.1"
-      ? "http://localhost:8006/api/queries"
-      : "https://api.srotaapps.com/api/queries";
 
   function initContactForm() {
     var form = document.getElementById("contact-form");
