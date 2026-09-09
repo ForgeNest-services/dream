@@ -11,6 +11,7 @@ from features.branches.schemas import (
 )
 from features.branches.service import BranchService
 from features.auth.repository import TenantRepository
+from features.cbms.credential_service import CBMSCredentialRepository
 
 
 router = APIRouter(prefix="/branches", tags=["branches"])
@@ -35,11 +36,14 @@ def list_branches(
         )
     else:
         branches = BranchService.list_for_tenant(db, scope["tenant_id"], tenant)
+    tenant_meta = None
+    if tenant:
+        tenant_info = TenantInfoData.model_validate(tenant)
+        tenant_info.cbms_configured = CBMSCredentialRepository.get(db, tenant.id) is not None
+        tenant_meta = tenant_info.model_dump(mode="json")
     return success_response(
         data=[BranchData.model_validate(b).model_dump(mode="json") for b in branches],
-        meta={"tenant": TenantInfoData.model_validate(tenant).model_dump(mode="json")}
-        if tenant
-        else None,
+        meta={"tenant": tenant_meta},
     )
 
 

@@ -24,6 +24,7 @@ export interface TenantInfoDto {
   business_phone: string | null;
   business_email: string | null;
   logo_url: string | null;
+  cbms_configured: boolean;
 }
 
 export const branchesApi = {

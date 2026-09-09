@@ -741,6 +741,12 @@ class RestroTenantInfo(BaseModel):
     business_phone: str | None
     business_address: str | None
     logo_url: str | None
+    # True only once admin has actually saved IRD credentials AND flipped
+    # the org-level sync toggle on (see CBMSCredentialRepository.get) —
+    # RMS/IMS Settings pages use this to hide the whole CBMS sync-log panel
+    # for a VAT-registered tenant that hasn't set CBMS up yet, instead of
+    # showing an always-empty, confusing "sync log" section.
+    cbms_configured: bool
 
 
 class SetDeliveryStatusRequest(BaseModel):

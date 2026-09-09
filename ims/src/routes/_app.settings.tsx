@@ -82,11 +82,14 @@ function SettingsPage() {
           <TabsTrigger value="fiscal">Fiscal years</TabsTrigger>
           <TabsTrigger value="units">Units &amp; brands</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
-          {/* CBMS real-time sync only applies to a VAT-registered business
-              (दफा ६.४क) — hidden for PAN-only, matching RMS's SettingsView.
-              Kept visible while branch/tenant data is still loading so it
-              doesn't flash in/out for a VAT tenant on page load. */}
-          {(!app.branchesReady || app.company.isVatRegisteredTenant) && (
+          {/* CBMS real-time sync only applies once admin has actually saved
+              IRD credentials AND enabled sync for this org
+              (company.cbmsConfigured — see TenantInfoDto), matching RMS's
+              SettingsView. A VAT-registered tenant that hasn't set this up
+              yet has no sync history to show. Kept visible while
+              branch/tenant data is still loading so it doesn't flash in/out
+              on page load. */}
+          {(!app.branchesReady || app.company.cbmsConfigured) && (
             <TabsTrigger value="ird">IRD / CBMS</TabsTrigger>
           )}
           <TabsTrigger value="audit">Activity Log</TabsTrigger>
@@ -323,7 +326,7 @@ function SettingsPage() {
           </div>
         </TabsContent>
 
-        {(!app.branchesReady || app.company.isVatRegisteredTenant) && (
+        {(!app.branchesReady || app.company.cbmsConfigured) && (
           <TabsContent value="ird" className="mt-4">
             <CbmsCredentialsCard />
           </TabsContent>
