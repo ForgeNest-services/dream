@@ -43,29 +43,38 @@
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
+      "@id": "https://srotaapps.com/rms#software",
       "name": "Srota RMS",
       "url": "https://srotaapps.com/rms",
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "Web",
+      "datePublished": "2026-01-01",
       "offers": {
         "@type": "Offer",
-        "price": "1299",
+        "price": 1299,
         "priceCurrency": "NPR",
         "priceSpecification": {
           "@type": "UnitPriceSpecification",
-          "price": "1299",
+          "price": 1299,
           "priceCurrency": "NPR",
           "unitText": "MONTH"
         }
       },
-      "publisher": {
-        "@type": "Organization",
-        "name": "Forgenest Services Pvt. Ltd.",
-        "url": "https://srotaapps.com/"
-      },
+      "publisher": { "@id": "https://srotaapps.com/#organization" },
       "description": "Srota RMS is a restaurant point of sale that runs in the browser: floor tables, a menu with variants, kitchen display, khata, VAT-aware billing in Bikram Sambat, and reports across every branch.",
       "screenshot": "https://srotaapps.com/public/rms-thumbnail.png",
-      "featureList": ["Table orders", "Kitchen display", "VAT billing", "Bikram Sambat dates", "Multi-branch", "Khata payments"]
+      "featureList": "Table orders, Kitchen display, VAT billing, Bikram Sambat dates, Multi-branch, Khata payments",
+      "isPartOf": { "@id": "https://srotaapps.com/#website" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://srotaapps.com/" },
+        { "@type": "ListItem", "position": 2, "name": "Srota RMS", "item": "https://srotaapps.com/rms" }
+      ]
     }
     </script>
   </head>

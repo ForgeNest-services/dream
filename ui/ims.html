@@ -43,29 +43,38 @@
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
+      "@id": "https://srotaapps.com/ims#software",
       "name": "Srota IMS",
       "url": "https://srotaapps.com/ims",
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "Web",
+      "datePublished": "2026-01-01",
       "offers": {
         "@type": "Offer",
-        "price": "1699",
+        "price": 1699,
         "priceCurrency": "NPR",
         "priceSpecification": {
           "@type": "UnitPriceSpecification",
-          "price": "1699",
+          "price": 1699,
           "priceCurrency": "NPR",
           "unitText": "MONTH"
         }
       },
-      "publisher": {
-        "@type": "Organization",
-        "name": "Forgenest Services Pvt. Ltd.",
-        "url": "https://srotaapps.com/"
-      },
+      "publisher": { "@id": "https://srotaapps.com/#organization" },
       "description": "Srota IMS keeps stock in sync with the shop floor: SKU catalog, purchase orders, stock movements, low-stock alerts, and multi-branch visibility, with VAT-aware sales in Bikram Sambat.",
       "screenshot": "https://srotaapps.com/public/ims-thumbnail.png",
-      "featureList": ["Stock tracking", "Purchase orders", "Supplier management", "Low-stock alerts", "Multi-branch", "VAT billing"]
+      "featureList": "Stock tracking, Purchase orders, Supplier management, Low-stock alerts, Multi-branch, VAT billing",
+      "isPartOf": { "@id": "https://srotaapps.com/#website" }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://srotaapps.com/" },
+        { "@type": "ListItem", "position": 2, "name": "Srota IMS", "item": "https://srotaapps.com/ims" }
+      ]
     }
     </script>
   </head>
