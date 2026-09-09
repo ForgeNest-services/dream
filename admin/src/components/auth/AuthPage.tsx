@@ -7,10 +7,19 @@ import { useAuth } from '@/hooks/useAuth';
 import { LoginForm } from './forms/LoginForm';
 import { RegisterForm } from './forms/RegisterForm';
 import { OtpVerificationForm } from './forms/OtpVerificationForm';
+import { ForgotPasswordForm } from './forms/ForgotPasswordForm';
+import { ResetOtpForm } from './forms/ResetOtpForm';
+import { NewPasswordForm } from './forms/NewPasswordForm';
 import { Spinner } from '@/components/shared/Spinner';
 import { colors, spacing } from '@/lib/design-tokens';
 
-type AuthStep = 'login' | 'register' | 'verify-otp';
+type AuthStep =
+  | 'login'
+  | 'register'
+  | 'verify-otp'
+  | 'forgot-password'
+  | 'reset-otp'
+  | 'new-password';
 
 export function AuthPage() {
   const router = useRouter();
@@ -18,6 +27,9 @@ export function AuthPage() {
   const [step, setStep] = useState<AuthStep>('login');
   const [registrationEmail, setRegistrationEmail] = useState('');
   const [otpExpiresIn, setOtpExpiresIn] = useState<number | undefined>(undefined);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetOtpExpiresIn, setResetOtpExpiresIn] = useState<number | undefined>(undefined);
+  const [resetToken, setResetToken] = useState('');
 
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
@@ -133,7 +145,7 @@ export function AuthPage() {
       }}>
         <div style={{ width: '100%', maxWidth: '400px' }}>
           {/* Form Header */}
-          {step !== 'verify-otp' && (
+          {(step === 'login' || step === 'register') && (
             <div style={{ marginBottom: spacing.xl }}>
               <h2 style={{
                 fontSize: '24px',
@@ -147,7 +159,7 @@ export function AuthPage() {
           )}
 
           {/* Tabs */}
-          {step !== 'verify-otp' && (
+          {(step === 'login' || step === 'register') && (
             <div style={{ display: 'flex', gap: spacing.sm, marginBottom: spacing.xl }}>
               <button
                 onClick={() => setStep('login')}
@@ -187,7 +199,7 @@ export function AuthPage() {
           )}
 
           {/* Forms */}
-          {step === 'login' && <LoginForm />}
+          {step === 'login' && <LoginForm onForgotPassword={() => setStep('forgot-password')} />}
 
           {step === 'register' && (
             <RegisterForm
@@ -221,6 +233,56 @@ export function AuthPage() {
                 initialExpiresIn={otpExpiresIn}
               />
             </div>
+          )}
+
+          {step === 'forgot-password' && (
+            <ForgotPasswordForm
+              onSent={(email, expiresIn) => {
+                setResetEmail(email);
+                setResetOtpExpiresIn(expiresIn);
+                setStep('reset-otp');
+              }}
+              onBack={() => setStep('login')}
+            />
+          )}
+
+          {step === 'reset-otp' && (
+            <div>
+              <button
+                onClick={() => setStep('forgot-password')}
+                style={{
+                  marginBottom: spacing.lg,
+                  fontSize: '14px',
+                  color: colors.primary[800],
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: '500',
+                  padding: 0,
+                }}
+              >
+                ← Back
+              </button>
+              <ResetOtpForm
+                email={resetEmail}
+                initialExpiresIn={resetOtpExpiresIn}
+                onVerified={(token) => {
+                  setResetToken(token);
+                  setStep('new-password');
+                }}
+              />
+            </div>
+          )}
+
+          {step === 'new-password' && (
+            <NewPasswordForm
+              resetToken={resetToken}
+              onDone={() => {
+                setResetEmail('');
+                setResetToken('');
+                setStep('login');
+              }}
+            />
           )}
         </div>
       </div>

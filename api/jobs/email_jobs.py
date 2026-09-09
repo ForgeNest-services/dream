@@ -77,6 +77,42 @@ def send_otp_verification_email(
         return False
 
 
+def send_password_reset_otp_email(
+    recipient_email: str,
+    recipient_name: str,
+    otp_code: str,
+    expiry_minutes: int = 5,
+):
+    """Send the password-reset OTP code (distinct from send_password_reset_email
+    below, which is a link-based flow no route currently issues)."""
+    try:
+        subject = "Reset Your Password"
+
+        html_content = render_email_template(
+            "password_reset_otp.html",
+            recipient_name=recipient_name,
+            otp_code=otp_code,
+            expiry_minutes=expiry_minutes,
+        )
+
+        success = brevo_service.send_email(
+            to_email=recipient_email,
+            subject=subject,
+            html_content=html_content,
+        )
+
+        if success:
+            logger.info(f"Password reset OTP email sent to {recipient_email}")
+        else:
+            logger.error(f"Failed to send password reset OTP email to {recipient_email}")
+
+        return success
+
+    except Exception as e:
+        logger.error(f"Error in send_password_reset_otp_email: {e}")
+        return False
+
+
 def send_password_reset_email(
     recipient_email: str,
     recipient_name: str,

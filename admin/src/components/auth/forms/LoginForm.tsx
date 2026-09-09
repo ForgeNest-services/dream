@@ -13,7 +13,11 @@ import { authApi } from '@/services/auth-api';
 import { useAuthStore } from '@/store/auth-store';
 import { useRouter } from 'next/navigation';
 
-export function LoginForm() {
+interface LoginFormProps {
+  onForgotPassword: () => void;
+}
+
+export function LoginForm({ onForgotPassword }: LoginFormProps) {
   const { register, handleSubmit, formState: { errors } } = useForm<LoginRequest>();
   const { login, isLoading } = useLogin();
   const setUser = useAuthStore((state) => state.setUser);
@@ -105,6 +109,24 @@ export function LoginForm() {
         showPasswordToggle
         disabled={isLoading}
       />
+
+      <div style={{ textAlign: 'right', marginBottom: spacing.lg, marginTop: `-${spacing.sm}` }}>
+        <button
+          type="button"
+          onClick={onForgotPassword}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            color: colors.primary[800],
+            fontWeight: '500',
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}
+        >
+          Forgot password?
+        </button>
+      </div>
 
       {/* Submit Button */}
       <Button type="submit" isLoading={isLoading} size="lg">

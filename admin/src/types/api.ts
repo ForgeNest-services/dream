@@ -20,6 +20,20 @@ export interface ResendOTPRequest {
   email: string;
 }
 
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface VerifyResetOTPRequest {
+  email: string;
+  otp_code: string;
+}
+
+export interface ResetPasswordRequest {
+  reset_token: string;
+  new_password: string;
+}
+
 export interface BusinessRegisterRequest {
   business_name: string;
   business_address: string;
