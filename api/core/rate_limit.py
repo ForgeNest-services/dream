@@ -32,6 +32,11 @@ TIERS = {
     "writes": {"limit": 120, "window": 60},
     "reads": {"limit": 300, "window": 60},
     "exports": {"limit": 20, "window": 60},
+    # Unauthenticated public form submissions (e.g. the marketing site's
+    # contact form) -- always IP-keyed, no tenant/cred to key on. Tighter
+    # than "writes" specifically to blunt spam/abuse from a single source,
+    # same reasoning as "auth"'s brute-force-guard number.
+    "public_forms": {"limit": 5, "window": 60},
 }
 
 

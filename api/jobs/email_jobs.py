@@ -77,6 +77,36 @@ def send_otp_verification_email(
         return False
 
 
+def send_query_autoreply_email(recipient_email: str, recipient_name: str):
+    """Auto-reply sent the moment a public contact-form submission
+    (ui/contact.html -> POST /queries) lands -- confirms receipt, not a
+    real response. Superadmin reads/replies to the actual query by hand."""
+    try:
+        subject = "We received your message — Srota"
+
+        html_content = render_email_template(
+            "query_autoreply.html",
+            recipient_name=recipient_name,
+        )
+
+        success = brevo_service.send_email(
+            to_email=recipient_email,
+            subject=subject,
+            html_content=html_content,
+        )
+
+        if success:
+            logger.info(f"Query auto-reply sent to {recipient_email}")
+        else:
+            logger.error(f"Failed to send query auto-reply to {recipient_email}")
+
+        return success
+
+    except Exception as e:
+        logger.error(f"Error in send_query_autoreply_email: {e}")
+        return False
+
+
 def send_password_reset_otp_email(
     recipient_email: str,
     recipient_name: str,

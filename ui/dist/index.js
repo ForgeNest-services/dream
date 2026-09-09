@@ -1,7 +1,9 @@
 (function () {
   "use strict";
 
-  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var reduceMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
 
   document.addEventListener("DOMContentLoaded", function () {
     initFooterYear();
@@ -207,11 +209,38 @@
   }
 
   // ---------------------------------------------------------------------
-  // Contact form — front-end only feedback for now
+  // Contact form — POSTs to the real public /queries endpoint. Same-origin
+  // in prod would be simplest, but this site is served from srotaapps.com
+  // while the API lives on api.srotaapps.com, so this is a genuine
+  // cross-origin fetch (already allowed — UI_VIRTUAL_HOST is in the API's
+  // CORS_ALLOWED_ORIGINS list, see api/core/configs.py).
   // ---------------------------------------------------------------------
+  var CONTACT_API_URL =
+    location.hostname === "localhost" || location.hostname === "127.0.0.1"
+      ? "http://localhost:8006/api/queries"
+      : "https://api.srotaapps.com/api/queries";
+
   function initContactForm() {
     var form = document.getElementById("contact-form");
     if (!form) return;
+
+    // Inline styles, not Tailwind classes — this file isn't part of the
+    // Tailwind CLI's build input (see Dockerfile: only src/*.html/blog/public
+    // are copied into the build stage; dist/index.js is copied straight into
+    // the runtime image), so any class referenced only here never makes it
+    // into the compiled output.css.
+    var status = document.createElement("p");
+    status.style.marginTop = "12px";
+    status.style.fontSize = "14px";
+    status.setAttribute("role", "status");
+    status.hidden = true;
+    form.appendChild(status);
+
+    function setStatus(message, isError) {
+      status.textContent = message;
+      status.style.color = isError ? "#dc2626" : "#059669";
+      status.hidden = false;
+    }
 
     form.addEventListener("submit", function (e) {
       e.preventDefault();
@@ -223,15 +252,64 @@
       var button = form.querySelector("button[type=submit]");
       if (!button) return;
 
-      var originalHTML = button.innerHTML;
-      button.textContent = "Message sent";
-      button.disabled = true;
+      var data = new FormData(form);
+      var payload = {
+        name: data.get("name"),
+        email: data.get("email"),
+        business_name: data.get("business") || null,
+        phone: data.get("phone") || null,
+        app_interest: data.get("app") || null,
+        message: data.get("message"),
+      };
 
-      setTimeout(function () {
-        button.innerHTML = originalHTML;
-        button.disabled = false;
-        form.reset();
-      }, 2600);
+      var originalHTML = button.innerHTML;
+      button.textContent = "Sending…";
+      button.disabled = true;
+      status.hidden = true;
+
+      fetch(CONTACT_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then(function (res) {
+          return res.json().then(function (body) {
+            return { ok: res.ok, body: body };
+          });
+        })
+        .then(function (result) {
+          if (result.ok && result.body.success) {
+            setStatus(
+              result.body.message ||
+                "Thanks — we'll get back to you within a day.",
+              false,
+            );
+            form.reset();
+          } else if (
+            result.body.error &&
+            result.body.error.code === "HTTP_ERROR"
+          ) {
+            setStatus(
+              "Too many messages sent — please try again in a minute.",
+              true,
+            );
+          } else {
+            setStatus(
+              "Something went wrong. Please try again or email us directly.",
+              true,
+            );
+          }
+        })
+        .catch(function () {
+          setStatus(
+            "Something went wrong. Please try again or email us directly.",
+            true,
+          );
+        })
+        .finally(function () {
+          button.innerHTML = originalHTML;
+          button.disabled = false;
+        });
     });
   }
 
@@ -264,7 +342,7 @@
             start: "top 88%",
             once: true,
           },
-        }
+        },
       );
     });
   }

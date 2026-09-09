@@ -52,6 +52,7 @@ from .subscription import AppSubscription, SubscriptionPayment
 from .subscription_plan import SubscriptionPlan, PlatformSetting
 from .org_tax_settings import OrgTaxSettings
 from .cbms_sync_log import CbmsSyncLog
+from .query import Query
 
 __all__ = [
     "Tenant",
@@ -110,4 +111,5 @@ __all__ = [
     "PlatformSetting",
     "OrgTaxSettings",
     "CbmsSyncLog",
+    "Query",
 ]

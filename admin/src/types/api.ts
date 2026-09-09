@@ -78,6 +78,12 @@ export interface ApiResponse<T = unknown> {
     message: string;
   };
   details?: Record<string, unknown>;
+  meta?: {
+    total: number;
+    page: number;
+    per_page: number;
+    total_pages: number;
+  };
 }
 
 export interface LoginResponse {

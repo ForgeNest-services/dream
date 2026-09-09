@@ -12,6 +12,7 @@ import {
   MdSettings,
   MdShield,
   MdChevronLeft,
+  MdOutlineMailOutline,
 } from 'react-icons/md';
 import { colors, spacing, radius, layout } from '@/lib/design-tokens';
 import { useSidebar } from './SidebarContext';
@@ -25,6 +26,7 @@ const navigationItems = [
   // { label: 'Team Members', href: '/dashboard/team', icon: MdPeople, roles: ['owner'] },
   { label: 'Settings', href: '/dashboard/settings', icon: MdSettings, roles: ['owner'] },
   { label: 'Admin Panel', href: '/dashboard/admin', icon: MdShield, roles: ['superadmin'] },
+  { label: 'Queries', href: '/dashboard/queries', icon: MdOutlineMailOutline, roles: ['superadmin'] },
 ];
 
 export function Sidebar() {
