@@ -39,7 +39,9 @@ export type OrderScreenProps =
 export function OrderScreen(props: OrderScreenProps) {
   const {
     categories,
+    categoriesLoading,
     menu,
+    menuLoading,
     branchId: activeBranchId,
     orderForTable,
     orderById,
@@ -354,21 +356,30 @@ export function OrderScreen(props: OrderScreenProps) {
               are already cross-category, category chips would be misleading
               (they'd suggest filtering results, but search overrides them). */}
           {!menuQuery && (
-            <Tabs value={activeCat} onValueChange={setActiveCat}>
-              <TabsList className="h-11 w-full justify-start overflow-x-auto">
-                <TabsTrigger
-                  value={ALL_CATEGORY}
-                  className="h-9 shrink-0 px-3 text-xs sm:text-sm"
-                >
-                  All
-                </TabsTrigger>
-                {categories.map((c) => (
-                  <TabsTrigger key={c.id} value={c.id} className="h-9 shrink-0 px-3 text-xs sm:text-sm">
-                    {c.name}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+            <>
+              {categories.length === 0 && categoriesLoading ? (
+                <div className="flex h-11 items-center gap-2 text-xs text-muted-foreground sm:text-sm">
+                  <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                  Setting up your menu categories…
+                </div>
+              ) : (
+                <Tabs value={activeCat} onValueChange={setActiveCat}>
+                  <TabsList className="h-11 w-full justify-start overflow-x-auto">
+                    <TabsTrigger
+                      value={ALL_CATEGORY}
+                      className="h-9 shrink-0 px-3 text-xs sm:text-sm"
+                    >
+                      All
+                    </TabsTrigger>
+                    {categories.map((c) => (
+                      <TabsTrigger key={c.id} value={c.id} className="h-9 shrink-0 px-3 text-xs sm:text-sm">
+                        {c.name}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+              )}
+            </>
           )}
 
           {/* Wrapping grid — 3 columns on mobile (compact cards, plenty per
@@ -410,10 +421,25 @@ export function OrderScreen(props: OrderScreenProps) {
                 </div>
               </button>
             ))}
-            {items.length === 0 && (
-              <p className="pos-card col-span-full p-6 text-center text-sm text-muted-foreground">
-                {menuQuery ? `No items match "${menuQuery}".` : "No items in this category."}
-              </p>
+            {/* A fresh branch's menu/categories seed server-side on first
+                access and can take a moment to arrive (see store.tsx's menu
+                effect) — while either is still loading and nothing has
+                rendered yet, show that instead of a premature "no items",
+                which otherwise flashes for a couple of seconds on every
+                first login. */}
+            {items.length === 0 && (menuLoading || categoriesLoading) ? (
+              <div className="pos-card col-span-full flex flex-col items-center gap-2 p-10 text-sm text-muted-foreground">
+                <Loader2 className="size-5 animate-spin" />
+                {categoriesLoading
+                  ? "Setting up your menu from the branch template…"
+                  : "Hang tight, your menu is on its way…"}
+              </div>
+            ) : (
+              items.length === 0 && (
+                <p className="pos-card col-span-full p-6 text-center text-sm text-muted-foreground">
+                  {menuQuery ? `No items match "${menuQuery}".` : "No items in this category."}
+                </p>
+              )
             )}
           </div>
         </div>
