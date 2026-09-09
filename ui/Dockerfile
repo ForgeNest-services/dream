@@ -27,6 +27,7 @@ COPY *.html /usr/share/nginx/html/
 # *.html above only matches root-level pages — blog posts live one
 # directory deeper (blog/*.html) and need their own explicit copy.
 COPY blog /usr/share/nginx/html/blog
+COPY robots.txt sitemap.xml /usr/share/nginx/html/
 
 # CSS built in the previous stage — always fresh, never stale
 COPY --from=build /app/dist/output.css /usr/share/nginx/html/dist/output.css
