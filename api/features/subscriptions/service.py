@@ -6,7 +6,7 @@ from shared_models import AppSubscription, App
 from features.subscriptions.repository import SubscriptionRepository
 from utils.logger import logger
 
-TRIAL_DAYS = 1  # TODO(testing): revert to 30 before real launch — shortened to test trial expiry end-to-end
+TRIAL_DAYS = 30
 DEFAULT_BUNDLE_DISCOUNT_PERCENT = Decimal("20")
 
 
