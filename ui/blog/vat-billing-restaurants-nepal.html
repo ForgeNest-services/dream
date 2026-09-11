@@ -364,7 +364,7 @@
             VAT billing for restaurants in Nepal: what actually has to be on the
             bill
           </h1>
-          <p class="mt-5 text-sm text-slate">7 min read</p>
+          <p class="mt-5 text-sm text-slate">12 min read · <time datetime="2026-07-15">July 15, 2026</time></p>
 
           <div
             class="prose-content mt-10 space-y-6 text-base leading-relaxed text-ink/85"
@@ -381,7 +381,7 @@
             </p>
 
             <h2 class="font-display text-xl font-semibold text-ink">
-              PAN-only vs. VAT-registered, two different bills
+              PAN-only vs. VAT-registered: two different bills
             </h2>
             <p>
               A restaurant that hasn't registered for VAT issues a PAN bill: the
@@ -398,6 +398,36 @@
               undercharge it once you register, and Nepal's Electronic Billing
               Procedure 2082 treats both as the same class of problem: an
               incorrect invoice.
+            </p>
+
+            <h2 class="font-display text-xl font-semibold text-ink">
+              What changes the day you register for VAT
+            </h2>
+            <p>
+              The transition is the moment most restaurants discover their
+              billing system wasn't ready. The day IRD processes your VAT
+              registration, every bill you issue must carry the 13% line.
+              There's no grace period and no partial-month exception. Bills
+              issued before registration are PAN bills; bills issued from the
+              effective date are VAT bills. The system needs to know which is
+              which automatically.
+            </p>
+            <p>
+              Practically, this means your billing software needs to know your
+              VAT registration number and your registration effective date, not
+              just a toggle you set manually. A system that requires someone to
+              remember to flip a switch on exactly the right day will get it
+              wrong at least once. For VAT-registered businesses, that mistake
+              is a non-compliant invoice, which creates problems on your VAT
+              return that are tedious to unwind.
+            </p>
+            <p>
+              The VAT registration threshold for most businesses in Nepal is an
+              annual turnover of Rs 50 lakhs. Once you cross it, registration
+              is compulsory within a set window. A restaurant that's growing
+              should track its running turnover and not wait until IRD sends a
+              notice — the billing system switch needs to happen proactively,
+              not reactively.
             </p>
 
             <h2 class="font-display text-xl font-semibold text-ink">
@@ -428,7 +458,7 @@
               </li>
               <li>
                 If the bill is a reprint of an already-finalized invoice, a
-                clear "Copy of Original" watermark or label, the original and
+                clear "Copy of Original" watermark or label — the original and
                 the reprint are never allowed to look identical.
               </li>
             </ul>
@@ -437,6 +467,39 @@
               anywhere else. The friction is entirely operational: getting a
               cashier-facing system to compute it correctly, every time, without
               anyone having to remember the rule.
+            </p>
+
+            <h2 class="font-display text-xl font-semibold text-ink">
+              The invoice number sequence in practice
+            </h2>
+            <p>
+              Nepal's fiscal year runs from Shrawan 1 to Ashad 31 in the
+              Bikram Sambat calendar, and invoice numbers reset at the start of
+              each year. A compliant sequence runs from 00001 on the first day
+              of Shrawan with no skips, no duplicates, and no numbers that reset
+              mid-year because someone changed systems or printed a test bill.
+            </p>
+            <p>
+              During an IRD audit, the inspector can request every invoice in
+              sequence for any given period. A missing number, a duplicate, or
+              a manual override that created an out-of-order entry is a flag
+              that will be asked about.
+              <a
+                href="https://ird.gov.np"
+                target="_blank"
+                rel="noopener"
+                class="font-semibold text-ocean hover:text-ocean-dark"
+                >IRD's published guidelines</a
+              >
+              require that the sequence be system-generated and tamper-evident,
+              meaning it cannot be overridden by the person operating the till.
+            </p>
+            <p>
+              This is why switching billing software mid-year requires care.
+              The new system needs to continue from wherever the old sequence
+              left off, not restart from 00001. A restart in the middle of a
+              fiscal year creates a gap in the number sequence that is very
+              difficult to explain in an audit without supporting documentation.
             </p>
 
             <h2 class="font-display text-xl font-semibold text-ink">
@@ -461,7 +524,36 @@
               and printed with a proper fiscal-year invoice number in Bikram
               Sambat, the same date format your customers already expect on a
               Nepali receipt. If your business isn't VAT-registered, the tax
-              line simply doesn't appear; nothing to misconfigure.
+              line simply doesn't appear; nothing to misconfigure. When your
+              registration status changes, you update it once in settings and
+              every bill from that point forward is correct.
+            </p>
+
+            <h2 class="font-display text-xl font-semibold text-ink">
+              What to do if a bill is already wrong
+            </h2>
+            <p>
+              The first thing to understand is that finalized invoices cannot be
+              edited. This isn't a software limitation, it's a requirement of
+              the Electronic Billing Procedure: a bill that has been issued is a
+              document of record. Editing it retroactively would break the audit
+              trail IRD relies on.
+            </p>
+            <p>
+              The correct mechanism is a credit note. If a bill was issued with
+              the wrong amount, wrong VAT calculation, or wrong buyer details,
+              you issue a credit note against it. The credit note is its own
+              document with its own sequential number, referencing the original
+              invoice. The original bill is never touched. If a corrected bill
+              needs to be issued, it's a new invoice with a new number. This is
+              the same process used by every VAT-registered business in Nepal
+              and it needs to be built into the billing system, not handled with
+              a pen and a new piece of paper.
+            </p>
+            <p>
+              A credit note also needs to be submitted to IRD's CBMS system,
+              the same way the original invoice was. An unsubmitted credit note
+              means IRD's records still show the incorrect invoice as valid.
             </p>
 
             <h2 class="font-display text-xl font-semibold text-ink">
@@ -475,6 +567,18 @@
               a reprinted copy look visibly different from the original. If any
               of those is "no," that's worth fixing before it becomes a bigger
               problem than a wrong receipt.
+            </p>
+            <p>
+              If your restaurant also runs credit tabs for regular customers,
+              the way khata orders interact with issued invoices is worth
+              thinking through carefully.
+              <a
+                href="/blog/khata-vs-cash-register"
+                class="font-semibold text-teal hover:text-teal/80"
+                >Our guide on managing khata digitally</a
+              >
+              covers how order history, balances, and settlement records stay
+              connected without creating gaps in your billing trail.
             </p>
           </div>
 
@@ -575,7 +679,11 @@
             &copy; <span id="footer-year">2026</span> Srota. All rights
             reserved.
           </p>
-          <p class="text-xs text-white/45">Made in Nepal, for Nepal.</p>
+          <div class="flex items-center gap-4 text-xs text-white/45">
+            <a href="/privacy" class="hover:text-white/70">Privacy</a>
+            <a href="/terms" class="hover:text-white/70">Terms</a>
+            <span>Made in Nepal, for Nepal.</span>
+          </div>
         </div>
       </div>
     </footer>

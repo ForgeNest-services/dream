@@ -363,7 +363,7 @@
           >
             How to stop running out of stock across multiple branches
           </h1>
-          <p class="mt-5 text-sm text-slate">6 min read</p>
+          <p class="mt-5 text-sm text-slate">11 min read · <time datetime="2026-08-05">August 5, 2026</time></p>
 
           <div
             class="prose-content mt-10 space-y-6 text-base leading-relaxed text-ink/85"
@@ -372,7 +372,7 @@
               Ask most shop owners why they ran out of a popular item, and
               they'll tell you it caught them off guard. It usually didn't. In a
               multi-branch business, a stockout is rarely a genuine supply-chain
-              surprise, it's a delay between the moment stock actually got low
+              surprise — it's a delay between the moment stock actually got low
               and the moment someone found out about it. Close that delay and
               most stockouts stop happening before they start.
             </p>
@@ -381,8 +381,8 @@
               Why the delay happens
             </h2>
             <p>
-              With one location, staying on top of stock is manageable by habit,
-              someone walks the shelves, notices what's thin, and reorders. That
+              With one location, staying on top of stock is manageable by habit.
+              Someone walks the shelves, notices what's thin, and reorders. That
               habit doesn't scale past one branch. Branch managers restock based
               on what they can see in front of them, not what's happening two
               locations away, and a head office spreadsheet updated weekly is
@@ -391,7 +391,15 @@
             <p>
               The result is a pattern every multi-branch business recognizes:
               Branch A is overstocked on an item that Branch B ran out of three
-              days ago, and nobody noticed until a customer asked for it.
+              days ago, and nobody noticed until a customer asked for it. The
+              stock existed in the company; it just wasn't where it was needed,
+              and nobody knew.
+            </p>
+            <p>
+              This is a visibility problem, not a procurement problem. Buying
+              more stock doesn't fix it. Moving stock around reactively doesn't
+              fix it. The only thing that fixes it is knowing, in real time, what
+              level each item is at each branch — before it runs out.
             </p>
 
             <h2 class="font-display text-xl font-semibold text-ink">
@@ -405,26 +413,131 @@
               <li>
                 <strong>Every item needs its own reorder threshold.</strong>
                 A fast-moving item and a slow one shouldn't share a generic "low
-                stock" rule, one needs a higher buffer, the other barely needs
+                stock" rule — one needs a higher buffer, the other barely needs
                 one at all. A threshold set per-product, not globally, is what
-                makes the alert actually mean something.
+                makes the alert actually mean something when it fires.
               </li>
               <li>
                 <strong>Stock has to be tracked per branch, not pooled.</strong>
                 A combined total across all locations hides exactly the problem
-                you're trying to catch, Branch A's surplus masking Branch B's
+                you're trying to catch: Branch A's surplus masking Branch B's
                 shortage. The alert needs to fire for the branch that's actually
-                low.
+                low, not disappear into a company-wide average that looks fine.
               </li>
               <li>
-                <strong
-                  >Every movement needs to be logged as it happens.</strong
-                >
+                <strong>Every movement needs to be logged as it happens.</strong>
                 Restocks, adjustments, and transfers between branches all have
                 to update the count in real time. A count that's only accurate
-                right after a manual stocktake is accurate for about a day.
+                right after a manual stocktake is accurate for about a day, and
+                useless for catching problems before they happen.
               </li>
             </ul>
+
+            <h2 class="font-display text-xl font-semibold text-ink">
+              Purchase orders: formalizing the restock decision
+            </h2>
+            <p>
+              When an item hits its reorder threshold, someone has to actually
+              do something about it. The usual workflow in a paper-based or
+              spreadsheet business: a manager notices the low stock, calls the
+              supplier, tells them a quantity verbally, and waits for the
+              delivery. There's no written record of what was ordered, when, at
+              what agreed price, or who placed the order. When the delivery
+              arrives, the quantity sometimes doesn't match what was requested,
+              and there's nothing to check it against.
+            </p>
+            <p>
+              A purchase order formalizes that decision. Instead of a phone call
+              with no paper trail, a PO captures: the supplier, the items and
+              quantities requested, the expected price, and the date. When the
+              goods arrive, your receiving team checks the delivery against the
+              PO. If the quantity is short or a price is different, you know
+              immediately, and you have documentation to follow up with the
+              supplier.
+            </p>
+            <p>
+              Over time, the PO history becomes a record of what you're buying,
+              from whom, and at what price — a real negotiating asset when a
+              supplier raises prices or when you're comparing two suppliers for
+              the same category.
+            </p>
+
+            <h2 class="font-display text-xl font-semibold text-ink">
+              Inter-branch transfers: when Branch A's surplus solves Branch B's shortage
+            </h2>
+            <p>
+              Not every low-stock situation requires a new purchase. In a
+              multi-branch business, the item you need at Branch B might already
+              be sitting as excess stock at Branch A. An inter-branch transfer
+              is faster than a new purchase order, costs nothing extra, and
+              reduces the overstocking that quietly builds up at whichever
+              branch received the last big delivery.
+            </p>
+            <p>
+              But this only works if:
+            </p>
+            <ul class="list-disc space-y-2 pl-5">
+              <li>
+                You can see Branch A's current stock level without calling
+                someone there
+              </li>
+              <li>
+                The transfer itself is recorded so both branches' counts update
+                immediately — Branch A's count goes down, Branch B's goes up
+              </li>
+              <li>
+                The movement is attributed so the stock history is auditable: who
+                approved the transfer, when it happened, and how much was moved
+              </li>
+            </ul>
+            <p>
+              Without a system, transfers happen informally — a manager loads
+              items into a car, the other branch receives them, and nobody
+              updates a spreadsheet because it's too inconvenient. The result is
+              counts that drift from reality until the next manual stocktake
+              corrects them, by which point you've already made purchasing
+              decisions based on numbers that were wrong.
+            </p>
+
+            <h2 class="font-display text-xl font-semibold text-ink">
+              Nepal's BS fiscal year and seasonal stock planning
+            </h2>
+            <p>
+              Nepal's fiscal year runs Shrawan to Ashadh (mid-July to mid-July).
+              For most retail and food businesses, that calendar creates
+              predictable demand spikes that should be planned for, not
+              discovered after the fact.
+            </p>
+            <p>
+              The most significant is the Dashain-Tihar window. Businesses that
+              sell food, household goods, or anything given as gifts typically
+              see a sharp demand increase in Ashwin-Kartik (October-November).
+              In the week before Dashain, suppliers often raise prices or go
+              on backorder, so businesses that buy at normal reorder-point
+              timing find themselves paying a premium or scrambling for
+              alternatives. Those that stock ahead, based on the previous year's
+              sales data, absorb the holiday demand without disruption.
+            </p>
+            <p>
+              Shrawan (mid-July to mid-August) creates the opposite pattern for
+              some vegetable and ingredient categories — monsoon conditions push
+              prices up and delivery reliability down. Businesses that know
+              their consumption rate and carry a slightly larger buffer through
+              that month avoid the worst of it.
+            </p>
+            <p>
+              End-of-fiscal (Ashadh, June-July) is the clearance window: slow-
+              moving items should be worked down before the year closes so they
+              don't sit on the balance sheet, and new stock decisions for the
+              coming year should be based on the previous year's actual movement
+              data, not on gut feel.
+            </p>
+            <p>
+              All of this requires knowing your per-item, per-branch velocity —
+              how fast an item actually sells at a specific location over a
+              specific period. That number isn't available if your stock tracking
+              is manual or approximate.
+            </p>
 
             <h2 class="font-display text-xl font-semibold text-ink">
               How Srota IMS handles this
@@ -435,18 +548,32 @@
                 class="font-semibold text-ocean hover:text-ocean-dark"
                 >Srota IMS</a
               >
-              tracks stock per branch by design, a product's count at one
+              tracks stock per branch by design — a product's count at one
               location is its own number, checked against its own reorder
               threshold, not blended into a company-wide total. Every restock,
-              adjustment, and transfer is logged the moment it happens, with who
-              made the change, so the count you're looking at is the actual
-              current count, not last week's stocktake plus guesswork.
+              adjustment, sale, and transfer is logged the moment it happens,
+              with who made the change, so the count you're looking at is the
+              actual current count, not last week's stocktake plus guesswork.
             </p>
             <p>
               When an item crosses its threshold at a specific branch, that's a
-              signal the manager there can act on immediately, raise a purchase
+              signal the manager there can act on immediately: raise a purchase
               order, request a transfer from a branch that has surplus, or just
-              get ahead of it before a customer notices the shelf is empty.
+              get ahead of it before a customer notices the shelf is empty. The
+              movement history gives you the velocity data you need to set
+              thresholds that are actually calibrated to real demand, not
+              guesswork.
+            </p>
+            <p>
+              If your business also issues invoices and tracks customer credit —
+              khata-style tabs or deferred payment accounts — the same principle
+              applies there. See our piece on
+              <a
+                href="/blog/khata-vs-cash-register"
+                class="font-medium text-ocean hover:text-ocean-dark"
+                >digital khata for restaurants</a
+              >
+              for how visibility works on the receivables side.
             </p>
 
             <h2 class="font-display text-xl font-semibold text-ink">
@@ -455,9 +582,29 @@
             <p>
               You don't need to overhaul everything at once. Pick your five
               most-requested items, set a real reorder threshold for each at
-              every branch, and watch what happens over the next month. Most
+              every branch based on how many days of sales that quantity
+              represents, and watch what happens over the next month. Most
               businesses find the alerts alone catch problems days before they
-              would have noticed on their own, that's the whole gap this closes.
+              would have noticed on their own — that's the whole gap this closes.
+            </p>
+            <p>
+              Once you're confident in those five items, expand. Add purchase
+              orders for the suppliers those items come from. Track the first
+              inter-branch transfer when Branch B runs low and Branch A has
+              surplus. Within a quarter, you'll have actual velocity data to
+              calibrate thresholds more precisely, and a movement history that
+              makes seasonal planning concrete rather than approximate.
+            </p>
+            <p>
+              Stock management and billing compliance go hand in hand — once
+              your inventory is tracked accurately, your sales data becomes
+              accurate too. See our guide on
+              <a
+                href="/blog/vat-billing-restaurants-nepal"
+                class="font-medium text-ocean hover:text-ocean-dark"
+                >VAT billing for businesses in Nepal</a
+              >
+              for the compliance side of that picture.
             </p>
           </div>
 
@@ -558,7 +705,11 @@
             &copy; <span id="footer-year">2026</span> Srota. All rights
             reserved.
           </p>
-          <p class="text-xs text-white/45">Made in Nepal, for Nepal.</p>
+          <div class="flex items-center gap-4 text-xs text-white/45">
+            <a href="/privacy" class="hover:text-white/70">Privacy</a>
+            <a href="/terms" class="hover:text-white/70">Terms</a>
+            <span>Made in Nepal, for Nepal.</span>
+          </div>
         </div>
       </div>
     </footer>

@@ -363,16 +363,17 @@
           >
             Khata without the notebook: running a tab for regulars digitally
           </h1>
-          <p class="mt-5 text-sm text-slate">5 min read</p>
+          <p class="mt-5 text-sm text-slate">10 min read · <time datetime="2026-07-22">July 22, 2026</time></p>
 
           <div
             class="prose-content mt-10 space-y-6 text-base leading-relaxed text-ink/85"
           >
             <p>
               Nearly every restaurant, tea shop, and canteen in Nepal has a
-              handful of customers who don't pay per visit, a nearby office that
+              handful of customers who don't pay per visit — a nearby office that
               orders lunch every day and settles at month-end, a regular who
-              runs a tab and clears it on payday. This is khata, and it's been
+              runs a tab and clears it on payday, a contractor who eats on-site
+              and bills the company weekly. This is khata, and it's been
               tracked in a notebook behind the counter for as long as the
               business has existed. It works, until it doesn't.
             </p>
@@ -389,26 +390,30 @@
                 <strong>It lives in one place.</strong> If the person who
                 usually writes it down is off, or the notebook is at the other
                 branch, nobody else can check a balance or add a charge with
-                confidence.
+                confidence. "Let me ask Ramesh when he's back" is not a system.
               </li>
               <li>
                 <strong>Partial payments are messy.</strong> A customer pays
                 half their tab, and now the notebook has a crossed-out number, a
                 new number squeezed in the margin, and no record of when the
-                payment happened or how.
+                payment happened or how. The next person looking at it has no
+                idea if that crossed-out figure already accounts for the partial
+                or not.
               </li>
               <li>
                 <strong>It's disconnected from the actual bill.</strong> The
                 khata entry and the order that created it are two separate
-                records. If a dispute comes up, "I never ordered that much" —
+                records. If a dispute comes up — "I never ordered that much" —
                 there's no order history to check against, just someone's
-                handwriting.
+                handwriting and a customer's memory in conflict.
               </li>
             </ul>
             <p>
               None of this is a training problem. It's what happens when a
               running balance is tracked separately from the transactions that
-              create it.
+              create it. The notebook is a symptom of the real issue: khata was
+              never designed as a financial system, it was a convenience that
+              grew into one.
             </p>
 
             <h2 class="font-display text-xl font-semibold text-ink">
@@ -425,7 +430,7 @@
                 from any till, by anyone on shift.
               </li>
               <li>
-                The order itself, what was ordered, when, at what price, stays
+                The order itself — what was ordered, when, at what price — stays
                 attached to the khata entry permanently. If a balance is ever
                 disputed, the receipt-level detail is right there.
               </li>
@@ -435,11 +440,128 @@
                 overwriting it.
               </li>
               <li>
-                The current outstanding balance is always a live number, sum of
-                khata orders minus sum of settlements, never something someone
-                has to re-add by hand.
+                The current outstanding balance is always a live number — sum of
+                khata orders minus sum of settlements — never something someone
+                has to re-add by hand or trust on faith.
               </li>
             </ul>
+            <p>
+              When these four things hold, khata stops being a source of
+              ambiguity and becomes something you can actually manage: print a
+              customer's statement, settle any portion of it, and have an
+              auditable record of every transaction either way.
+            </p>
+
+            <h2 class="font-display text-xl font-semibold text-ink">
+              How month-end settlement actually works
+            </h2>
+            <p>
+              For an office that runs a lunch tab, the end of the month is the
+              real test of your khata system. The customer shows up expecting a
+              clear statement: what they owe, broken down by date, with the total
+              at the bottom. On paper, producing that statement means re-reading
+              the notebook, adding up entries, and hoping nothing was missed or
+              mis-written across four weeks. In practice most businesses either
+              just ask the customer to trust a round number, or spend twenty
+              minutes cross-referencing scrawled totals before anyone gets paid.
+            </p>
+            <p>
+              A digital khata produces that statement instantly. Every order the
+              office placed over the month is already timestamped and attached to
+              their account. The customer can see exactly what they owe and
+              when each charge was added. Settlement — whether in cash, eSewa,
+              or a bank transfer — is recorded against their account with a
+              timestamp. If they pay Rs 5,000 toward a Rs 8,000 balance, the
+              remaining Rs 3,000 carries forward cleanly, with no manual
+              subtraction and no chance of a miscalculation a week later.
+            </p>
+            <p>
+              This matters because trust is the whole foundation of khata. The
+              reason customers run tabs in the first place is the relationship
+              with the business. A clean, accurate statement protects that
+              relationship even when disputes arise — and in a long-running khata
+              arrangement, they will.
+            </p>
+
+            <h2 class="font-display text-xl font-semibold text-ink">
+              Partial payments: the edge case that breaks paper worst
+            </h2>
+            <p>
+              Partial payments are where paper khata breaks down fastest. The
+              typical scenario: a customer has accumulated Rs 12,000 over three
+              weeks and comes in on payday with Rs 7,000. They want to clear part
+              of it now and the rest next week. On paper this requires:
+            </p>
+            <ul class="list-disc space-y-2 pl-5">
+              <li>Finding the right page in the notebook</li>
+              <li>Writing down the payment amount and the new balance</li>
+              <li>
+                Hoping the customer agrees with the math right there at the
+                counter
+              </li>
+              <li>
+                And then hoping whoever checks next week will read the correction
+                correctly
+              </li>
+            </ul>
+            <p>
+              In practice, someone either writes the remaining balance as the new
+              figure (overwriting the history) or scribbles a note that's
+              ambiguous later. Either way, the audit trail is gone.
+            </p>
+            <p>
+              In a digital system, the partial payment is its own transaction.
+              Rs 7,000 in, method recorded, balance reduced to Rs 5,000,
+              timestamp attached. The original Rs 12,000 accumulation is still
+              visible if anyone needs to retrace it. The remaining balance
+              appears correctly the next time anyone looks up the customer, with
+              no manual work required.
+            </p>
+            <p>
+              Over time, a business with fifty khata customers will process
+              dozens of partial settlements a month. Every one of those is a
+              potential error on paper. The compounding effect of those errors
+              — a few hundred rupees off here, a dispute there — is real money
+              and real relationship strain that a proper system eliminates
+              entirely.
+            </p>
+
+            <h2 class="font-display text-xl font-semibold text-ink">
+              Khata, VAT, and your IRD obligations
+            </h2>
+            <p>
+              There's a compliance angle to khata that most restaurant owners
+              don't think about until they're asked about it in an audit: what
+              happens when a khata customer needs a VAT receipt?
+            </p>
+            <p>
+              Under Nepal's Electronic Billing Procedure 2082, a VAT-registered
+              business must issue a proper tax invoice at the time of supply,
+              not at the time of payment. If an office orders lunch and pays at
+              month-end, the invoice for that lunch is still owed on the day of
+              the order. Tracking the order as "khata to settle later" doesn't
+              change when the tax obligation attaches.
+            </p>
+            <p>
+              This means a khata order in your POS should produce a real bill —
+              with bill number, VAT amount, date, and all required fields — even
+              if payment is deferred. The khata tracking is then separate: it
+              records that the bill hasn't been paid yet, not that the bill
+              wasn't issued. When the customer settles, the settlement is
+              recorded against that existing bill, not as a new sale.
+            </p>
+            <p>
+              Getting this wrong creates two problems: VAT that wasn't reported
+              in the correct fiscal period, and a mismatch between your POS
+              records and your IRD submissions if your system submits bills
+              electronically via CBMS. For a detailed breakdown of how VAT
+              billing works at the bill level, see our guide on
+              <a
+                href="/blog/vat-billing-restaurants-nepal"
+                class="font-medium text-teal hover:text-teal/80"
+                >VAT billing for restaurants in Nepal</a
+              >.
+            </p>
 
             <h2 class="font-display text-xl font-semibold text-ink">
               How this works in Srota RMS
@@ -449,18 +571,23 @@
                 >Srota RMS</a
               >
               treats khata as a real payment method, not a workaround. A waiter
-              marks an order as khata against a customer at the till; the order
-              total adds to that customer's balance automatically. When the
-              customer settles, in full or in part, it's logged as its own
+              marks an order as khata against a customer at the till; a proper
+              bill is generated immediately (with its bill number, VAT breakdown,
+              and all required fields), and the order total adds to that
+              customer's outstanding balance automatically. When the customer
+              settles, in full or in part, it's logged as its own
               transaction, and the balance updates immediately. Every khata
-              order stays linked to its original bill, so if anyone ever needs
+              order stays linked to its original bill, so if anyone needs
               to check what a balance is actually made up of, the full history
-              is there, not a guess.
+              is there — item by item, bill by bill — not a sum in the margin.
             </p>
             <p>
-              Because it's shared across every till at a branch, whoever's
+              Because balances are shared across every till at a branch, whoever's
               working the counter can check or settle a balance without waiting
-              for whoever "usually handles khata" to come back on shift.
+              for whoever "usually handles khata" to come back on shift. And
+              because each khata order is a real bill from the moment it's placed,
+              your VAT reporting stays clean regardless of when customers actually
+              pay.
             </p>
 
             <h2 class="font-display text-xl font-semibold text-ink">
@@ -472,6 +599,24 @@
               "what do they currently owe, and what's it made up of?" If that
               takes flipping through pages or asking someone else, that's the
               exact gap a digital khata is meant to close.
+            </p>
+            <p>
+              A second check: ask whether a partial payment from two weeks ago
+              is recorded in a way you'd be comfortable showing the customer as
+              a statement. If the answer is "probably, but I'd need to recheck
+              the notebook first", the system is already costing you time and
+              trust that you don't need to spend.
+            </p>
+            <p>
+              If your business sells across multiple locations and you're also
+              managing stock, the same visibility gap that affects khata affects
+              your inventory — see our piece on
+              <a
+                href="/blog/prevent-stockouts-multi-branch"
+                class="font-medium text-teal hover:text-teal/80"
+                >preventing stockouts across multiple branches</a
+              >
+              for how that side of the problem works.
             </p>
           </div>
 
@@ -572,7 +717,11 @@
             &copy; <span id="footer-year">2026</span> Srota. All rights
             reserved.
           </p>
-          <p class="text-xs text-white/45">Made in Nepal, for Nepal.</p>
+          <div class="flex items-center gap-4 text-xs text-white/45">
+            <a href="/privacy" class="hover:text-white/70">Privacy</a>
+            <a href="/terms" class="hover:text-white/70">Terms</a>
+            <span>Made in Nepal, for Nepal.</span>
+          </div>
         </div>
       </div>
     </footer>

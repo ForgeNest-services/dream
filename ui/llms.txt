@@ -1,0 +1,39 @@
+# Srota — Business apps for a paperless Nepal
+# https://srotaapps.com
+
+Srota is a Nepali SaaS platform offering two business management applications:
+Srota RMS (Restaurant Management System) and Srota IMS (Inventory Management
+System). Both are built specifically for Nepal and are compliant with Nepal's
+Electronic Billing Procedure 2082 (IRD CBMS integration).
+
+## Pages
+
+- Homepage: https://srotaapps.com/
+- Srota RMS (restaurant POS): https://srotaapps.com/rms
+- Srota IMS (inventory management): https://srotaapps.com/ims
+- Pricing: https://srotaapps.com/pricing
+- About: https://srotaapps.com/about
+- Contact: https://srotaapps.com/contact
+- Blog index: https://srotaapps.com/blog
+- Privacy policy: https://srotaapps.com/privacy
+- Terms of service: https://srotaapps.com/terms
+
+## Blog articles
+
+- VAT billing for restaurants in Nepal (IRD compliance guide):
+  https://srotaapps.com/blog/vat-billing-restaurants-nepal
+
+- Digital khata for restaurants (running customer tabs):
+  https://srotaapps.com/blog/khata-vs-cash-register
+
+- Preventing stockouts across multiple branches:
+  https://srotaapps.com/blog/prevent-stockouts-multi-branch
+
+## Key facts
+
+- Founded: Kathmandu, Nepal
+- Target market: Nepali restaurants, retail shops, and multi-branch businesses
+- Compliance: Nepal IRD VAT, Electronic Billing Procedure 2082, CBMS-integrated
+- Languages supported: English (Nepali UI in progress)
+- Trial: 30-day free trial, no credit card required
+- Contact: srotaapps@gmail.com
