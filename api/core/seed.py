@@ -1128,10 +1128,10 @@ def seed_apps():
 _DEFAULT_PLANS = [
     # {"app_code": "srota_pms", "plan": "monthly", "price_npr": 2999, "label": "PMS Monthly"},
     # {"app_code": "srota_pms", "plan": "yearly",  "price_npr": 11999, "label": "PMS Yearly"},
-    {"app_code": "srota_rms", "plan": "monthly", "price_npr": 1299,  "label": "RMS Monthly"},
-    {"app_code": "srota_rms", "plan": "yearly",  "price_npr": 6999,  "label": "RMS Yearly"},
-    {"app_code": "srota_ims", "plan": "monthly", "price_npr": 1699,  "label": "IMS Monthly"},
-    {"app_code": "srota_ims", "plan": "yearly",  "price_npr": 7999,  "label": "IMS Yearly"},
+    {"app_code": "srota_rms", "plan": "monthly", "price_npr": 1200,  "label": "RMS Monthly"},
+    {"app_code": "srota_rms", "plan": "yearly",  "price_npr": 7000,  "label": "RMS Yearly"},
+    {"app_code": "srota_ims", "plan": "monthly", "price_npr": 1600,  "label": "IMS Monthly"},
+    {"app_code": "srota_ims", "plan": "yearly",  "price_npr": 8000,  "label": "IMS Yearly"},
 ]
 
 # Default % knocked off the summed individual prices when a tenant buys 2+
