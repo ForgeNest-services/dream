@@ -514,8 +514,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         branchId: role === "owner" ? "all" : (branch_id ?? "all"),
       }));
       return { ok: true };
-    } catch {
-      return { ok: false };
+    } catch (err) {
+      if (err instanceof ApiError) return { ok: false, message: err.message, code: err.code };
+      const message = err instanceof Error ? err.message : "Login failed";
+      return { ok: false, message };
     }
   }, []);
 
