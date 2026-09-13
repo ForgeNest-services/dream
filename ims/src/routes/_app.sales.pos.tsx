@@ -622,18 +622,6 @@ function PosPage() {
             </div>
           </div>
 
-          {!isQuotation && app.company.qrImageUrl && (
-            <div className="rounded-lg border bg-card p-4 text-center">
-              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
-                Scan to pay
-              </p>
-              <img
-                src={app.company.qrImageUrl}
-                alt="Static payment QR code for the shop"
-                className="mx-auto h-36 w-36 rounded border object-contain"
-              />
-            </div>
-          )}
         </div>
       </div>
 
