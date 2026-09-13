@@ -373,16 +373,6 @@ function PrintInvoicePage() {
               <p className="mt-1 text-[9px] text-black/60">Scan to verify bill details</p>
             </div>
           )}
-          {c.qrImageUrl && inv.paymentMethod === "qr" ? (
-            <div className="text-center">
-              <img
-                src={c.qrImageUrl}
-                alt="Payment QR code"
-                className="mx-auto h-24 w-24 object-contain"
-              />
-              <p className="text-[10px]">Scan to pay</p>
-            </div>
-          ) : null}
         </div>
 
         <div className="mt-8 flex justify-between text-xs">

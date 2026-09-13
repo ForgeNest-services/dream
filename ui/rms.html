@@ -395,6 +395,89 @@
         </div>
       </section>
 
+      <!-- ============================= DEMO VIDEO ============================= -->
+      <section class="relative overflow-hidden bg-mist px-6 pb-16 pt-28 sm:pb-20 sm:pt-36 lg:px-10">
+        <!-- Radial glow -->
+        <div class="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
+          <div class="h-[36rem] w-3/4 rounded-full opacity-20 blur-3xl" style="background:radial-gradient(ellipse at center,#0D9488 0%,transparent 70%);"></div>
+        </div>
+
+        <div class="relative mx-auto max-w-5xl">
+          <!-- Heading -->
+          <div class="mb-12 text-center" data-reveal>
+            <h2 class="font-display text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+              See Srota RMS in action
+            </h2>
+            <p class="mx-auto mt-3 max-w-sm text-base text-slate">
+              Orders, kitchen display, and billing running in sync, watch a full shift in under a minute.
+            </p>
+          </div>
+
+          <!-- macOS window frame -->
+          <div data-reveal style="filter:drop-shadow(0 40px 80px rgba(0,0,0,0.32)) drop-shadow(0 8px 24px rgba(0,0,0,0.2));">
+            <div class="overflow-hidden rounded-[14px]" style="background:#1c1c1e;border:1px solid rgba(255,255,255,0.1);">
+
+              <!-- Title bar -->
+              <div class="flex items-center px-4 py-[11px]" style="background:linear-gradient(to bottom,#3d3d3f 0%,#2e2e30 100%);border-bottom:1px solid rgba(0,0,0,0.55);">
+                <div class="flex items-center gap-[7px]">
+                  <div class="size-[13px] rounded-full" style="background:#ff5f57;box-shadow:inset 0 0 0 0.5px rgba(180,30,20,0.4);"></div>
+                  <div class="size-[13px] rounded-full" style="background:#febc2e;box-shadow:inset 0 0 0 0.5px rgba(160,120,0,0.4);"></div>
+                  <div class="size-[13px] rounded-full" style="background:#28c840;box-shadow:inset 0 0 0 0.5px rgba(0,130,30,0.4);"></div>
+                </div>
+              </div>
+
+              <!-- Video + overlay -->
+              <div id="rms-player" class="relative cursor-pointer" style="aspect-ratio:16/9;background:#000;">
+                <video
+                  id="rms-video"
+                  class="h-full w-full object-cover"
+                  src="https://cdn.forgenestservices.com.np/rms-demo.mp4"
+                  autoplay muted loop playsinline
+                ></video>
+
+                <!-- Centered play/pause overlay -->
+                <div id="rms-overlay" class="absolute inset-0 flex items-center justify-center" style="transition:opacity 0.25s ease;background:rgba(0,0,0,0.08);">
+                  <button
+                    id="rms-btn"
+                    aria-label="Toggle playback"
+                    style="width:72px;height:72px;border-radius:50%;background:#0D9488;box-shadow:0 8px 32px rgba(13,148,136,0.55),0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;transition:transform 0.15s ease,box-shadow 0.15s ease;border:none;cursor:pointer;"
+                    onmouseenter="this.style.transform='scale(1.1)';this.style.boxShadow='0 12px 40px rgba(13,148,136,0.7),0 4px 12px rgba(0,0,0,0.35)'"
+                    onmouseleave="this.style.transform='scale(1)';this.style.boxShadow='0 8px 32px rgba(13,148,136,0.55),0 2px 8px rgba(0,0,0,0.3)'"
+                  >
+                    <svg id="rms-icon-play" style="width:28px;height:28px;fill:#fff;margin-left:4px;" viewBox="0 0 24 24"><path d="M8 5.14v13.72L19 12 8 5.14z"/></svg>
+                    <svg id="rms-icon-pause" style="width:24px;height:24px;fill:#fff;display:none;" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </section>
+      <script>
+      (function () {
+        var video = document.getElementById('rms-video');
+        var overlay = document.getElementById('rms-overlay');
+        var player = document.getElementById('rms-player');
+        var iconPlay = document.getElementById('rms-icon-play');
+        var iconPause = document.getElementById('rms-icon-pause');
+
+        function setPlaying(playing) {
+          overlay.style.opacity = playing ? '0' : '1';
+          iconPlay.style.display = playing ? 'none' : 'block';
+          iconPause.style.display = playing ? 'block' : 'none';
+        }
+
+        video.addEventListener('play', function () { setPlaying(true); });
+        video.addEventListener('pause', function () { setPlaying(false); });
+        player.addEventListener('mouseenter', function () { overlay.style.opacity = '1'; });
+        player.addEventListener('mouseleave', function () { if (!video.paused) overlay.style.opacity = '0'; });
+        player.addEventListener('click', function () { video.paused ? video.play() : video.pause(); });
+        video.addEventListener('loadeddata', function () { if (!video.paused) setPlaying(true); });
+        setPlaying(false);
+      })();
+      </script>
+
       <!-- ============================= FEATURE GRID ============================= -->
       <section id="tour" class="scroll-mt-24 px-6 py-24 sm:py-28 lg:px-10">
         <div class="mx-auto max-w-7xl">
@@ -807,5 +890,15 @@
         window.dispatchEvent(new Event('gsap:ready'));
       "
     ></script>
+    <!-- WhatsApp float -->
+    <a
+      href="https://wa.me/9779868211546"
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Chat with us on WhatsApp"
+      class="fixed bottom-6 right-6 z-50 block size-14 rounded-full shadow-[0_4px_20px_rgba(37,211,102,0.4),0_2px_8px_rgba(0,0,0,0.15)] transition-all duration-200 hover:scale-110 hover:shadow-[0_8px_28px_rgba(37,211,102,0.55),0_4px_12px_rgba(0,0,0,0.2)]"
+    >
+      <img src="./public/whatsapp.svg" alt="WhatsApp" class="size-14" />
+    </a>
   </body>
 </html>

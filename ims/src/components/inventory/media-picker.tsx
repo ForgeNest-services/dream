@@ -43,7 +43,7 @@ export function MediaThumb({
       src={item.url}
       alt={alt}
       loading="lazy"
-      className={cn("rounded-md border object-cover", className)}
+      className={cn("rounded-md border object-contain", className)}
     />
   );
 }
@@ -174,7 +174,7 @@ export function PhotoTile({
                   sel === m.id ? "ring-2 ring-primary" : "hover:border-primary/50",
                 )}
               >
-                <img src={m.url} alt={m.name} className="h-20 w-full object-cover" />
+                <img src={m.url} alt={m.name} className="h-20 w-full object-contain" />
                 <p className="truncate px-1.5 py-1 text-[11px] text-muted-foreground">{m.name}</p>
               </button>
             ))}
@@ -250,7 +250,7 @@ export function MediaPicker({
       <MediaThumb
         mediaId={value}
         alt={label ?? "Product image"}
-        className={cn("h-16 w-16 shrink-0 object-cover", thumbClassName)}
+        className={cn("h-16 w-16 shrink-0 object-contain", thumbClassName)}
       />
       <input
         ref={fileRef}
@@ -308,7 +308,7 @@ export function MediaPicker({
                   sel === m.id ? "ring-2 ring-primary" : "hover:border-primary/50",
                 )}
               >
-                <img src={m.url} alt={m.name} className="h-20 w-full object-cover" />
+                <img src={m.url} alt={m.name} className="h-20 w-full object-contain" />
                 <p className="truncate px-1.5 py-1 text-[11px] text-muted-foreground">{m.name}</p>
               </button>
             ))}

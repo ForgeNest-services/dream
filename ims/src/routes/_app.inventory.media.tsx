@@ -84,7 +84,7 @@ function MediaPage() {
             const usedBy = usage(m.id);
             return (
               <figure key={m.id} className="group relative overflow-hidden rounded-lg border bg-card">
-                <img src={m.url} alt={m.name} loading="lazy" className="h-32 w-full object-cover" />
+                <img src={m.url} alt={m.name} loading="lazy" className="h-32 w-full object-contain" />
                 <button
                   type="button"
                   onClick={() => setDeleteFor(m)}
