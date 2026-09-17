@@ -1,5 +1,6 @@
 import { MediaPicker } from "@/components/inventory/media-picker";
 import { CategoryCombobox, BrandCombobox } from "@/components/inventory/category-combobox";
+import { ProductCombobox } from "@/components/purchase/product-combobox";
 import { Money } from "@/components/common/primitives";
 import { DecimalTextInput, NumericInput } from "@/components/inventory/numeric-input";
 import { priceWithVat, priceWithoutVat } from "@/lib/format";
@@ -161,18 +162,13 @@ export function PurchaseItemCard({
         </Select>
 
         {item.kind === "existing" ? (
-          <Select value={item.productId ?? ""} onValueChange={pickProduct}>
-            <SelectTrigger className="h-8 min-w-56 flex-1">
-              <SelectValue placeholder="Choose product…" />
-            </SelectTrigger>
-            <SelectContent className="max-h-72">
-              {app.products.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name} · {p.sku}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="min-w-56 flex-1">
+            <ProductCombobox
+              value={item.productId}
+              onChange={pickProduct}
+              triggerClassName="h-8 w-full"
+            />
+          </div>
         ) : (
           <Input
             value={item.name}
