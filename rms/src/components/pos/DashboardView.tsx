@@ -358,6 +358,74 @@ export function DashboardView() {
         </ul>
       </div>
 
+      <div className="pos-card overflow-hidden p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h2 className="font-display text-xl">Menu item intelligence</h2>
+            <p className="text-xs text-muted-foreground">
+              Current 7 days vs previous 7 days
+            </p>
+          </div>
+          <span className="text-xs text-muted-foreground">By revenue</span>
+        </div>
+        {(data.item_intelligence ?? []).length === 0 ? (
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            No item sales in the last 7 days.
+          </div>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[38rem] text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs text-muted-foreground">
+                  <th className="pb-2 font-medium">Menu item</th>
+                  <th className="pb-2 text-right font-medium">Sold</th>
+                  <th className="pb-2 text-right font-medium">Revenue</th>
+                  <th className="pb-2 text-right font-medium">Share</th>
+                  <th className="pb-2 text-right font-medium">Trend</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.item_intelligence ?? []).map((item) => {
+                  const trendPct = item.change_pct;
+                  const trendLabel =
+                    trendPct === null
+                      ? "New"
+                      : `${trendPct >= 0 ? "+" : ""}${trendPct.toFixed(0)}%`;
+                  return (
+                    <tr
+                      key={`${item.name}-${item.variant_name ?? ""}`}
+                      className="border-b last:border-0"
+                    >
+                      <td className="max-w-[18rem] py-3">
+                        <p className="truncate font-medium">
+                          {item.name}
+                          {item.variant_name ? ` · ${item.variant_name}` : ""}
+                        </p>
+                      </td>
+                      <td className="py-3 text-right">{item.qty}</td>
+                      <td className="py-3 text-right font-medium">
+                        {NPR(asNum(item.revenue))}
+                      </td>
+                      <td className="py-3 text-right">
+                        {item.revenue_share.toFixed(1)}%
+                      </td>
+                      <td
+                        className={`py-3 text-right font-medium ${
+                          trendPct === null || trendPct >= 0
+                            ? "text-primary"
+                            : "text-danger"
+                        }`}
+                      >
+                        {trendLabel}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
       {data.today.expenses_by_category.length > 0 && (
         <div className="pos-card p-5">
           <h2 className="font-display text-xl">Expenses today</h2>

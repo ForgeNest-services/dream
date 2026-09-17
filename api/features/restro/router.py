@@ -2780,6 +2780,21 @@ def _serialize_top_items(items: list) -> list:
     ]
 
 
+def _serialize_item_intelligence(items: list) -> list:
+    return [
+        {
+            "name": i["name"],
+            "variant_name": i["variant_name"],
+            "qty": i["qty"],
+            "revenue": _serialize_money(i["revenue"]),
+            "revenue_share": float(i["revenue_share"]),
+            "previous_revenue": _serialize_money(i["previous_revenue"]),
+            "change_pct": float(i["change_pct"]) if i["change_pct"] is not None else None,
+        }
+        for i in items
+    ]
+
+
 def _serialize_trend(trend: list) -> list:
     return [
         {
@@ -2814,6 +2829,7 @@ def reports_dashboard(
             "yesterday_sales": _serialize_money(d["yesterday_sales"]),
             "trend_7_days": _serialize_trend(d["trend_7_days"]),
             "top_items": _serialize_top_items(d["top_items"]),
+            "item_intelligence": _serialize_item_intelligence(d["item_intelligence"]),
             "tables": d["tables"],
             "low_stock_count": d["low_stock_count"],
         }

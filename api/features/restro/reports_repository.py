@@ -192,6 +192,48 @@ class ReportsRepository:
             for r in rows
         ]
 
+    @staticmethod
+    def item_sales(
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        bs_from: str,
+        bs_to: str,
+    ) -> list[dict]:
+        """Aggregate every paid menu item in a BS date range for comparison
+        reporting. Items are keyed by their snapshotted name and variant."""
+        variant_label = func.coalesce(RestroOrderLine.variant_name, "").label("variant")
+        rows = (
+            db.query(
+                RestroOrderLine.name.label("name"),
+                variant_label,
+                func.coalesce(func.sum(RestroOrderLine.qty), 0).label("qty"),
+                func.coalesce(
+                    func.sum(RestroOrderLine.qty * RestroOrderLine.price), 0
+                ).label("revenue"),
+            )
+            .join(RestroOrder, RestroOrder.id == RestroOrderLine.order_id)
+            .filter(
+                RestroOrder.tenant_id == tenant_id,
+                RestroOrder.branch_id == branch_id,
+                RestroOrder.status == "paid",
+                RestroOrderLine.is_voided.is_(False),
+                RestroOrder.placed_at_bs >= bs_from,
+                RestroOrder.placed_at_bs <= bs_to,
+            )
+            .group_by(RestroOrderLine.name, variant_label)
+            .all()
+        )
+        return [
+            {
+                "name": r.name,
+                "variant_name": r.variant or None,
+                "qty": int(r.qty),
+                "revenue": Decimal(r.revenue or 0),
+            }
+            for r in rows
+        ]
+
     # ------------------------------------------------------------------
     # Expenses — separate table, joined by BS date not orders.
     # ------------------------------------------------------------------

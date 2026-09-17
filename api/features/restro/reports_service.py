@@ -7,13 +7,13 @@ Report totals are summed from each paid order's snapshotted total_amount
 at the moment it was issued, so a report over past orders must match what
 the customer was actually billed even if branch VAT settings changed since."""
 
-from datetime import timedelta
+from datetime import timedelta, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from features.restro.reports_repository import ReportsRepository
 from features.branches.repository import BranchRepository
-from utils.bikram_sambat import to_bs_iso, bs_iso_to_ad
+from utils.bikram_sambat import NEPAL_TZ, to_bs_iso, bs_iso_to_ad
 
 
 def _assert_branch(db: Session, tenant_id: str, branch_id: str) -> bool:
@@ -26,6 +26,10 @@ def _order_total(order) -> Decimal:
 
 def _sum_totals(orders) -> Decimal:
     return sum((_order_total(o) for o in orders), Decimal("0"))
+
+
+def _item_key(item: dict) -> tuple[str, str | None]:
+    return item["name"], item["variant_name"]
 
 
 def _by_payment_method(orders) -> dict:
@@ -134,6 +138,49 @@ class ReportsService:
         return {"success": True, "items": items}
 
     @staticmethod
+    def item_intelligence(
+        db: Session,
+        tenant_id: str,
+        branch_id: str,
+        current_from: str,
+        current_to: str,
+        previous_from: str,
+        previous_to: str,
+        limit: int = 20,
+    ) -> list[dict]:
+        current = ReportsRepository.item_sales(
+            db, tenant_id, branch_id, current_from, current_to
+        )
+        previous = ReportsRepository.item_sales(
+            db, tenant_id, branch_id, previous_from, previous_to
+        )
+        previous_by_key = {_item_key(item): item for item in previous}
+        current_total = sum((item["revenue"] for item in current), Decimal("0"))
+        rows = []
+        for item in current:
+            previous_item = previous_by_key.get(_item_key(item))
+            previous_revenue = previous_item["revenue"] if previous_item else Decimal("0")
+            change_pct = (
+                None
+                if previous_revenue == 0
+                else (item["revenue"] - previous_revenue) / previous_revenue * 100
+            )
+            rows.append(
+                {
+                    **item,
+                    "revenue_share": (
+                        item["revenue"] / current_total * 100
+                        if current_total
+                        else Decimal("0")
+                    ),
+                    "previous_revenue": previous_revenue,
+                    "change_pct": change_pct,
+                }
+            )
+        rows.sort(key=lambda item: item["revenue"], reverse=True)
+        return rows[: max(1, min(limit, 50))]
+
+    @staticmethod
     def sales_trend(
         db: Session, tenant_id: str, branch_id: str, bs_from: str, bs_to: str
     ) -> dict:
@@ -206,13 +253,15 @@ class ReportsService:
         if not _assert_branch(db, tenant_id, branch_id):
             return {"success": False, "error_code": "BRANCH_NOT_FOUND"}
 
-        from datetime import date
         if bs:
             anchor_ad = bs_iso_to_ad(bs)
             if anchor_ad is None:
                 return {"success": False, "error_code": "INVALID_DATE"}
         else:
-            anchor_ad = date.today()
+            # The API process may run in UTC or another server timezone.
+            # Dashboard "today" must follow the same NPT business day used
+            # when bill BS dates are written.
+            anchor_ad = datetime.now(NEPAL_TZ).date()
 
         anchor_bs = to_bs_iso(anchor_ad)
         yesterday_bs = to_bs_iso(anchor_ad - timedelta(days=1))
@@ -229,6 +278,15 @@ class ReportsService:
         top = ReportsRepository.top_items(
             db, tenant_id, branch_id, seven_days_ago_bs, anchor_bs, 5
         )
+        intelligence = ReportsService.item_intelligence(
+            db,
+            tenant_id,
+            branch_id,
+            seven_days_ago_bs,
+            anchor_bs,
+            to_bs_iso(anchor_ad - timedelta(days=13)) or seven_days_ago_bs,
+            to_bs_iso(anchor_ad - timedelta(days=7)) or seven_days_ago_bs,
+        )
         occ = ReportsRepository.table_occupancy(db, tenant_id, branch_id)
         low_stock = ReportsRepository.low_stock_count(db, tenant_id, branch_id)
 
@@ -240,6 +298,7 @@ class ReportsService:
                 "yesterday_sales": yesterday_summary["sales_gross"],
                 "trend_7_days": trend_result.get("trend", []),
                 "top_items": top,
+                "item_intelligence": intelligence,
                 "tables": occ,
                 "low_stock_count": int(low_stock),
             },
