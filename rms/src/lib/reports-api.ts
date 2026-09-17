@@ -45,6 +45,12 @@ export interface TopItemDto {
   revenue: string;
 }
 
+export interface ItemIntelligenceDto extends TopItemDto {
+  revenue_share: number;
+  previous_revenue: string;
+  change_pct: number | null;
+}
+
 export interface TrendRowDto {
   bs_date: string;
   sales: string;
@@ -58,6 +64,7 @@ export interface DashboardDto {
   yesterday_sales: string;
   trend_7_days: TrendRowDto[];
   top_items: TopItemDto[];
+  item_intelligence: ItemIntelligenceDto[];
   tables: { occupied: number; total: number };
   low_stock_count: number;
 }

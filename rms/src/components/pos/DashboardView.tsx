@@ -5,6 +5,10 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -50,6 +54,17 @@ const shortBs = (bsIso: string) => {
   const [, m, d] = bsIso.split("-");
   return `${Number(m)}/${Number(d)}`;
 };
+
+const CATEGORY_COLORS = [
+  "var(--color-primary)",
+  "var(--color-navy)",
+  "var(--color-accent-foreground)",
+  "#d97706",
+  "#059669",
+  "#7c3aed",
+  "#db2777",
+  "#0891b2",
+];
 
 function pctDelta(current: number, previous: number): string {
   if (previous <= 0) return current > 0 ? "First sales this day" : "No sales previous day";
@@ -160,6 +175,12 @@ export function DashboardView() {
     sales: asNum(r.sales),
     expenses: asNum(r.expenses),
   }));
+  const categorySales = data.today.by_category
+    .map((category) => ({
+      name: category.category,
+      value: asNum(category.revenue),
+    }))
+    .filter((category) => category.value > 0);
 
   return (
     <div className="space-y-5">
@@ -257,33 +278,153 @@ export function DashboardView() {
         </div>
 
         <div className="pos-card p-5">
-          <h2 className="font-display text-xl">Top selling items</h2>
-          <p className="text-xs text-muted-foreground">Last 7 days</p>
-          <ul className="mt-4 space-y-3">
-            {data.top_items.length === 0 && (
-              <li className="py-6 text-center text-sm text-muted-foreground">
-                No sales in the last 7 days.
-              </li>
-            )}
-            {data.top_items.map((item, i) => (
-              <li key={`${item.name}-${item.variant_name ?? ""}`} className="flex items-center gap-3">
-                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-navy font-display text-lg text-navy-foreground">
-                  {i + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
-                    {item.name}
-                    {item.variant_name ? ` · ${item.variant_name}` : ""}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{item.qty} sold</p>
-                </div>
-                <span className="shrink-0 text-sm font-medium text-primary">
-                  {NPR(asNum(item.revenue))}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <h2 className="font-display text-xl">Sales by category</h2>
+          <p className="text-xs text-muted-foreground">
+            {isToday ? "Today" : bsIsoToPretty(activeBs)}
+          </p>
+          {categorySales.length === 0 ? (
+            <div className="grid h-64 place-items-center text-sm text-muted-foreground">
+              No category sales for this day.
+            </div>
+          ) : (
+            <div className="mt-4 h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categorySales}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="45%"
+                    innerRadius={58}
+                    outerRadius={92}
+                    paddingAngle={2}
+                    stroke="var(--color-card)"
+                    strokeWidth={2}
+                  >
+                    {categorySales.map((category, index) => (
+                      <Cell
+                        key={category.name}
+                        fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value) => NPR(Number(value))}
+                    contentStyle={{
+                      borderRadius: 12,
+                      border: "1px solid var(--color-border)",
+                      fontSize: 12,
+                    }}
+                  />
+                  <Legend
+                    verticalAlign="bottom"
+                    iconType="circle"
+                    wrapperStyle={{ fontSize: 12 }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
+      </div>
+
+      <div className="pos-card p-5">
+        <h2 className="font-display text-xl">Top selling items</h2>
+        <p className="text-xs text-muted-foreground">Last 7 days</p>
+        <ul className="mt-4 space-y-3">
+          {data.top_items.length === 0 && (
+            <li className="py-6 text-center text-sm text-muted-foreground">
+              No sales in the last 7 days.
+            </li>
+          )}
+          {data.top_items.map((item, i) => (
+            <li key={`${item.name}-${item.variant_name ?? ""}`} className="flex items-center gap-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-navy font-display text-lg text-navy-foreground">
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">
+                  {item.name}
+                  {item.variant_name ? ` · ${item.variant_name}` : ""}
+                </p>
+                <p className="text-xs text-muted-foreground">{item.qty} sold</p>
+              </div>
+              <span className="shrink-0 text-sm font-medium text-primary">
+                {NPR(asNum(item.revenue))}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="pos-card overflow-hidden p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <h2 className="font-display text-xl">Menu item intelligence</h2>
+            <p className="text-xs text-muted-foreground">
+              Current 7 days vs previous 7 days
+            </p>
+          </div>
+          <span className="text-xs text-muted-foreground">By revenue</span>
+        </div>
+        {(data.item_intelligence ?? []).length === 0 ? (
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            No item sales in the last 7 days.
+          </div>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[38rem] text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs text-muted-foreground">
+                  <th className="pb-2 font-medium">Menu item</th>
+                  <th className="pb-2 text-right font-medium">Sold</th>
+                  <th className="pb-2 text-right font-medium">Revenue</th>
+                  <th className="pb-2 text-right font-medium">Share</th>
+                  <th className="pb-2 text-right font-medium">Trend</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.item_intelligence ?? []).map((item) => {
+                  const trendPct = item.change_pct;
+                  const trendLabel =
+                    trendPct === null
+                      ? "New"
+                      : `${trendPct >= 0 ? "+" : ""}${trendPct.toFixed(0)}%`;
+                  return (
+                    <tr
+                      key={`${item.name}-${item.variant_name ?? ""}`}
+                      className="border-b last:border-0"
+                    >
+                      <td className="max-w-[18rem] py-3">
+                        <p className="truncate font-medium">
+                          {item.name}
+                          {item.variant_name ? ` · ${item.variant_name}` : ""}
+                        </p>
+                      </td>
+                      <td className="py-3 text-right">{item.qty}</td>
+                      <td className="py-3 text-right font-medium">
+                        {NPR(asNum(item.revenue))}
+                      </td>
+                      <td className="py-3 text-right">
+                        {item.revenue_share.toFixed(1)}%
+                      </td>
+                      <td
+                        className={`py-3 text-right font-medium ${
+                          trendPct === null || trendPct >= 0
+                            ? "text-primary"
+                            : "text-danger"
+                        }`}
+                      >
+                        {trendLabel}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {data.today.expenses_by_category.length > 0 && (
