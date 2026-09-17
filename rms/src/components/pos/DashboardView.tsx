@@ -426,7 +426,6 @@ export function DashboardView() {
           </div>
         )}
       </div>
-
       {data.today.expenses_by_category.length > 0 && (
         <div className="pos-card p-5">
           <h2 className="font-display text-xl">Expenses today</h2>
