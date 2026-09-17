@@ -5,6 +5,10 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -50,6 +54,17 @@ const shortBs = (bsIso: string) => {
   const [, m, d] = bsIso.split("-");
   return `${Number(m)}/${Number(d)}`;
 };
+
+const CATEGORY_COLORS = [
+  "var(--color-primary)",
+  "var(--color-navy)",
+  "var(--color-accent-foreground)",
+  "#d97706",
+  "#059669",
+  "#7c3aed",
+  "#db2777",
+  "#0891b2",
+];
 
 function pctDelta(current: number, previous: number): string {
   if (previous <= 0) return current > 0 ? "First sales this day" : "No sales previous day";
@@ -160,6 +175,12 @@ export function DashboardView() {
     sales: asNum(r.sales),
     expenses: asNum(r.expenses),
   }));
+  const categorySales = data.today.by_category
+    .map((category) => ({
+      name: category.category,
+      value: asNum(category.revenue),
+    }))
+    .filter((category) => category.value > 0);
 
   return (
     <div className="space-y-5">
@@ -257,33 +278,84 @@ export function DashboardView() {
         </div>
 
         <div className="pos-card p-5">
-          <h2 className="font-display text-xl">Top selling items</h2>
-          <p className="text-xs text-muted-foreground">Last 7 days</p>
-          <ul className="mt-4 space-y-3">
-            {data.top_items.length === 0 && (
-              <li className="py-6 text-center text-sm text-muted-foreground">
-                No sales in the last 7 days.
-              </li>
-            )}
-            {data.top_items.map((item, i) => (
-              <li key={`${item.name}-${item.variant_name ?? ""}`} className="flex items-center gap-3">
-                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-navy font-display text-lg text-navy-foreground">
-                  {i + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
-                    {item.name}
-                    {item.variant_name ? ` · ${item.variant_name}` : ""}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{item.qty} sold</p>
-                </div>
-                <span className="shrink-0 text-sm font-medium text-primary">
-                  {NPR(asNum(item.revenue))}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <h2 className="font-display text-xl">Sales by category</h2>
+          <p className="text-xs text-muted-foreground">
+            {isToday ? "Today" : bsIsoToPretty(activeBs)}
+          </p>
+          {categorySales.length === 0 ? (
+            <div className="grid h-64 place-items-center text-sm text-muted-foreground">
+              No category sales for this day.
+            </div>
+          ) : (
+            <div className="mt-4 h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categorySales}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="45%"
+                    innerRadius={58}
+                    outerRadius={92}
+                    paddingAngle={2}
+                    stroke="var(--color-card)"
+                    strokeWidth={2}
+                  >
+                    {categorySales.map((category, index) => (
+                      <Cell
+                        key={category.name}
+                        fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value) => NPR(Number(value))}
+                    contentStyle={{
+                      borderRadius: 12,
+                      border: "1px solid var(--color-border)",
+                      fontSize: 12,
+                    }}
+                  />
+                  <Legend
+                    verticalAlign="bottom"
+                    iconType="circle"
+                    wrapperStyle={{ fontSize: 12 }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
+      </div>
+
+      <div className="pos-card p-5">
+        <h2 className="font-display text-xl">Top selling items</h2>
+        <p className="text-xs text-muted-foreground">Last 7 days</p>
+        <ul className="mt-4 space-y-3">
+          {data.top_items.length === 0 && (
+            <li className="py-6 text-center text-sm text-muted-foreground">
+              No sales in the last 7 days.
+            </li>
+          )}
+          {data.top_items.map((item, i) => (
+            <li key={`${item.name}-${item.variant_name ?? ""}`} className="flex items-center gap-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-navy font-display text-lg text-navy-foreground">
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">
+                  {item.name}
+                  {item.variant_name ? ` · ${item.variant_name}` : ""}
+                </p>
+                <p className="text-xs text-muted-foreground">{item.qty} sold</p>
+              </div>
+              <span className="shrink-0 text-sm font-medium text-primary">
+                {NPR(asNum(item.revenue))}
+              </span>
+            </li>
+          ))}
+        </ul>
       </div>
 
       {data.today.expenses_by_category.length > 0 && (
